@@ -16,6 +16,23 @@ services:
       retries: 10
     networks: [brutus]
 
+  # O Django. Estagio unico, por isso a chave `target` do front (que tem
+  # `dev`) nao existe aqui — nao ha o que escolher.
+  api:
+    build: { context: . }
+    environment:
+      PGDATABASE: brutus
+      PGHOST: db
+      PGPORT: "5432"
+      DOMINIO_BASE: localhost
+      DJANGO_DEBUG: "1"
+      REDIS_URL: redis://redis:6379/1
+    ports: ["8000:8000"]
+    volumes: [".:/app"]
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [brutus]
+
   # O que faz o lembrete existir. A rota `/api/cron/lembretes` estava escrita e
   # protegida desde a Etapa 1, e nada a chamava — a tela prometia ao cliente
   # "mandamos o lembrete 1h antes" e ninguém mandava.
