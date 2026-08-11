@@ -1,0 +1,186 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports: ["5433:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [brutus]
+
+  # O que faz o lembrete existir. A rota `/api/cron/lembretes` estava escrita e
+  # protegida desde a Etapa 1, e nada a chamava — a tela prometia ao cliente
+  # "mandamos o lembrete 1h antes" e ninguém mandava.
+  #
+  # Processo separado, e não um cron dentro do Next, por duas razões: ele
+  # sobrevive a reinício da aplicação, e `docker compose logs agendador`
+  # responde "está rodando?" sem instrumentar nada.
+  #
+  # O tique é de 10 min (LEMBRETE_TIQUE_MIN) contra uma janela de 60: a
+  # mensagem sai entre 50 e 60 minutos antes. Tique MAIOR que a janela perderia
+  # agendamento — quem entra nela entre dois tiques nunca seria visto.
+  agendador:
+    image: curlimages/curl:8.11.1
+    restart: unless-stopped
+    environment:
+      # `$$` escapa a interpolação do compose: quem expande é o shell de
+      # dentro, então o segredo não fica escrito no comando do contêiner.
+      CRON_SECRET: ${CRON_SECRET}
+      # Para o healthcheck do WhatsApp no mesmo tique.
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-brutus}
+    # Bate assim que sobe, e só então dorme: `docker compose up` dá o retorno
+    # na hora em vez de dez minutos depois. Erro de curl não mata o laço —
+    # app ainda subindo é normal.
+    #
+    # Vetor, e não `command: >`: em escalar dobrado do YAML, linha MAIS
+    # indentada conserva a quebra em vez de virar espaço, e o comando chega
+    # partido ao shell (`sh: -H: not found`).
+    #
+    # No MESMO tique, confere se o WhatsApp está de pé. Isto não é zelo: o
+    # vínculo do WhatsApp cai sozinho (`Instance - LOGOUT` sem ninguém pedir), e
+    # depois disso a Evolution responde 201 com `status: PENDING` para TUDO e
+    # nada é entregue. Aconteceu, e passou quase duas horas sem ninguém ver —
+    # o sintoma é cliente deixando de receber confirmação, que ninguém descobre
+    # olhando tela.
+    #
+    # Reconectar exige o QR, que exige uma pessoa com o celular. O agendador não
+    # conserta; ele grita, e é isso que faltava.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'while true; do echo "[agendador] $$(date -u +%H:%M:%S) $$(curl -sS -X POST -H "Authorization: Bearer $$CRON_SECRET" http://app:3000/api/cron/lembretes || echo falhou)"; zap=$$(curl -sS -H "apikey: $$EVOLUTION_API_KEY" http://evolution:8080/instance/connectionState/$$EVOLUTION_INSTANCE || echo erro); case "$$zap" in *\"state\":\"open\"*) : ;; *) echo "[agendador] !!! WHATSAPP FORA DO AR: $$zap — rode: npm run whatsapp:qr" ;; esac; sleep 600; done'
+    networks: [brutus]
+
+  # O telefone do produto. Confirmação, cancelamento, lembrete e convite de
+  # barbeiro saem por aqui — sem este serviço, tudo isso cai no console.info do
+  # app e o sistema funciona inteiro sem falar com ninguém.
+  #
+  # Versão PINADA: `latest` num serviço que guarda sessão de WhatsApp é convite
+  # para uma atualização derrubar a conexão numa terça à tarde.
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: unless-stopped
+    ports: ["8080:8080"]
+    volumes:
+      # A parte que mais importa: aqui mora a credencial da sessão que o QR
+      # gera. Sem o volume, todo `docker compose down` obriga a escanear o QR
+      # de novo — em produção, é o telefone da barbearia caindo a cada deploy.
+      - evolution_instances:/evolution/instances
+    environment:
+      SERVER_URL: http://localhost:8080
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+
+      # O Postgres que já existe, com papel e banco próprios (docker/init-db.sql).
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:evolution@db:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: brutus
+      # Só a instância é persistida. Todo o resto FICA DESLIGADO de propósito:
+      # nós mandamos mensagem e consultamos se um número existe — nunca lemos
+      # conversa. Ligado, isto guardaria mensagens, contatos, chats e histórico
+      # de todo cliente de toda barbearia: um acervo de conversa alheia que o
+      # produto não usa para nada.
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      # Estes DOIS andam juntos, e isso foi medido: com `NEW_MESSAGE=false`, a
+      # `MessageUpdate` também fica vazia — o status precisa da linha da
+      # mensagem para pousar. Não existe "só o status".
+      #
+      # E o status é o ÚNICO lugar onde aparece que o WhatsApp **recusou** o
+      # envio. A Evolution devolve `201` porque aceitou a TAREFA; a rejeição
+      # chega depois, assíncrona, como `status: ERROR`. Com isto desligado, ela
+      # não tinha onde pousar — e em 10/08 custou horas de investigação com log
+      # limpo dos dois lados e mensagem nenhuma chegando.
+      #
+      # O que fica guardado é o texto que NÓS mandamos (confirmação, lembrete,
+      # convite). Mensagem de cliente não entra: o produto nunca recebe, e
+      # contatos, chats e histórico seguem desligados abaixo.
+      #
+      # O `zelador` poda o que passa de 7 dias.
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      DATABASE_SAVE_DATA_LABELS: "false"
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+
+      # COM Redis, e a decisão anterior estava errada. Eu havia desligado com o
+      # argumento de que "um quarto contêiner para cachear o que uma instância
+      # única resolve em memória é peso sem retorno" — raciocínio sobre CACHE,
+      # quando o Redis aqui é infraestrutura de ENVIO.
+      #
+      # O sintoma: mensagem aceita com `201 / status: PENDING` e nunca
+      # transmitida, com a instância `open` e o soquete respondendo. No log da
+      # Evolution, a cada envio: `CACHE: { cached: undefined, messageTimestamp:
+      # undefined }` seguido de `Closing session`. Mensagem à mão pelo celular
+      # chegava; pela API, nunca.
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/6
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_REDIS_SAVE_INSTANCES: "false"
+      CACHE_LOCAL_ENABLED: "false"
+
+      DEL_INSTANCE: "false"
+      LOG_LEVEL: ERROR,WARN,INFO
+      LOG_BAILEYS: error
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+    networks: [brutus]
+
+  # Duas tarefas que precisam de `psql`, e é por isso que não moram no
+  # `agendador`: aquele é imagem de `curl`, e cada serviço fica com a ferramenta
+  # que a tarefa pede em vez de um contêiner que faz tudo mal.
+  #
+  # 1. ALARMA envio recusado. O WhatsApp rejeita de forma assíncrona: a
+  #    Evolution já devolveu `201` ao app quando a recusa chega, então o app
+  #    nunca fica sabendo. `status = 'ERROR'` na `MessageUpdate` é o único
+  #    registro disso — e em 10/08 a ausência dele custou horas com o log limpo
+  #    dos dois lados e nenhuma mensagem chegando.
+  #
+  # 2. PODA o que passa de 7 dias. O rastreio exige guardar o texto que nós
+  #    mandamos (medido: sem a linha da mensagem, o status não é gravado), então
+  #    o histórico não pode crescer para sempre.
+  #
+  # De hora em hora, não a cada 10 min: recusa que já aconteceu não fica mais
+  # urgente sendo relida seis vezes por hora.
+  zelador:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: evolution
+    volumes:
+      - ./docker/zelador.sh:/zelador.sh:ro
+    entrypoint: ["/bin/sh", "/zelador.sh"]
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [brutus]
+
+  # Não é cache de conveniência: a Evolution usa o Redis no caminho de ENVIO.
+  # Sem ele, a mensagem é aceita (`201 / PENDING`) e nunca transmitida.
+  # `appendonly` para a fila sobreviver a reinício do contêiner.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - evolution_redis:/data
+    networks: [brutus]
+
+volumes:
+  pgdata:
+  evolution_instances:
+  evolution_redis:
+
+# `external: true` porque a rede é criada à mão e vive mais que qualquer um dos
+# dois composes. Se o compose a criasse, ela morreria no `down` de quem a criou
+# e o outro lado perderia o banco no meio do trabalho.
+networks:
+  brutus:
+    external: true
