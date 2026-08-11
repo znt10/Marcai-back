@@ -1,6 +1,6 @@
 import pytest
 
-from tenant.models import Barbearia
+from tenant.models import Barbearia, Barbeiro
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"])
 
@@ -20,3 +20,13 @@ def test_nomes_de_coluna_batem_com_o_prisma():
     assert campos["criado_em"] == "criadoEm"
     assert Barbearia._meta.db_table == "Barbearia"
     assert Barbearia._meta.managed is False
+
+
+def test_nomes_de_coluna_do_barbeiro_batem_com_o_prisma():
+    # barbeariaId e o rename nao trivial que sustenta o teste de RLS da
+    # fatia 6 — sem esta rede, um db_column esquecido aqui so quebraria lá,
+    # longe desta tarefa.
+    campos = {f.name: f.column for f in Barbeiro._meta.get_fields() if hasattr(f, "column")}
+    assert campos["barbearia_id"] == "barbeariaId"
+    assert Barbeiro._meta.db_table == "Barbeiro"
+    assert Barbeiro._meta.managed is False

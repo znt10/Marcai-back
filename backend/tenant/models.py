@@ -7,7 +7,13 @@ class Barbearia(models.Model):
     protegida por GRANT (REVOKE INSERT/UPDATE/DELETE) e nao por politica.
     """
 
-    id = models.UUIDField(primary_key=True, db_column="id")
+    # TextField, nao UUIDField: o Prisma declara `id String @id @default(uuid())`
+    # sem `@db.Uuid` (front/prisma/schema.prisma:29) — o valor e um uuid, a
+    # coluna e TEXT, e as duas coisas nao sao a mesma. UUIDField faz o psycopg3
+    # mandar o parametro tipado como `uuid` (dumper com oid=UUID_OID); INSERT
+    # passa porque uuid->text e cast de atribuicao, mas um `filter(id=...)`
+    # compara `text = uuid`, que nao resolve, e o WHERE nao acha nada.
+    id = models.TextField(primary_key=True, db_column="id")
     slug = models.TextField(unique=True, db_column="slug")
     nome = models.TextField(db_column="nome")
     endereco = models.TextField(db_column="endereco")
@@ -29,8 +35,13 @@ class Barbeiro(models.Model):
     precisar entram la.
     """
 
-    id = models.UUIDField(primary_key=True, db_column="id")
-    barbearia_id = models.UUIDField(db_column="barbeariaId")
+    # TextField pelo mesmo motivo de Barbearia.id acima: a coluna do Prisma e
+    # TEXT, e UUIDField mandaria o parametro tipado `uuid` contra uma coluna
+    # `text` — o INSERT passa (uuid->text e cast de atribuicao) mas o
+    # `filter(barbearia_id=...)` nao, porque `text = uuid` nao resolve. Esta
+    # e a coluna sobre a qual o teste de isolamento de RLS e construido.
+    id = models.TextField(primary_key=True, db_column="id")
+    barbearia_id = models.TextField(db_column="barbeariaId")
     nome = models.TextField(db_column="nome")
     whatsapp = models.TextField(db_column="whatsapp")
     ativo = models.BooleanField(db_column="ativo")
