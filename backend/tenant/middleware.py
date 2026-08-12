@@ -57,3 +57,28 @@ class TenantMiddleware:
             request.barbearia = barbearia
 
         return self.get_response(request)
+
+
+class BarreiraAdminMiddleware:
+    """Fora do host do admin, o painel da plataforma NAO EXISTE.
+
+    A barreira e POSICIONAL: nenhuma rota de admin precisa lembrar de se
+    proteger, porque a partir de qualquer outro host elas nao sao alcancaveis.
+    Rota nova sob estes prefixos nasce protegida sem que ninguem decida nada.
+
+    404 e nao 403, de proposito: 403 confirmaria que o recurso existe.
+
+    Durante a travessia esta regra vive dos DOIS lados — aqui e no proxy.ts do
+    front. Nao e redundancia acidental: e o que faz uma rota atravessar sem
+    ficar desprotegida em nenhum instante.
+    """
+
+    PREFIXOS = ("/admin", "/api/admin")
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.path.startswith(self.PREFIXOS) and not request.eh_admin:
+            raise Http404("nao existe fora do host do admin")
+        return self.get_response(request)
