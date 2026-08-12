@@ -50,8 +50,21 @@ def test_aninhar_com_barbearia_falha_alto_em_vez_de_vazar(cenario):
     certo, da barbearia errada, sem erro nenhum. durable=True troca esse
     vazamento silencioso por RuntimeError na entrada do wrapper aninhado.
     Falhar alto aqui e o comportamento desejado, nao efeito colateral.
+
+    O `match` prende o teste na mensagem que o proprio Django emite para o
+    guarda de durabilidade, e nao em RuntimeError generico: um guarda escrito
+    a mao (`if connection.in_atomic_block: raise RuntimeError(...)`) tambem
+    passaria em `pytest.raises(RuntimeError)` sem provar nada sobre o
+    mecanismo real. E a asercao de linhas depois do `pytest.raises` prova a
+    propriedade que interessa — que o tenant de fora sobreviveu ao
+    aninhamento — e nao so que o guarda disparou: um guarda que levantasse
+    DEPOIS de rodar o set_config de dentro passaria no `pytest.raises` e
+    teria vazado o tenant do mesmo jeito.
     """
     with com_barbearia(cenario["brutus"].id):
-        with pytest.raises(RuntimeError):
+        with pytest.raises(RuntimeError, match="durable atomic block"):
             with com_barbearia(cenario["dontony"].id):
                 pass
+        assert list(Barbeiro.objects.values_list("nome", flat=True)) == [
+            "Barbeiro da Brutus"
+        ]
