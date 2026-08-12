@@ -35,5 +35,12 @@ def regex_de_origem(dominio_base: str) -> str:
     proibidos = "|".join(sorted(SUBDOMINIOS_RESERVADOS - {"admin"}))
     base = re.escape(dominio_base)
     # (?!…) recusa os reservados; [a-z0-9-]+ sem ponto recusa subdominio de
-    # subdominio; o $ ancorado recusa sufixo forjado (…localhost.malicioso.com).
-    return rf"^https?://(?!(?:{proibidos})\.)[a-z0-9-]+\.{base}(:\d+)?$"
+    # subdominio; a ancora de fim recusa sufixo forjado (…localhost.malicioso.com).
+    #
+    # `\Z`, e nao `$`: em Python o `$` tambem casa antes de um \n final (mesma
+    # pegadinha do comentario do SLUG_REGEX acima), e quem chama este regex e
+    # o django-cors-headers com `re.match` — nunca `re.fullmatch`. O truque do
+    # SLUG_REGEX (fullmatch sem ancora) nao serve aqui porque quem decide o
+    # metodo de match e a biblioteca, nao este modulo; a unica defesa
+    # disponivel e trocar a ancora por uma que nao cede ao \n.
+    return rf"^https?://(?!(?:{proibidos})\.)[a-z0-9-]+\.{base}(:\d+)?\Z"
