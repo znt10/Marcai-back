@@ -2,7 +2,24 @@ import pytest
 
 from tenant.models import Barbearia, Barbeiro
 
-pytestmark = pytest.mark.django_db(databases=["default", "owner"])
+# transaction=True e obrigatorio aqui pelas mesmas duas razoes que valem para
+# todo outro arquivo de teste de banco deste repo (Global Constraint):
+#
+# 1. Sem ele, pytest-django embrulha os dois aliases numa unica TestCase
+#    atomica. O TRUNCATE da fixture `limpar_banco` roda como `owner` e pede
+#    AccessExclusiveLock em Barbearia; qualquer leitura pelo alias `default`
+#    (mesmo em OUTRO teste, na mesma sessao) fica esperando esse lock para
+#    sempre — a suite trava sem mensagem nenhuma em vez de falhar. Este
+#    arquivo so escapa disso hoje porque nenhum dos tres testes le por
+#    `default` (o unico que le usa `.using("owner")|` explicitamente); e
+#    latente, e este e o arquivo obvio para a proxima fatia acrescentar teste
+#    de model.
+# 2. TestCase-owned atomic tambem e isento da checagem de durabilidade do
+#    Django — entao um `com_barbearia(durable=True)` chamado de dentro de um
+#    teste sem transaction=True degrada silenciosamente para um savepoint
+#    comum em vez de barrar o aninhamento, reabrindo a troca de tenant que o
+#    durable=True existe para impedir.
+pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
 
 def test_le_a_barbearia_que_o_cenario_criou(cenario):
