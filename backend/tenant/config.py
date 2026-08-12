@@ -1,4 +1,5 @@
 import re
+from urllib.parse import urlsplit
 
 # Espelha o SUBDOMINIOS_RESERVADOS de front/src/lib/config.ts. Divergir daqui
 # significa um subdominio que um lado trata como barbearia e o outro nao.
@@ -44,3 +45,34 @@ def regex_de_origem(dominio_base: str) -> str:
     # metodo de match e a biblioteca, nao este modulo; a unica defesa
     # disponivel e trocar a ancora por uma que nao cede ao \n.
     return rf"^https?://(?!(?:{proibidos})\.)[a-z0-9-]+\.{base}(:\d+)?\Z"
+
+
+def origem_e_permitida(origem: str, host: str, dominio_base: str) -> bool:
+    """Decide se uma Origin pode ler a resposta desta requisicao — a checagem
+    completa que o django-cors-headers usa via `check_request_enabled`
+    (backend/tenant/cors.py conecta o receiver; leia o comentario de la antes
+    de mexer aqui, ele explica por que o regex NAO fica mais em
+    CORS_ALLOWED_ORIGIN_REGEXES).
+
+    Dois filtros, os dois obrigatorios:
+
+    1. FORMA (`regex_de_origem`): a origem precisa ter cara de subdominio nao
+       reservado de `dominio_base` — ou `admin.<dominio_base>`, a excecao que
+       a propria funcao acima documenta. Fecha a porta pra dominio alheio,
+       sufixo forjado e subdominio de subdominio.
+
+    2. PAR: o hostname da origem tem que ser IGUAL ao hostname do Host real
+       da requisicao. Comparar os dois inteiros (com porta) falha para todo
+       pedido legitimo — a origem chega em `:3000` (Next) e o Host em `:8000`
+       (Django) — por isso os dois lados sao truncados na porta antes de
+       comparar. Isto e o que a FORMA sozinha nao sabe fazer: sem o par,
+       `dontony.localhost:3000` (forma valida) lia `brutus.localhost:8000`
+       (achado da revisao final). `admin.<dominio_base>` nao precisa de
+       excecao extra aqui: seu hostname so bate com o hostname do proprio
+       host do admin, entao a mesma regra de igualdade ja cobre o caso.
+    """
+    if not re.match(regex_de_origem(dominio_base), origem):
+        return False
+    origem_host = (urlsplit(origem).hostname or "").lower()
+    host_sem_porta = host.split(":")[0].lower()
+    return origem_host == host_sem_porta

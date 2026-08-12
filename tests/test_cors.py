@@ -89,3 +89,47 @@ def test_escrita_com_o_header_passa(client, cenario):
 def test_get_nao_precisa_do_header(client, cenario):
     r = client.get("/api/saude", headers={"host": "brutus.localhost"})
     assert r.status_code == 200
+
+
+# O regex sozinho (testes acima) so pergunta "essa origem tem cara de
+# subdominio nao reservado de DOMINIO_BASE?" — nunca contra QUAL host a
+# requisicao chegou. `dontony.localhost:3000` bate a forma e, sem a checagem
+# de par, ganhava o cabecalho mesmo lendo `brutus.localhost:8000` (achado da
+# revisao final). Estes quatro testes cobrem o PAR origem/host, nao so a
+# forma da origem.
+def test_par_correspondente_e_aceito(client, cenario):
+    r = client.get(
+        "/api/saude",
+        headers={"host": "brutus.localhost:8000", "origin": "http://brutus.localhost:3000"},
+    )
+    assert r["Access-Control-Allow-Origin"] == "http://brutus.localhost:3000"
+    assert r["Access-Control-Allow-Credentials"] == "true"
+
+
+def test_par_de_barbearias_diferentes_e_recusado(client, cenario):
+    # A origem de uma barbearia lendo o host de OUTRA: e exatamente o cenario
+    # que a revisao final provou contra o servidor rodando
+    # (dontony.localhost:3000 -> brutus.localhost:8000).
+    r = client.get(
+        "/api/saude",
+        headers={"host": "brutus.localhost:8000", "origin": "http://dontony.localhost:3000"},
+    )
+    assert "Access-Control-Allow-Origin" not in r
+
+
+def test_admin_contra_o_proprio_host_e_aceito(client, cenario):
+    r = client.get(
+        "/api/saude",
+        headers={"host": "admin.localhost:8000", "origin": "http://admin.localhost:3000"},
+    )
+    assert r["Access-Control-Allow-Origin"] == "http://admin.localhost:3000"
+
+
+def test_admin_contra_host_de_barbearia_e_recusado(client, cenario):
+    # admin.<base> e origem legitima SO contra o host do admin — nao e um
+    # passe livre pra ler qualquer barbearia.
+    r = client.get(
+        "/api/saude",
+        headers={"host": "brutus.localhost:8000", "origin": "http://admin.localhost:3000"},
+    )
+    assert "Access-Control-Allow-Origin" not in r
