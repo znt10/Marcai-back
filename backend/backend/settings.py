@@ -32,23 +32,30 @@ USE_X_FORWARDED_HOST = False
 
 # CORS e da biblioteca (django-cors-headers, igual ao Unistock_Back). A unica
 # adaptacao obrigatoria: la a lista de origens e estatica, aqui a origem varia
-# por barbearia (brutus.localhost:3000, dontony.localhost:3000, …) — entao e
-# CORS_ALLOWED_ORIGIN_REGEXES, e o regex deriva de SUBDOMINIOS_RESERVADOS (ver
-# tenant/config.py) em vez de repetir a lista de reservados a mao.
-from tenant.config import regex_de_origem  # noqa: E402
-
+# por barbearia (brutus.localhost:3000, dontony.localhost:3000, …).
+#
+# NAO e CORS_ALLOWED_ORIGIN_REGEXES — foi, e saiu (revisao final). Aquele
+# regex so pergunta se a origem tem CARA de barbearia, nunca contra qual Host
+# ela chegou, e o django-cors-headers usa `check_request_enabled` OR'd com a
+# lista estatica (nunca AND'd) — entao um regex estatico continuando aceito
+# aqui bastaria sozinho pra liberar o cabecalho, e o sinal abaixo nunca
+# conseguiria RECUSAR uma origem que a lista estatica ja aceitou. Por isso a
+# checagem inteira (forma + par origem/host) mora agora so no receiver de
+# `corsheaders.signals.check_request_enabled` que `tenant/apps.py` conecta —
+# `tenant/cors.py` explica o mecanismo com a citacao exata da biblioteca.
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGIN_REGEXES = [regex_de_origem(DOMINIO_BASE)]
 # Sem acrescentar o nosso, o preflight recusa o X-Brutus-Cliente — e o sintoma
 # e a escrita falhando com um erro de CORS que nao menciona CSRF nenhum.
 CORS_ALLOW_HEADERS = [*default_headers, "x-brutus-cliente"]
 
-# Sem contrib.admin, contrib.auth nem sessions: eles criariam tabela num banco
-# de que o Prisma e dono (spec §8). Sem django_celery_beat pela mesma razao —
-# o beat usa o agendador de arquivo, e a agenda em tabela e da fatia 7.
+# Sem contrib.admin, contrib.auth, contrib.contenttypes nem sessions: todos os
+# quatro criariam tabela num banco de que o Prisma e dono (spec §8) —
+# contenttypes criaria django_content_type (e django_migrations junto, so de
+# existir uma migration para rodar) do mesmo jeito que os outros tres criariam
+# a deles. Sem django_celery_beat pela mesma razao — o beat usa o agendador de
+# arquivo, e a agenda em tabela e da fatia 7.
 INSTALLED_APPS = [
-    "django.contrib.contenttypes",
     "django.contrib.staticfiles",
     "corsheaders",
     "rest_framework",
