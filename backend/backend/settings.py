@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+from corsheaders.defaults import default_headers
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "inseguro-so-em-dev")
@@ -28,6 +30,20 @@ ALLOWED_HOSTS = [f".{DOMINIO_BASE}", DOMINIO_BASE]
 # precisa subir, testar e ir para producao sozinho (spec §5).
 USE_X_FORWARDED_HOST = False
 
+# CORS e da biblioteca (django-cors-headers, igual ao Unistock_Back). A unica
+# adaptacao obrigatoria: la a lista de origens e estatica, aqui a origem varia
+# por barbearia (brutus.localhost:3000, dontony.localhost:3000, …) — entao e
+# CORS_ALLOWED_ORIGIN_REGEXES, e o regex deriva de SUBDOMINIOS_RESERVADOS (ver
+# tenant/config.py) em vez de repetir a lista de reservados a mao.
+from tenant.config import regex_de_origem  # noqa: E402
+
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGIN_REGEXES = [regex_de_origem(DOMINIO_BASE)]
+# Sem acrescentar o nosso, o preflight recusa o X-Brutus-Cliente — e o sintoma
+# e a escrita falhando com um erro de CORS que nao menciona CSRF nenhum.
+CORS_ALLOW_HEADERS = [*default_headers, "x-brutus-cliente"]
+
 # Sem contrib.admin, contrib.auth nem sessions: eles criariam tabela num banco
 # de que o Prisma e dono (spec §8). Sem django_celery_beat pela mesma razao —
 # o beat usa o agendador de arquivo, e a agenda em tabela e da fatia 7.
@@ -40,6 +56,12 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # Primeiro de todos: ele responde o preflight OPTIONS e sai, sem passar
+    # pela resolucao de tenant. Preflight nao carrega Host de barbearia.
+    "corsheaders.middleware.CorsMiddleware",
+    # Antes do TenantMiddleware de proposito: um POST sem o header e recusado
+    # sem nem consultar o banco. Recusa barata vem antes de trabalho caro.
+    "tenant.middleware.ClienteMiddleware",
     "tenant.middleware.TenantMiddleware",
     "tenant.middleware.BarreiraAdminMiddleware",
 ]

@@ -16,3 +16,24 @@ SLUG_REGEX = re.compile(r"[a-z0-9][a-z0-9-]{1,30}[a-z0-9]")
 # 60_000 ms do lado Next. Aqui em segundos, porque e o que o time.monotonic()
 # devolve.
 TTL_CACHE_TENANT_S = 60.0
+
+
+def regex_de_origem(dominio_base: str) -> str:
+    """Regex de origem para o django-cors-headers.
+
+    A biblioteca so aceita lista estatica ou lista de regex, e aqui a origem
+    varia por barbearia — entao e regex. O `slug.py` nao pode ser chamado de
+    dentro dela, e por isso a regra e reconstruida aqui.
+
+    O que NAO se pode fazer e reescrever a lista de reservados a mao: ela sai
+    de SUBDOMINIOS_RESERVADOS, para que um nome novo la feche a porta aqui
+    sozinho. Duas listas separadas param de acompanhar uma a outra em silencio.
+
+    `admin` sai da exclusao: ele e reservado como SLUG (nao e barbearia), mas e
+    uma origem legitima — o painel da plataforma chama a API a partir dele.
+    """
+    proibidos = "|".join(sorted(SUBDOMINIOS_RESERVADOS - {"admin"}))
+    base = re.escape(dominio_base)
+    # (?!…) recusa os reservados; [a-z0-9-]+ sem ponto recusa subdominio de
+    # subdominio; o $ ancorado recusa sufixo forjado (…localhost.malicioso.com).
+    return rf"^https?://(?!(?:{proibidos})\.)[a-z0-9-]+\.{base}(:\d+)?$"

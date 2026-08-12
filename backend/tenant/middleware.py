@@ -1,7 +1,7 @@
 import time
 
 from django.conf import settings
-from django.http import Http404
+from django.http import Http404, JsonResponse
 
 from .config import TTL_CACHE_TENANT_S
 from .models import Barbearia
@@ -27,6 +27,32 @@ def _buscar_por_slug(slug: str) -> Barbearia | None:
     valor = Barbearia.objects.filter(slug=slug, ativo=True).first()
     _cache[slug] = (valor, time.monotonic() + TTL_CACHE_TENANT_S)
     return valor
+
+
+class ClienteMiddleware:
+    """Exige `X-Brutus-Cliente` em todo verbo que escreve.
+
+    Front e back dividem o mesmo host e diferem so na porta: e cross-ORIGIN
+    (o CORS se aplica, e disso cuida a biblioteca) e same-SITE (o SameSite=Lax
+    NAO bloqueia). A segunda metade e o buraco — entre origens same-site o Lax
+    nao protege nada.
+
+    Este header e a tampa: ele nao esta na lista de cabecalhos simples de CORS,
+    entao exigi-lo obriga preflight, e preflight recusado impede o navegador de
+    mandar o pedido com credenciais. O valor nao importa e nao e segredo — o
+    que protege e a EXIGENCIA dele, nao o conteudo.
+    """
+
+    VERBOS_QUE_ESCREVEM = {"POST", "PATCH", "PUT", "DELETE"}
+    HEADER = "HTTP_X_BRUTUS_CLIENTE"
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.method in self.VERBOS_QUE_ESCREVEM and self.HEADER not in request.META:
+            return JsonResponse({"erro": "pedido sem cliente"}, status=403)
+        return self.get_response(request)
 
 
 class TenantMiddleware:
