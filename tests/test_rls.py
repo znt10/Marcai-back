@@ -39,3 +39,19 @@ def test_a_variavel_morre_com_a_transacao(cenario):
 def test_barbearia_inexistente_nao_enxerga_nada(cenario):
     with com_barbearia(str(uuid.uuid4())):
         assert Barbeiro.objects.count() == 0
+
+
+def test_aninhar_com_barbearia_falha_alto_em_vez_de_vazar(cenario):
+    """Aninhar com_barbearia dentro de com_barbearia seria SAVEPOINT (atomic
+    aninhado no Django), e o Postgres mantem o SET LOCAL do
+    'app.barbearia_id' vivo depois do RELEASE SAVEPOINT. Sem durable=True,
+    sair do bloco de dentro NAO devolveria o tenant de fora: o resto do bloco
+    externo leria e escreveria como o tenant de dentro — dado com cara de
+    certo, da barbearia errada, sem erro nenhum. durable=True troca esse
+    vazamento silencioso por RuntimeError na entrada do wrapper aninhado.
+    Falhar alto aqui e o comportamento desejado, nao efeito colateral.
+    """
+    with com_barbearia(cenario["brutus"].id):
+        with pytest.raises(RuntimeError):
+            with com_barbearia(cenario["dontony"].id):
+                pass
