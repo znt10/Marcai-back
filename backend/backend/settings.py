@@ -108,6 +108,12 @@ CELERY_BROKER_URL = os.environ.get("REDIS_URL", "redis://redis:6379/1")
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_TIMEZONE = "America/Sao_Paulo"
 
+# Cadencia alta de proposito: e um sinal de vida, e um sinal de vida que
+# aparece uma vez por hora nao serve para descobrir que o beat morreu.
+CELERY_BEAT_SCHEDULE = {
+    "ping": {"task": "tenant.tasks.ping", "schedule": 60.0},
+}
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 STATIC_URL = "static/"
 USE_TZ = True

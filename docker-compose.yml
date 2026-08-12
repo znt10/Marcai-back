@@ -151,6 +151,35 @@ services:
       redis: { condition: service_started }
     networks: [brutus]
 
+  worker:
+    build: { context: . }
+    # `-Q celery` explicito: fila padrao com nome escrito e uma fila a menos
+    # para descobrir no dia em que houver duas.
+    command: celery -A backend worker -l info -Q celery
+    environment: &ambiente_django
+      PGDATABASE: brutus
+      PGHOST: db
+      PGPORT: "5432"
+      DOMINIO_BASE: localhost
+      REDIS_URL: redis://redis:6379/1
+    volumes: [".:/app"]
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+    networks: [brutus]
+
+  beat:
+    build: { context: . }
+    # O agendador de ARQUIVO (padrao do Celery). O django-celery-beat, que
+    # guarda a agenda em tabela, e da fatia 7: aqui ele criaria tabela num
+    # banco de que o Prisma e dono.
+    command: celery -A backend beat -l info --schedule=/tmp/celerybeat-schedule
+    environment: *ambiente_django
+    volumes: [".:/app"]
+    depends_on:
+      redis: { condition: service_started }
+    networks: [brutus]
+
   # Duas tarefas que precisam de `psql`, e é por isso que não moram no
   # `agendador`: aquele é imagem de `curl`, e cada serviço fica com a ferramenta
   # que a tarefa pede em vez de um contêiner que faz tudo mal.
