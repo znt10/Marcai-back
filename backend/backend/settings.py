@@ -4,7 +4,15 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "inseguro-so-em-dev")
-DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
+
+# Default "0", nao "1": variavel que ninguem pos nao deve ligar depuracao.
+# Sob DEBUG=True a pagina de erro do Django renderiza a mensagem de qualquer
+# excecao (inclusive Http404) verbatim para o cliente — errar para o lado
+# seguro aqui e o que evita a barreira do admin (tenant/middleware.py)
+# vazando por que ela bloqueou. O docker-compose.yml poe DJANGO_DEBUG=1
+# explicito no servico `api`, entao o desenvolvimento nao perde a pagina de
+# erro; so quem nao disse nada e que passa a rodar sem ela.
+DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
 
 # O dominio que o slug.py compara com o Host. Sem esquema e sem porta, igual
 # ao NEXT_PUBLIC_DOMINIO_BASE do outro lado — os dois precisam concordar, e a

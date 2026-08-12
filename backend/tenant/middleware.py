@@ -80,5 +80,10 @@ class BarreiraAdminMiddleware:
 
     def __call__(self, request):
         if request.path.startswith(self.PREFIXOS) and not request.eh_admin:
-            raise Http404("nao existe fora do host do admin")
+            # Http404 SEM texto, de proposito: sob DEBUG=True o Django
+            # renderiza a mensagem da excecao verbatim na pagina de erro
+            # (<pre class="exception_value">), e "nao existe fora do host do
+            # admin" explicaria em portugues exatamente o que a barreira
+            # existe para esconder — pior que o 403 que a tarefa recusou.
+            raise Http404
         return self.get_response(request)
