@@ -31,7 +31,7 @@ INSTALLED_APPS = [
     "tenant",
 ]
 
-MIDDLEWARE = []
+MIDDLEWARE = ["tenant.middleware.TenantMiddleware"]
 
 ROOT_URLCONF = "backend.urls"
 WSGI_APPLICATION = "backend.wsgi.application"

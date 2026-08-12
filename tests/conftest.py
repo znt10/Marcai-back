@@ -45,6 +45,10 @@ def limpar_banco(request):
                 '"HorarioTrabalho", "BarbeiroServico", "Servico", "Barbeiro", '
                 '"Barbearia" RESTART IDENTITY CASCADE'
             )
+
+        from tenant.middleware import _limpar_cache_tenant
+
+        _limpar_cache_tenant()
     yield
 
 
