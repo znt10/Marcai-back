@@ -37,16 +37,36 @@ def _nome_do_model(no: ast.AST) -> str | None:
     return None
 
 
+def _dentro_do_wrapper(arvore: ast.AST) -> set[int]:
+    """Linhas cobertas por um `with com_barbearia(...)`."""
+    cobertas: set[int] = set()
+    for no in ast.walk(arvore):
+        if not isinstance(no, ast.With):
+            continue
+        chama_wrapper = any(
+            isinstance(item.context_expr, ast.Call)
+            and isinstance(item.context_expr.func, ast.Name)
+            and item.context_expr.func.id == "com_barbearia"
+            for item in no.items
+        )
+        if chama_wrapper:
+            for filho in ast.walk(no):
+                if hasattr(filho, "lineno"):
+                    cobertas.add(filho.lineno)
+    return cobertas
+
+
 def _consultas_de_tenant(caminho: pathlib.Path) -> list[str]:
     """Acha `Model.objects` e `modulo.Model.objects` para qualquer model de
     tenant."""
     arvore = ast.parse(caminho.read_text(encoding="utf-8"))
+    cobertas = _dentro_do_wrapper(arvore)
     achados = []
     for no in ast.walk(arvore):
         if not (isinstance(no, ast.Attribute) and no.attr == "objects"):
             continue
         nome = _nome_do_model(no.value)
-        if nome in MODELS_DE_TENANT:
+        if nome in MODELS_DE_TENANT and no.lineno not in cobertas:
             achados.append(f"{caminho.name}:{no.lineno} {nome}.objects")
     return achados
 
