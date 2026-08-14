@@ -60,6 +60,9 @@ INSTALLED_APPS = [
     "corsheaders",
     "rest_framework",
     "tenant",
+    # A superficie HTTP versionada (fatia 1). Sem model proprio: os models
+    # managed=False continuam em `tenant`. Ver app/apps.py.
+    "app",
 ]
 
 MIDDLEWARE = [
@@ -71,6 +74,13 @@ MIDDLEWARE = [
     "tenant.middleware.ClienteMiddleware",
     "tenant.middleware.TenantMiddleware",
     "tenant.middleware.BarreiraAdminMiddleware",
+    # Por ultimo: os dois crivos acima recusam por HOST (admin ou nao), e este
+    # recusa por CAMINHO. Deixando-o no fim, um pedido que ja morreu por host
+    # nao passa por aqui — os prefixos dos dois nao se cruzam hoje, entao a
+    # ordem entre eles nao muda resposta nenhuma, mas manter "host primeiro,
+    # caminho depois" e o que faz a lista continuar previsivel quando alguem
+    # acrescentar o proximo prefixo.
+    "tenant.middleware.CrivoPainelMiddleware",
 ]
 
 ROOT_URLCONF = "backend.urls"
