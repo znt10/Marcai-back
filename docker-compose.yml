@@ -1,5 +1,6 @@
 services:
   db:
+    container_name: Marcai-back-db
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: postgres
@@ -19,6 +20,7 @@ services:
   # O Django. Estagio unico, por isso a chave `target` do front (que tem
   # `dev`) nao existe aqui — nao ha o que escolher.
   api:
+    container_name: Marcai-back-api
     build: { context: . }
     environment:
       PGDATABASE: brutus
@@ -27,6 +29,13 @@ services:
       DOMINIO_BASE: localhost
       DJANGO_DEBUG: "1"
       REDIS_URL: redis://redis:6379/1
+      # Do .env do host. Sem esta linha, settings.py:8 cai no padrão
+      # "inseguro-so-em-dev" e nada quebra — que é justamente o perigo.
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?defina DJANGO_SECRET_KEY no .env}
+      # O MESMO valor do .env do front. O cookie de sessao e emitido por um
+      # lado e lido pelo outro durante a travessia: segredos diferentes
+      # deslogam todo mundo a cada rota que atravessa.
+      SESSAO_JWT_SECRET: ${SESSAO_JWT_SECRET:?defina SESSAO_JWT_SECRET no .env}
     ports: ["8000:8000"]
     volumes: [".:/app"]
     depends_on:
@@ -45,6 +54,7 @@ services:
   # mensagem sai entre 50 e 60 minutos antes. Tique MAIOR que a janela perderia
   # agendamento — quem entra nela entre dois tiques nunca seria visto.
   agendador:
+    container_name: Marcai-back-agendador
     image: curlimages/curl:8.11.1
     restart: unless-stopped
     environment:
@@ -83,6 +93,7 @@ services:
   # Versão PINADA: `latest` num serviço que guarda sessão de WhatsApp é convite
   # para uma atualização derrubar a conexão numa terça à tarde.
   evolution:
+    container_name: Marcai-back-evolution
     image: evoapicloud/evolution-api:v2.3.7
     restart: unless-stopped
     ports: ["8080:8080"]
@@ -152,6 +163,7 @@ services:
     networks: [brutus]
 
   worker:
+    container_name: Marcai-back-worker
     build: { context: . }
     # `-Q celery` explicito: fila padrao com nome escrito e uma fila a menos
     # para descobrir no dia em que houver duas.
@@ -162,6 +174,11 @@ services:
       PGPORT: "5432"
       DOMINIO_BASE: localhost
       REDIS_URL: redis://redis:6379/1
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?defina DJANGO_SECRET_KEY no .env}
+      # O MESMO valor do .env do front. O cookie de sessao e emitido por um
+      # lado e lido pelo outro durante a travessia: segredos diferentes
+      # deslogam todo mundo a cada rota que atravessa.
+      SESSAO_JWT_SECRET: ${SESSAO_JWT_SECRET:?defina SESSAO_JWT_SECRET no .env}
     volumes: [".:/app"]
     depends_on:
       db: { condition: service_healthy }
@@ -169,6 +186,7 @@ services:
     networks: [brutus]
 
   beat:
+    container_name: Marcai-back-beat
     build: { context: . }
     # O agendador de ARQUIVO (padrao do Celery). O django-celery-beat, que
     # guarda a agenda em tabela, e da fatia 7: aqui ele criaria tabela num
@@ -197,6 +215,7 @@ services:
   # De hora em hora, não a cada 10 min: recusa que já aconteceu não fica mais
   # urgente sendo relida seis vezes por hora.
   zelador:
+    container_name: Marcai-back-zelador
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -212,6 +231,7 @@ services:
   # Sem ele, a mensagem é aceita (`201 / PENDING`) e nunca transmitida.
   # `appendonly` para a fila sobreviver a reinício do contêiner.
   redis:
+    container_name: Marcai-back-redis
     image: redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]

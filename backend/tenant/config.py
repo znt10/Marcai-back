@@ -18,6 +18,34 @@ SLUG_REGEX = re.compile(r"[a-z0-9][a-z0-9-]{1,30}[a-z0-9]")
 # devolve.
 TTL_CACHE_TENANT_S = 60.0
 
+# ---- Sessao do barbeiro (front/src/lib/config.ts, cliente 9.5, painel 3) ----
+#
+# Os tres espelham SESSAO_BARBEIRO_HORAS, BARBEIRO_TRAVA_TENTATIVAS e
+# BARBEIRO_TRAVA_MIN. Divergir aqui nao quebra nada de imediato, e esse e o
+# problema: com 12h de um lado e 2h do outro, o barbeiro seria deslogado no
+# meio do turno dependendo de QUAL lado emitiu o cookie naquele dia.
+SESSAO_BARBEIRO_HORAS = 12
+SESSAO_BARBEIRO_COOKIE = "sessao"
+BARBEIRO_TRAVA_TENTATIVAS = 5
+BARBEIRO_TRAVA_MIN = 15
+
+# ---- A grade de horarios (front/src/lib/config.ts) ----
+#
+# GRANULARIDADE e o passo da grade e e INDEPENDENTE da duracao do servico: um
+# corte de 40 min comeca de 30 em 30 minutos, nao de 40 em 40.
+GRANULARIDADE_MIN = 30
+# Quanto tempo tem que faltar para um horario ainda poder ser oferecido. Zero
+# hoje — o cliente pode marcar para daqui a cinco minutos.
+ANTECEDENCIA_MINIMA_MIN = 0
+# Quantos dias a home mostra por padrao, e o teto que uma query pode pedir.
+DIAS_NA_HOME = 2
+JANELA_MAXIMA_DIAS = 60
+
+# Espelha SENHA_MINIMA. E o unico numero desta lista que o usuario LE (a rota
+# do convite o cita na mensagem de erro), entao divergir daqui vira uma tela
+# que promete 8 e um back que exige 10.
+SENHA_MINIMA = 8
+
 
 def regex_de_origem(dominio_base: str) -> str:
     """Regex de origem para o django-cors-headers.
