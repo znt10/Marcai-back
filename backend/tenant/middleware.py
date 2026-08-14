@@ -3,7 +3,7 @@ import time
 from django.conf import settings
 from django.http import Http404, JsonResponse
 
-from .config import TTL_CACHE_TENANT_S
+from .config import SESSAO_BARBEIRO_COOKIE, TTL_CACHE_TENANT_S
 from .models import Barbearia
 from .slug import eh_host_admin, extrair_slug
 
@@ -83,6 +83,63 @@ class TenantMiddleware:
             request.barbearia = barbearia
 
         return self.get_response(request)
+
+
+class CrivoPainelMiddleware:
+    """O gemeo Django do crivo do `proxy.ts`.
+
+    O `proxy.ts` protege `/painel` e `/api/painel/*` por POSICAO, conferindo a
+    sessao antes de qualquer rota rodar. Quando um prefixo `/api/painel/*`
+    entra no `MIGRADAS`, o navegador passa a falar direto com a porta 8000 e
+    nunca mais encosta no `proxy.ts` — sem este middleware, a rota nasceria
+    aberta.
+
+    ATE A FATIA 1 ELE NEGAVA TUDO, de proposito: o criterio de verdade exige
+    consulta ao banco, e falhar fechado era a unica resposta honesta enquanto
+    ela nao existia. Agora ela existe, e a recusa seca deu lugar a leitura do
+    cookie. O lugar sempre esteve certo; mudou so o criterio, como estava
+    escrito aqui que mudaria.
+
+    A diferenca em relacao ao lado Next e que aqui o crivo faz o exame INTEIRO,
+    e nao a peneira grossa. La ele tinha que ser dividido em dois — o
+    `proxy.ts` roda em Edge, onde o Prisma nao roda, entao `bid`, `ativo` e
+    `tokenVersion` ficaram para as rotas (`sessao-painel.ts`). O Django nao tem
+    essa restricao: as tres conferencias cabem aqui, e o resultado fica
+    pendurado no request para a view nao repeti-las.
+
+    O caminho fica em `app.services.sessao` e nao aqui dentro porque `/api/auth/eu`
+    precisa exatamente do mesmo exame e NAO esta sob estes prefixos. Duas
+    copias da regra seriam duas regras.
+    """
+
+    PREFIXOS = ("/painel", "/api/painel")
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.path.startswith(self.PREFIXOS):
+            from app.services.sessao import da_requisicao
+
+            if da_requisicao(request) is None:
+                return nao_autorizado()
+        return self.get_response(request)
+
+
+def nao_autorizado() -> JsonResponse:
+    """401 com o cookie APAGADO — copia do `naoAutorizado` do sessao-painel.ts,
+    e o apagamento e a parte que importa.
+
+    Sessao morta que fica no navegador vira 401 em laco: a tela seguinte pede,
+    leva 401, redireciona para o login, o login redireciona de volta porque o
+    cookie ainda esta la. O barbeiro liga achando que o sistema caiu.
+
+    A mensagem sai sem acento porque este arquivo e ASCII; o front nunca a
+    mostra (ele redireciona no 401), e o corpo existe so para quem depura.
+    """
+    res = JsonResponse({"erro": "nao autorizado"}, status=401)
+    res.delete_cookie(SESSAO_BARBEIRO_COOKIE, path="/")
+    return res
 
 
 class BarreiraAdminMiddleware:

@@ -9,6 +9,17 @@ celery==5.5.3
 redis==6.4.0
 requests==2.32.3
 
+# A sessao do barbeiro. PyJWT, e NAO djangorestframework-simplejwt como no
+# Unistock: o simplejwt depende de django.contrib.auth (usuario, permissao,
+# AUTH_USER_MODEL), que esta fora do INSTALLED_APPS de proposito - ele criaria
+# tabela num banco de que o Prisma e dono. PyJWT so assina e confere, que e
+# tudo o que este lado precisa fazer para falar a mesma lingua do `jose`.
+PyJWT==2.10.1
+# Para conferir a senha que o `@node-rs/argon2` gravou. argon2id e um padrao
+# aberto e o formato codificado carrega os proprios parametros, entao os dois
+# lados leem o hash um do outro sem combinar nada.
+argon2-cffi==25.1.0
+
 # desenvolvimento
 pytest==8.*
 pytest-django==4.*
