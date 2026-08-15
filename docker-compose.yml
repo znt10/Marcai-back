@@ -36,6 +36,19 @@ services:
       # lado e lido pelo outro durante a travessia: segredos diferentes
       # deslogam todo mundo a cada rota que atravessa.
       SESSAO_JWT_SECRET: ${SESSAO_JWT_SECRET:?defina SESSAO_JWT_SECRET no .env}
+      # Nome de servico, resolvivel so DENTRO da rede do compose — igual ao
+      # `app` do front. As rotas do painel (fatia 4) mandam WhatsApp
+      # fire-and-forget (confirmacao, cancelamento, convite); sem isto o envio
+      # cai no log (`app/services/whatsapp.py`), o mesmo comportamento do
+      # front quando falta EVOLUTION_API_URL.
+      EVOLUTION_API_URL: http://evolution:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-brutus}
+      # Onde o link do convite abre — o FRONT, nunca o Django. Espelha
+      # NEXT_PUBLIC_URL_BASE do outro lado; as duas tem que apontar para a
+      # mesma origem, senao o convite emitido por um lado leva a um link que
+      # o outro nao serve.
+      URL_BASE: ${URL_BASE:-http://localhost:3000}
     ports: ["8000:8000"]
     volumes: [".:/app"]
     depends_on:

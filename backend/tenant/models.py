@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 
 
 class Barbearia(models.Model):
@@ -87,6 +88,14 @@ class Barbeiro(models.Model):
     convite_expira_em = models.DateTimeField(null=True, db_column="conviteExpiraEm")
     tentativas_login = models.IntegerField(db_column="tentativasLogin", default=0)
     bloqueado_ate = models.DateTimeField(null=True, db_column="bloqueadoAte")
+    # Os dois que a fatia 4 (equipe) precisa. `desativado_em` nulo ate
+    # desativar, de novo nulo ao reativar — a mesma logica de "ausencia e o
+    # estado" do resto do schema. `criado_em` precisa de `default=timezone.now`
+    # porque o cadastro de barbeiro (equipe POST) CRIA a linha, e o Django
+    # manda todas as colunas declaradas no INSERT — sem default aqui a criacao
+    # mandaria NULL contra uma coluna NOT NULL.
+    desativado_em = models.DateTimeField(null=True, db_column="desativadoEm")
+    criado_em = models.DateTimeField(db_column="criadoEm", default=timezone.now)
 
     class Meta:
         managed = False
@@ -212,6 +221,13 @@ class Bloqueio(models.Model):
     minutos_fim = models.IntegerField(null=True, db_column="minutosFim")
     inicio = models.DateTimeField(null=True, db_column="inicio")
     fim = models.DateTimeField(null=True, db_column="fim")
+    # Os dois que a fatia 4 (expediente) le: `observacao` no GET do painel e
+    # `criado_em` como desempate na listagem (bloqueio semanal antes do
+    # pontual, e dentro de cada grupo o mais antigo primeiro). `criado_em`
+    # ganha default pelo mesmo motivo do Barbeiro acima: POST /bloqueios cria
+    # a linha.
+    observacao = models.TextField(null=True, db_column="observacao")
+    criado_em = models.DateTimeField(db_column="criadoEm", default=timezone.now)
 
     class Meta:
         managed = False
@@ -267,6 +283,10 @@ class Agendamento(models.Model):
     fim = models.DateTimeField(db_column="fim")
     duracao_min = models.IntegerField(db_column="duracaoMin")
     status = models.TextField(db_column="status", default="CONFIRMADO")
+    # So a fatia 4 (cancelamento pelo painel) escreve nesta coluna. Nulo na
+    # criacao (omitida do INSERT quando a chamada nao a cita, ver Bloqueio),
+    # gravada com o instante do cancelamento no update de status.
+    cancelado_em = models.DateTimeField(null=True, db_column="canceladoEm")
 
     class Meta:
         managed = False
