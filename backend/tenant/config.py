@@ -61,6 +61,16 @@ DURACAO_MAXIMA_MIN = 60
 # um back que aplica outro.
 CONVITE_VALIDADE_HORAS = 48
 
+# ---- Lembrete (front/src/lib/config.ts) ----
+#
+# So a metade que `lembrete_ao_criar` usa: dentro de quantos minutos antes do
+# horario um agendamento nasce JA avisado, para o cron do lembrete (fatia
+# futura) nunca o ver — sem isso, todo encaixe de balcao (o painel marca a 30
+# min de antecedencia por padrao) mandaria confirmacao e "Lembrete:" em
+# minutos. A outra metade (LEMBRETE_TIQUE_MIN, a cadencia do agendador) nao
+# e' lida por nenhum codigo do Django ainda.
+LEMBRETE_ANTECEDENCIA_MIN = 60
+
 
 def regex_de_origem(dominio_base: str) -> str:
     """Regex de origem para o django-cors-headers.

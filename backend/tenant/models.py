@@ -292,6 +292,10 @@ class Agendamento(models.Model):
     # criacao (omitida do INSERT quando a chamada nao a cita, ver Bloqueio),
     # gravada com o instante do cancelamento no update de status.
     cancelado_em = models.DateTimeField(null=True, db_column="canceladoEm")
+    # Nulo ate o AGENDAR decidir: marcar dentro da janela do lembrete grava
+    # `agora` aqui na criacao (a confirmacao JA e' o lembrete), e o cron
+    # (fatia futura) nunca ve esse agendamento.
+    lembrete_enviado_em = models.DateTimeField(null=True, db_column="lembreteEnviadoEm")
 
     class Meta:
         managed = False

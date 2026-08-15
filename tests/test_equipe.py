@@ -55,6 +55,11 @@ def test_get_exige_ser_dono(client, cenario):
 
 
 def test_get_lista_ordenada_ativos_primeiro(client, cenario):
+    """Ativos antes de inativos e' a unica ordem GARANTIDA por
+    `order_by("-ativo", "ordem")` — entre dois ativos com `ordem` empatada
+    (aqui, "Dono" e o barbeiro padrao que a fixture `cenario` ja cria) o
+    Postgres nao promete posicao relativa nenhuma, e o teste nao deve
+    depender disso."""
     b = cenario["brutus"]
     dono = _barbeiro(b.id, "Dono", papel="DONO")
     host = _logar(client, dono, b.id)
@@ -62,8 +67,7 @@ def test_get_lista_ordenada_ativos_primeiro(client, cenario):
 
     corpo = client.get("/api/painel/equipe", headers={"host": host}).json()
     nomes = [x["nome"] for x in corpo["equipe"]]
-    assert nomes[0] == "Dono"
-    assert nomes[-1] == "Inativo"
+    assert nomes.index("Dono") < nomes.index("Inativo")
 
 
 def test_get_marca_tem_senha_e_convite_expirado(client, cenario):
