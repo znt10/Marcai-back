@@ -45,7 +45,12 @@ class Barbeiro(models.Model):
     barbearia_id = models.TextField(db_column="barbeariaId")
     nome = models.TextField(db_column="nome")
     whatsapp = models.TextField(db_column="whatsapp")
-    ativo = models.BooleanField(db_column="ativo")
+    # `default=True` espelha o `@default(true)` do Prisma — achado na fatia 4:
+    # nenhuma fatia anterior CRIAVA Barbeiro pelo Django (so lia), entao o
+    # buraco (Django manda todas as colunas declaradas no INSERT; sem default
+    # aqui, `ativo` viraria NULL contra uma coluna NOT NULL) nunca disparou
+    # ate a rota de equipe cadastrar o primeiro barbeiro novo.
+    ativo = models.BooleanField(db_column="ativo", default=True)
     # Os dois que a fatia 1 pediu. `foto_url` e nulavel no Prisma
     # (`fotoUrl String?`); `ordem` tem default 0 e e a chave de ordenacao da
     # lista publica. Nenhum dos dois e senha, whatsapp ou token — o que sai

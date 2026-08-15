@@ -82,6 +82,13 @@ def formatar_hora(quando: datetime) -> str:
     return _no_fuso(quando).strftime("%H:%M")
 
 
+def formatar_dia_curto(quando: datetime) -> str:
+    """"13/08" — porte de `formatarDiaCurto`. Usado so na recusa de
+    desativar barbeiro com agenda futura: pelo fuso da BARBEARIA, nao do
+    servidor, senao um horario das 22h daqui apontaria o dia seguinte."""
+    return _no_fuso(quando).strftime("%d/%m")
+
+
 def formatar_dia_longo(quando: datetime) -> str:
     """"qua 13 ago" — o dia SEM zero a esquerda, que e o que o `d` do date-fns
     faz e o que `%d` do strftime nao faz.

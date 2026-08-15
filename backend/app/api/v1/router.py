@@ -4,6 +4,13 @@ from .views.autenticacao import ConviteView, EuView, LoginView, LogoutView
 from .views.barbeiro_servicos import BarbeiroServicosView
 from .views.barbeiros import BarbeirosView
 from .views.bloqueios import BloqueioDetalheView, BloqueiosView
+from .views.equipe import (
+    EquipeConviteView,
+    EquipeDesativarView,
+    EquipeDetalheView,
+    EquipeReativarView,
+    EquipeView,
+)
 from .views.expediente import ExpedienteView
 from .views.horarios import DiasComVagaView, HorariosView
 from .views.servicos import ServicosView
@@ -66,5 +73,23 @@ urlpatterns = [
         "painel/bloqueios/<str:id>",
         BloqueioDetalheView.as_view(),
         name="painel-bloqueios-detalhe",
+    ),
+    # Fatia 4, bloco 3 — equipe. So o dono, nas cinco.
+    path("painel/equipe", EquipeView.as_view(), name="painel-equipe"),
+    path("painel/equipe/<str:id>", EquipeDetalheView.as_view(), name="painel-equipe-detalhe"),
+    path(
+        "painel/equipe/<str:id>/desativar",
+        EquipeDesativarView.as_view(),
+        name="painel-equipe-desativar",
+    ),
+    path(
+        "painel/equipe/<str:id>/reativar",
+        EquipeReativarView.as_view(),
+        name="painel-equipe-reativar",
+    ),
+    path(
+        "painel/equipe/<str:id>/convite",
+        EquipeConviteView.as_view(),
+        name="painel-equipe-convite",
     ),
 ]
