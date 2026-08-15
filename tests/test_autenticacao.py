@@ -364,14 +364,14 @@ def test_logout_apaga_o_cookie_e_funciona_sempre(client, cenario):
 
 def test_o_crivo_do_painel_deixou_de_negar_tudo(client, cenario):
     """Ate a fatia 1 ele negava tudo de proposito, porque o criterio de
-    verdade nao existia. Agora existe: com sessao valida o pedido ATRAVESSA o
-    middleware — e cai em 404 porque nenhuma rota de painel foi escrita ainda,
-    o que e a resposta certa. 404 aqui prova que o crivo deixou passar; 401
-    provaria que ele continua cego.
+    verdade nao existia. Agora existe, e a fatia 4 escreveu `/api/painel/agenda`:
+    com sessao valida o pedido ATRAVESSA o middleware e chega na view de
+    verdade — 200 prova que o crivo deixou passar; 401 provaria que ele
+    continua cego.
     """
     _com_senha(cenario["brutus"].id)
     _logar(client)
-    assert client.get("/api/painel/agenda", headers={"host": "brutus.localhost"}).status_code == 404
+    assert client.get("/api/painel/agenda", headers={"host": "brutus.localhost"}).status_code == 200
 
 
 def test_o_crivo_do_painel_continua_negando_sem_sessao(client, cenario):

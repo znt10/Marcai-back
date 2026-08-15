@@ -1,22 +1,28 @@
 import calendar
 from datetime import datetime
 
+from django.db.models import Q
+
 from tenant.config import DIAS_NA_HOME, JANELA_MAXIMA_DIAS
 from tenant.datas import (
+    como_utc,
     dia_de_hoje,
+    dia_semana_de,
     formatar_dia_longo,
     formatar_hora,
+    formatar_instante_iso,
     local_para_utc,
     somar_dias,
 )
 from tenant.models import Agendamento, Barbeiro, BarbeiroServico, Bloqueio, HorarioTrabalho
 from tenant.rls import com_barbearia
 
+from .quadro import ocupacao_pct
 from .servicos import QUALQUER
-from .slots import Slot, slots_livres, unir_slots
+from .slots import Slot, bloqueios_do_dia, slots_livres, unir_slots
 
 
-def _slots_do_dia(barbeiro_id: str, servico_id: str, dia: str, agora: datetime) -> list[Slot]:
+def slots_do_dia(barbeiro_id: str, servico_id: str, dia: str, agora: datetime) -> list[Slot]:
     """A ponte entre o banco e o motor puro do slots.py: le o que o dia precisa
     e entrega ao calculo.
 
@@ -106,7 +112,7 @@ def dias_com_horarios(
         saida = []
         for i in range(quantos):
             dia = somar_dias(de, i)
-            slots = _slots_do_dia(barbeiro_id, servico_id, dia, agora)
+            slots = slots_do_dia(barbeiro_id, servico_id, dia, agora)
             nomes = dict(
                 Barbeiro.objects.filter(
                     id__in={s.barbeiro_id for s in slots}
@@ -146,7 +152,7 @@ def dias_com_vaga(
     o mes inteiro com os slots seria trocar um payload de trinta numeros por um
     de milhares de objetos que ninguem le.
 
-    O laco para no primeiro slot de cada dia? Nao — `_slots_do_dia` calcula o
+    O laco para no primeiro slot de cada dia? Nao — `slots_do_dia` calcula o
     dia inteiro. Vale anotar como a otimizacao obvia caso o calendario fique
     lento, mas ela mudaria o motor, que hoje serve as duas rotas igual.
     """
@@ -160,5 +166,172 @@ def dias_com_vaga(
         return [
             d
             for d in range(1, ultimo + 1)
-            if _slots_do_dia(barbeiro_id, servico_id, f"{mes}-{d:02d}", agora)
+            if slots_do_dia(barbeiro_id, servico_id, f"{mes}-{d:02d}", agora)
         ]
+
+
+# ---------------------------------------------------------------- painel
+
+
+def agenda_do_dia(barbearia_id: str, dia: str, barbeiro_id: str | None) -> list[dict]:
+    """GET /painel/agenda — os agendamentos CONFIRMADOS do dia, opcionalmente
+    filtrados por barbeiro."""
+    abre = local_para_utc(dia, 0)
+    fecha = local_para_utc(somar_dias(dia, 1), 0)
+
+    with com_barbearia(barbearia_id):
+        qs = Agendamento.objects.filter(status="CONFIRMADO", inicio__gte=abre, inicio__lt=fecha)
+        if barbeiro_id:
+            qs = qs.filter(barbeiro_id=barbeiro_id)
+        linhas = list(
+            qs.order_by("inicio").values(
+                "id", "inicio", "fim", "servico_nome", "barbeiro_id",
+                "barbeiro__nome", "cliente__nome", "cliente__whatsapp",
+            )
+        )
+
+    return [
+        {
+            "id": a["id"],
+            "inicio": formatar_instante_iso(a["inicio"]),
+            "fim": formatar_instante_iso(a["fim"]),
+            "servicoNome": a["servico_nome"],
+            "barbeiroId": a["barbeiro_id"],
+            "barbeiroNome": a["barbeiro__nome"],
+            "clienteNome": a["cliente__nome"],
+            "clienteWhatsapp": a["cliente__whatsapp"],
+        }
+        for a in linhas
+    ]
+
+
+def quadro_do_dia(barbearia_id: str, dia: str, barbeiro_id: str | None, agora: datetime) -> list[dict]:
+    """GET /painel/dia — uma coluna por barbeiro, lado a lado.
+
+    NAO reusa `slots_do_dia` (que exige vinculo de servico): aqui o
+    barbeiro aparece mesmo sem nenhum vinculo — quem decide se ha algo
+    ofertavel e' o `servico_mais_curto` que ele pratica, e a coluna precisa
+    dizer 'sem servico marcado' em vez de sumir."""
+    dia_semana = dia_semana_de(dia)
+    abre = local_para_utc(dia, 0)
+    fecha = local_para_utc(somar_dias(dia, 1), 0)
+
+    with com_barbearia(barbearia_id):
+        # Ativo, ou inativo com agendamento nesse dia: desativar exige agenda
+        # futura vazia, mas o passado continua la — sem a segunda metade, o
+        # quadro de um dia antigo mostraria menos clientes do que teve.
+        barbeiros_qs = Barbeiro.objects.filter(
+            Q(ativo=True)
+            | Q(
+                agendamentos__status="CONFIRMADO",
+                agendamentos__inicio__lt=fecha,
+                agendamentos__fim__gt=abre,
+            )
+        ).distinct()
+        if barbeiro_id:
+            barbeiros_qs = barbeiros_qs.filter(id=barbeiro_id)
+        barbeiros = list(
+            barbeiros_qs.order_by("ordem", "criado_em").values("id", "nome", "papel", "ativo")
+        )
+        if not barbeiros:
+            return []
+
+        ids = [b["id"] for b in barbeiros]
+        expedientes = list(
+            HorarioTrabalho.objects.filter(barbeiro_id__in=ids, dia_semana=dia_semana)
+        )
+        bloqueios = list(Bloqueio.objects.filter(barbeiro_id__in=ids))
+        # Cruzar a janela, e nao comecar dentro dela: um corte que atravessa
+        # a meia-noite pertence aos dois dias.
+        agendamentos = list(
+            Agendamento.objects.filter(
+                barbeiro_id__in=ids, status="CONFIRMADO", inicio__lt=fecha, fim__gt=abre,
+            )
+            .select_related("cliente")
+            .order_by("inicio")
+        )
+        vinculos = list(
+            BarbeiroServico.objects.filter(
+                barbeiro_id__in=ids, ativo=True, servico__ativo=True,
+            ).values("barbeiro_id", "duracao_min", "servico__nome", "servico__ordem")
+        )
+
+    colunas = []
+    for b in barbeiros:
+        meus_agendamentos = [a for a in agendamentos if a.barbeiro_id == b["id"]]
+        meus_bloqueios = [x for x in bloqueios if x.barbeiro_id == b["id"]]
+        jornada = next((h for h in expedientes if h.barbeiro_id == b["id"]), None)
+        bloqueados_do_dia = bloqueios_do_dia(meus_bloqueios, dia, dia_semana)
+
+        itens = [
+            {
+                "tipo": "AGENDAMENTO", "id": a.id,
+                "inicio": formatar_instante_iso(a.inicio), "fim": formatar_instante_iso(a.fim),
+                "servicoNome": a.servico_nome,
+                "clienteNome": a.cliente.nome, "clienteWhatsapp": a.cliente.whatsapp,
+            }
+            for a in meus_agendamentos
+        ]
+        for x in meus_bloqueios:
+            # O semanal chega traduzido em INSTANTE: a tela nao ve
+            # `minutosInicio` nem `repeteSemanalmente`. Traduzir recorrencia
+            # e' do servidor.
+            traduzidos = bloqueios_do_dia([x], dia, dia_semana)
+            if traduzidos:
+                inicio_x, fim_x = traduzidos[0]
+                itens.append(
+                    {
+                        "tipo": "BLOQUEIO", "id": x.id,
+                        "inicio": formatar_instante_iso(inicio_x),
+                        "fim": formatar_instante_iso(fim_x),
+                        "motivo": x.motivo, "observacao": x.observacao,
+                    }
+                )
+        itens.sort(key=lambda i: i["inicio"])
+
+        # O servico MAIS CURTO que ele pratica: e' a resposta a "cabe alguma
+        # coisa?", a pergunta do balcao. Otimista de proposito — por isso o
+        # horario nunca sai sozinho, sempre com o servico que o justifica.
+        meus_servicos = sorted(
+            (v for v in vinculos if v["barbeiro_id"] == b["id"]),
+            key=lambda v: (v["duracao_min"], v["servico__ordem"]),
+        )
+        mais_curto = meus_servicos[0] if meus_servicos else None
+
+        livres = []
+        if mais_curto and jornada:
+            livres = slots_livres(
+                barbeiro_id=b["id"], duracao_min=mais_curto["duracao_min"],
+                expediente=[jornada], bloqueios=meus_bloqueios,
+                agendamentos=meus_agendamentos, dia=dia, agora=agora,
+            )
+
+        janela = (
+            (local_para_utc(dia, jornada.minutos_inicio), local_para_utc(dia, jornada.minutos_fim))
+            if jornada else None
+        )
+
+        colunas.append(
+            {
+                "barbeiroId": b["id"], "barbeiroNome": b["nome"], "papel": b["papel"],
+                "ativo": b["ativo"],
+                "abre": jornada.minutos_inicio if jornada else None,
+                "fecha": jornada.minutos_fim if jornada else None,
+                "ocupacaoPct": (
+                    ocupacao_pct(
+                        [(como_utc(a.inicio), como_utc(a.fim)) for a in meus_agendamentos],
+                        bloqueados_do_dia, janela,
+                    )
+                    if janela else None
+                ),
+                # Vem mesmo sem horario livre — e' o que separa dois estados
+                # que a tela precisa distinguir porque pedem acoes opostas:
+                # nulo aqui E' `servico_mais_curto` nulo e' "nao marcou
+                # servico nenhum"; presente com `proximo_livre` nulo e'
+                # "esta cheio".
+                "proximoLivre": formatar_instante_iso(livres[0].inicio) if livres else None,
+                "servicoMaisCurto": mais_curto["servico__nome"] if mais_curto else None,
+                "itens": itens,
+            }
+        )
+    return colunas
