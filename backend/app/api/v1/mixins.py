@@ -1,5 +1,7 @@
 from rest_framework.exceptions import APIException, NotFound
 
+from app.services.admin_sessao import COOKIE_SESSAO_ADMIN
+from app.services.admin_sessao import ler as ler_sessao_admin
 from app.services.sessao import COOKIE_SESSAO, da_requisicao
 
 # Corpo do 404 do painel, repetido em toda rota que carrega um registro por
@@ -138,3 +140,42 @@ class ExigeDono(ExigeSessao):
         super().initial(request, *args, **kwargs)
         if self.papel != "DONO":
             raise PapelInsuficiente({"erro": self.mensagem_papel_insuficiente})
+
+
+class SessaoAdminInvalida(APIException):
+    """401, mesma razao de `SessaoInvalida` acima (o front so trata 401 no
+    redirecionamento de login — `pedir()` em client.ts). Classe separada e
+    nao reuso de `SessaoInvalida` porque o cookie que ela apaga em
+    `finalize_response` e' outro."""
+
+    status_code = 401
+    default_detail = {"erro": "nao autorizado"}
+
+
+class ExigeAdmin:
+    """Herdar disto e o jeito de dizer "esta rota e do admin da plataforma".
+
+    NAO herda de `ExigeSessao`/`ExigeTenant`: o admin nao pertence a
+    barbearia nenhuma (nao ha `request.barbearia` do lado do host admin), e
+    as claims/segredo do cookie sao outro par por completo (spec do admin,
+    §4) — misturar as duas cadeias de heranca so' criaria um jeito de um
+    cookie de barbeiro ser lido onde se espera um de admin, ou vice-versa.
+
+    A conferencia em si e' so' a assinatura (`admin_sessao.ler` devolve
+    bool, nao claims) — nao ha conta no banco pra' checar alem dela.
+    """
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        token = request.COOKIES.get(COOKIE_SESSAO_ADMIN)
+        if not ler_sessao_admin(token):
+            raise SessaoAdminInvalida()
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        """Mesma razao de `ExigeSessao.finalize_response`: apaga o cookie
+        morto em todo 401, pra nao deixar o navegador preso num laco de
+        redirecionamento pro login do admin."""
+        resposta = super().finalize_response(request, response, *args, **kwargs)
+        if resposta.status_code == 401:
+            resposta.delete_cookie(COOKIE_SESSAO_ADMIN, path="/")
+        return resposta

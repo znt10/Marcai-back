@@ -103,6 +103,13 @@ def _banco(usuario: str, senha_padrao: str) -> dict:
 DATABASES = {
     "default": _banco("brutus_app", "app"),
     "owner": _banco("brutus_owner", "owner"),
+    # `brutus_admin`: sujeito ao MESMO RLS que `brutus_app` em toda tabela de
+    # tenant — a diferenca e' so' o GRANT extra de INSERT/UPDATE em
+    # `Barbearia`, que `brutus_app` nao tem de proposito (spec do admin da
+    # plataforma, §5: "sem BYPASSRLS e' a decisao central"). Usado via
+    # `tenant.rls.com_barbearia_admin` e por leituras diretas de `Barbearia`
+    # (fora do RLS) nas rotas de admin.
+    "admin": _banco("brutus_admin", "admin"),
 }
 
 # DRF sem autenticacao nem permissao por padrao: a sessao e a fatia 3, e um
