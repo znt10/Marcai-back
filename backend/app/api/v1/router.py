@@ -3,6 +3,8 @@ from django.urls import path
 from .views.autenticacao import ConviteView, EuView, LoginView, LogoutView
 from .views.barbeiro_servicos import BarbeiroServicosView
 from .views.barbeiros import BarbeirosView
+from .views.bloqueios import BloqueioDetalheView, BloqueiosView
+from .views.expediente import ExpedienteView
 from .views.horarios import DiasComVagaView, HorariosView
 from .views.servicos import ServicosView
 from .views.servicos_painel import ServicoPainelDetalheView, ServicosPainelView
@@ -56,5 +58,13 @@ urlpatterns = [
         "painel/barbeiro-servicos",
         BarbeiroServicosView.as_view(),
         name="painel-barbeiro-servicos",
+    ),
+    # Fatia 4, bloco 2 — expediente e bloqueios.
+    path("painel/expediente", ExpedienteView.as_view(), name="painel-expediente"),
+    path("painel/bloqueios", BloqueiosView.as_view(), name="painel-bloqueios"),
+    path(
+        "painel/bloqueios/<str:id>",
+        BloqueioDetalheView.as_view(),
+        name="painel-bloqueios-detalhe",
     ),
 ]
