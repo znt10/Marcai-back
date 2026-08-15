@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 
 
 class Barbearia(models.Model):
@@ -44,7 +45,12 @@ class Barbeiro(models.Model):
     barbearia_id = models.TextField(db_column="barbeariaId")
     nome = models.TextField(db_column="nome")
     whatsapp = models.TextField(db_column="whatsapp")
-    ativo = models.BooleanField(db_column="ativo")
+    # `default=True` espelha o `@default(true)` do Prisma — achado na fatia 4:
+    # nenhuma fatia anterior CRIAVA Barbeiro pelo Django (so lia), entao o
+    # buraco (Django manda todas as colunas declaradas no INSERT; sem default
+    # aqui, `ativo` viraria NULL contra uma coluna NOT NULL) nunca disparou
+    # ate a rota de equipe cadastrar o primeiro barbeiro novo.
+    ativo = models.BooleanField(db_column="ativo", default=True)
     # Os dois que a fatia 1 pediu. `foto_url` e nulavel no Prisma
     # (`fotoUrl String?`); `ordem` tem default 0 e e a chave de ordenacao da
     # lista publica. Nenhum dos dois e senha, whatsapp ou token — o que sai
@@ -87,6 +93,14 @@ class Barbeiro(models.Model):
     convite_expira_em = models.DateTimeField(null=True, db_column="conviteExpiraEm")
     tentativas_login = models.IntegerField(db_column="tentativasLogin", default=0)
     bloqueado_ate = models.DateTimeField(null=True, db_column="bloqueadoAte")
+    # Os dois que a fatia 4 (equipe) precisa. `desativado_em` nulo ate
+    # desativar, de novo nulo ao reativar — a mesma logica de "ausencia e o
+    # estado" do resto do schema. `criado_em` precisa de `default=timezone.now`
+    # porque o cadastro de barbeiro (equipe POST) CRIA a linha, e o Django
+    # manda todas as colunas declaradas no INSERT — sem default aqui a criacao
+    # mandaria NULL contra uma coluna NOT NULL.
+    desativado_em = models.DateTimeField(null=True, db_column="desativadoEm")
+    criado_em = models.DateTimeField(db_column="criadoEm", default=timezone.now)
 
     class Meta:
         managed = False
@@ -212,6 +226,13 @@ class Bloqueio(models.Model):
     minutos_fim = models.IntegerField(null=True, db_column="minutosFim")
     inicio = models.DateTimeField(null=True, db_column="inicio")
     fim = models.DateTimeField(null=True, db_column="fim")
+    # Os dois que a fatia 4 (expediente) le: `observacao` no GET do painel e
+    # `criado_em` como desempate na listagem (bloqueio semanal antes do
+    # pontual, e dentro de cada grupo o mais antigo primeiro). `criado_em`
+    # ganha default pelo mesmo motivo do Barbeiro acima: POST /bloqueios cria
+    # a linha.
+    observacao = models.TextField(null=True, db_column="observacao")
+    criado_em = models.DateTimeField(db_column="criadoEm", default=timezone.now)
 
     class Meta:
         managed = False
@@ -267,6 +288,14 @@ class Agendamento(models.Model):
     fim = models.DateTimeField(db_column="fim")
     duracao_min = models.IntegerField(db_column="duracaoMin")
     status = models.TextField(db_column="status", default="CONFIRMADO")
+    # So a fatia 4 (cancelamento pelo painel) escreve nesta coluna. Nulo na
+    # criacao (omitida do INSERT quando a chamada nao a cita, ver Bloqueio),
+    # gravada com o instante do cancelamento no update de status.
+    cancelado_em = models.DateTimeField(null=True, db_column="canceladoEm")
+    # Nulo ate o AGENDAR decidir: marcar dentro da janela do lembrete grava
+    # `agora` aqui na criacao (a confirmacao JA e' o lembrete), e o cron
+    # (fatia futura) nunca ve esse agendamento.
+    lembrete_enviado_em = models.DateTimeField(null=True, db_column="lembreteEnviadoEm")
 
     class Meta:
         managed = False

@@ -46,6 +46,31 @@ JANELA_MAXIMA_DIAS = 60
 # que promete 8 e um back que exige 10.
 SENHA_MINIMA = 8
 
+# ---- Servicos (front/src/lib/config.ts) ----
+#
+# Os limites de duracao que o catalogo do painel confere. Duplicados aqui
+# porque a mensagem de recusa precisa ser legivel na tela — a mesma razao que
+# o CHECK do banco existe e nao basta sozinho.
+DURACAO_MINIMA_MIN = 10
+DURACAO_MAXIMA_MIN = 60
+
+# ---- Convite (front/src/lib/config.ts) ----
+#
+# Quanto tempo o link do convite vale. Citado na propria mensagem que o
+# WhatsApp manda, entao divergir daqui e uma mensagem que promete um numero e
+# um back que aplica outro.
+CONVITE_VALIDADE_HORAS = 48
+
+# ---- Lembrete (front/src/lib/config.ts) ----
+#
+# So a metade que `lembrete_ao_criar` usa: dentro de quantos minutos antes do
+# horario um agendamento nasce JA avisado, para o cron do lembrete (fatia
+# futura) nunca o ver — sem isso, todo encaixe de balcao (o painel marca a 30
+# min de antecedencia por padrao) mandaria confirmacao e "Lembrete:" em
+# minutos. A outra metade (LEMBRETE_TIQUE_MIN, a cadencia do agendador) nao
+# e' lida por nenhum codigo do Django ainda.
+LEMBRETE_ANTECEDENCIA_MIN = 60
+
 
 def regex_de_origem(dominio_base: str) -> str:
     """Regex de origem para o django-cors-headers.

@@ -82,6 +82,28 @@ def formatar_hora(quando: datetime) -> str:
     return _no_fuso(quando).strftime("%H:%M")
 
 
+def formatar_instante_iso(quando: datetime) -> str:
+    """`2026-08-13T12:00:00.000Z` — o MESMO texto que `Date.toISOString()`
+    produz, com milissegundos (o `DateTimeField` padrao do DRF nao chega la:
+    o formato dele sai sem eles, e um `%f` imprime seis digitos, nao tres).
+
+    Usado direto (sem passar por um `serializers.Field`) nas respostas
+    montadas como dict puro — agenda e quadro do dia — porque os itens tem
+    formato VARIAVEL por tipo (agendamento vs bloqueio) que um serializer de
+    campos fixos so expressaria inventando chaves vazias que o front nunca
+    viu.
+    """
+    quando = como_utc(quando)
+    return f"{quando.strftime('%Y-%m-%dT%H:%M:%S')}.{quando.microsecond // 1000:03d}Z"
+
+
+def formatar_dia_curto(quando: datetime) -> str:
+    """"13/08" — porte de `formatarDiaCurto`. Usado so na recusa de
+    desativar barbeiro com agenda futura: pelo fuso da BARBEARIA, nao do
+    servidor, senao um horario das 22h daqui apontaria o dia seguinte."""
+    return _no_fuso(quando).strftime("%d/%m")
+
+
 def formatar_dia_longo(quando: datetime) -> str:
     """"qua 13 ago" — o dia SEM zero a esquerda, que e o que o `d` do date-fns
     faz e o que `%d` do strftime nao faz.
