@@ -77,6 +77,13 @@ services:
       # Para o healthcheck do WhatsApp no mesmo tique.
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
       EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-brutus}
+      # Precisa bater com o do `api` (linha 29): o alvo agora é o Django, e o
+      # `TenantMiddleware` dele resolve tenant pelo Host REAL de todo pedido,
+      # sem exceção de rota — mesmo esta, que não fala de nenhuma barbearia
+      # em particular. Sem um Host que caia em ALLOWED_HOSTS
+      # (settings.py:26), o pedido nem chegaria à view: `DisallowedHost`
+      # antes de qualquer middleware de tenant rodar.
+      DOMINIO_BASE: localhost
     # Bate assim que sobe, e só então dorme: `docker compose up` dá o retorno
     # na hora em vez de dez minutos depois. Erro de curl não mata o laço —
     # app ainda subindo é normal.
@@ -95,8 +102,21 @@ services:
     # Reconectar exige o QR, que exige uma pessoa com o celular. O agendador não
     # conserta; ele grita, e é isso que faltava.
     entrypoint: ["/bin/sh", "-c"]
+    # A travessia terminou aqui: o alvo virou `api:8000` (Django), não mais
+    # `app:3000` (Next) — nenhuma rota de API sobra no Next depois deste
+    # bloco. Duas cabeças novas em relação ao pedido de antes:
+    #
+    # `X-Brutus-Cliente: cron` — o `ClienteMiddleware` exige este header em
+    # todo verbo que escreve (defesa de CSRF same-site), e este pedido é um
+    # POST; sem ele, 403 antes de qualquer lembrete ser conferido.
+    #
+    # `Host: admin.$$DOMINIO_BASE` — ver o comentário de `DOMINIO_BASE`
+    # acima: o `TenantMiddleware` do Django exige um Host válido em TODO
+    # pedido, mesmo este, que não fala de nenhuma barbearia específica.
+    # `admin.` é o único Host que passa pela barreira sem exigir slug de
+    # tenant nenhum (`eh_host_admin` → `request.eh_admin = True`).
     command:
-      - 'while true; do echo "[agendador] $$(date -u +%H:%M:%S) $$(curl -sS -X POST -H "Authorization: Bearer $$CRON_SECRET" http://app:3000/api/cron/lembretes || echo falhou)"; zap=$$(curl -sS -H "apikey: $$EVOLUTION_API_KEY" http://evolution:8080/instance/connectionState/$$EVOLUTION_INSTANCE || echo erro); case "$$zap" in *\"state\":\"open\"*) : ;; *) echo "[agendador] !!! WHATSAPP FORA DO AR: $$zap — rode: npm run whatsapp:qr" ;; esac; sleep 600; done'
+      - 'while true; do echo "[agendador] $$(date -u +%H:%M:%S) $$(curl -sS -X POST -H "Authorization: Bearer $$CRON_SECRET" -H "X-Brutus-Cliente: cron" -H "Host: admin.$$DOMINIO_BASE" http://api:8000/api/cron/lembretes || echo falhou)"; zap=$$(curl -sS -H "apikey: $$EVOLUTION_API_KEY" http://evolution:8080/instance/connectionState/$$EVOLUTION_INSTANCE || echo erro); case "$$zap" in *\"state\":\"open\"*) : ;; *) echo "[agendador] !!! WHATSAPP FORA DO AR: $$zap — rode: npm run whatsapp:qr" ;; esac; sleep 600; done'
     networks: [brutus]
 
   # O telefone do produto. Confirmação, cancelamento, lembrete e convite de

@@ -4,7 +4,8 @@ from datetime import datetime, timedelta
 
 from django.utils import timezone
 
-from tenant.datas import utc_para_local
+from tenant.config import PRAZO_CANCELAMENTO_MIN
+from tenant.datas import como_utc, utc_para_local
 from tenant.models import Agendamento, BarbeiroServico, Cliente
 from tenant.rls import com_barbearia
 
@@ -48,9 +49,12 @@ def eh_sobreposicao(exc: BaseException) -> bool:
 
 
 def _upsert_cliente(barbearia_id: str, whatsapp: str, nome: str) -> str:
-    """O NOME e' ATUALIZADO — diferenca do fluxo publico: o barbeiro esta
-    com a pessoa na frente e sabe o nome melhor que o formulario de tres
-    meses atras."""
+    """O NOME e' ATUALIZADO nos DOIS fluxos, publico e painel — nao e'
+    diferenca exclusiva do painel como um comentario anterior desta funcao
+    supunha (achado da travessia do bloco C: o `cliente.upsert` do route.ts
+    publico tambem manda `update: { nome }`). Compartilhada pelos dois
+    porque o motivo vale para os dois: quem digitou por ultimo sabe o nome
+    melhor que o cadastro de tres meses atras."""
     atualizados = Cliente.objects.filter(barbearia_id=barbearia_id, whatsapp=whatsapp).update(nome=nome)
     if atualizados:
         return Cliente.objects.get(barbearia_id=barbearia_id, whatsapp=whatsapp).id
@@ -63,14 +67,13 @@ def marcar(
     *, barbearia_id: str, barbeiro_id: str, servico_id: str, inicio: datetime,
     nome: str, whatsapp: str, agora: datetime,
 ) -> dict:
-    """POST /painel/agendamentos. Tres diferencas do fluxo publico, todas
-    porque o barbeiro esta com o cliente na frente:
-
-    1. sem `numero_existe` — o oraculo da Evolution nao e' necessario aqui
-       (o balcao e' um IP so, o limite morderia o uso legitimo).
-    2. sem antecedencia minima — marcar para daqui a 5 minutos e' permitido;
-       marcar no PASSADO continua recusado, agenda nao e' historico.
-    3. o nome do cliente e' ATUALIZADO no upsert.
+    """POST /painel/agendamentos — e tambem o motor de `POST /agendamentos`
+    (fluxo publico, bloco C da travessia): as duas rotas chamam esta MESMA
+    funcao, porque a unica diferenca real entre elas e' externa a ela — o
+    oraculo `numero_existe` da Evolution, que so o fluxo publico consulta
+    (o balcao do painel e' um IP so, o limite por IP morderia o uso
+    legitimo) e que por isso e' conferido pela VIEW publica ANTES de chamar
+    `marcar()`, nao aqui dentro.
 
     Levanta `ErroCliente` para os desfechos que a VIEW traduz em status —
     igual ao route.ts, que joga uma excecao dentro da transacao para poder
@@ -148,4 +151,78 @@ def cancelar(barbearia_id: str, agendamento_id: str, filtro_barbeiro_id: str | N
         return {
             "cliente_nome": a.cliente.nome, "cliente_whatsapp": a.cliente.whatsapp,
             "barbeiro_nome": a.barbeiro.nome, "servico_nome": a.servico_nome, "inicio": a.inicio,
+        }
+
+
+def detalhe_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict | None:
+    """GET /agendamentos/<codigo> — sem sessao, so' o RLS garante que um
+    codigo de OUTRA barbearia nao e' encontrado aqui (o codigo por si so' e'
+    de 10 caracteres, sem barbeariaId embutido nele).
+
+    `pode_cancelar` e' CALCULADO AQUI, no servidor — a tela obedece, nao
+    recalcula, senao um relogio de cliente adiantado liberaria um botao que
+    o back recusaria de qualquer forma.
+    """
+    with com_barbearia(barbearia_id):
+        a = (
+            Agendamento.objects.filter(codigo=codigo)
+            .select_related("barbeiro", "cliente")
+            .first()
+        )
+        if a is None:
+            return None
+
+        minutos_ate = (como_utc(a.inicio) - agora).total_seconds() / 60
+        return {
+            "codigo": a.codigo,
+            # O nome do cliente sai; o WhatsApp dele, nunca (§9.1).
+            "cliente_nome": a.cliente.nome,
+            "barbeiro_nome": a.barbeiro.nome,
+            "servico_nome": a.servico_nome,
+            "duracao_min": a.duracao_min,
+            "inicio": a.inicio,
+            "fim": a.fim,
+            "status": a.status,
+            "pode_cancelar": a.status == "CONFIRMADO" and minutos_ate > PRAZO_CANCELAMENTO_MIN,
+        }
+
+
+def cancelar_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict:
+    """POST /agendamentos/<codigo>/cancelar — pelo CODIGO, nao por id: e' o
+    que o cliente tem em maos, sem sessao nenhuma.
+
+    Cancelar o que ja esta cancelado devolve `{"tipo": "ok"}` de proposito
+    (a VIEW trata os dois tipos da mesma forma): quem apertou o botao duas
+    vezes queria o mesmo desfecho, e ele ja vale — reenviar a mensagem de
+    cancelamento e' que NAO pode acontecer duas vezes, e por isso so' o
+    `tipo == "ok"` de verdade (o que efetivamente cancelou agora) devolve os
+    dados pro WhatsApp; o `ja_cancelado` nao.
+    """
+    with com_barbearia(barbearia_id):
+        a = (
+            Agendamento.objects.filter(codigo=codigo)
+            .select_related("barbeiro", "cliente")
+            .first()
+        )
+        if a is None:
+            return {"tipo": "nao_encontrado"}
+        if a.status != "CONFIRMADO":
+            return {"tipo": "ja_cancelado"}
+
+        # Reconferido no servidor mesmo com podeCancelar:false na tela —
+        # botao desabilitado nao e' controle de acesso.
+        minutos_ate = (como_utc(a.inicio) - agora).total_seconds() / 60
+        if minutos_ate <= PRAZO_CANCELAMENTO_MIN:
+            return {"tipo": "fora_do_prazo"}
+
+        Agendamento.objects.filter(id=a.id).update(
+            status="CANCELADO_CLIENTE", cancelado_em=timezone.now(),
+        )
+        return {
+            "tipo": "ok",
+            "cliente_nome": a.cliente.nome,
+            "cliente_whatsapp": a.cliente.whatsapp,
+            "barbeiro_nome": a.barbeiro.nome,
+            "servico_nome": a.servico_nome,
+            "inicio": a.inicio,
         }

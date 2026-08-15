@@ -64,12 +64,42 @@ CONVITE_VALIDADE_HORAS = 48
 # ---- Lembrete (front/src/lib/config.ts) ----
 #
 # So a metade que `lembrete_ao_criar` usa: dentro de quantos minutos antes do
-# horario um agendamento nasce JA avisado, para o cron do lembrete (fatia
-# futura) nunca o ver — sem isso, todo encaixe de balcao (o painel marca a 30
-# min de antecedencia por padrao) mandaria confirmacao e "Lembrete:" em
-# minutos. A outra metade (LEMBRETE_TIQUE_MIN, a cadencia do agendador) nao
-# e' lida por nenhum codigo do Django ainda.
+# horario um agendamento nasce JA avisado, para o cron do lembrete nunca o
+# ver — sem isso, todo encaixe de balcao (o painel marca a 30 min de
+# antecedencia por padrao) mandaria confirmacao e "Lembrete:" em minutos.
 LEMBRETE_ANTECEDENCIA_MIN = 60
+
+# ---- Cancelamento pelo cliente (front/src/lib/config.ts) ----
+#
+# So o fluxo PUBLICO confere isto — o painel cancela sem prazo de proposito
+# (o barbeiro que quebrou o braco precisa desmarcar a tarde inteira agora).
+PRAZO_CANCELAMENTO_MIN = 60
+
+# ---- Verificacao de numero no WhatsApp (front/src/lib/config.ts) ----
+#
+# So o fluxo PUBLICO chama o oraculo — o painel nao, porque o barbeiro esta
+# com o cliente na frente e o balcao e' um IP so, que o limite morderia.
+CHECK_NUMERO_TIMEOUT_MS = 3_000
+CHECK_NUMERO_TTL_MS = 86_400_000        # 24h
+CHECK_NUMERO_LIMITE_POR_IP_HORA = 10
+
+# ---- Sessao do admin da plataforma (front/src/lib/config.ts, admin §4) ----
+#
+# Curta de proposito: uso do admin e' em rajadas de minutos pra cadastrar uma
+# barbearia, nao um turno inteiro como o barbeiro (12h).
+ADMIN_SESSAO_HORAS = 2
+ADMIN_SESSAO_COOKIE = "sessao_admin"
+
+# ---- Trava do login do admin — POR IP, e' o OPOSTO da do barbeiro ----
+#
+# So existe UMA conta de admin: travar por conta deixaria qualquer um
+# trancar o dono do site fora do proprio painel com cinco requisicoes. Antes
+# do limite a espera so CRESCE (exponencial: 1s, 2s, 4s, 8s, 16s, 32s, teto
+# 60s); passou do limite, o IP fica de castigo por 10 minutos inteiros.
+ADMIN_TRAVA_BASE_MS = 1_000
+ADMIN_TRAVA_TETO_MS = 60_000
+ADMIN_TRAVA_TENTATIVAS = 5
+ADMIN_TRAVA_BLOQUEIO_MS = 10 * 60_000
 
 
 def regex_de_origem(dominio_base: str) -> str:

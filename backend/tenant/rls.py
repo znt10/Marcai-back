@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 
-from django.db import connection, transaction
+from django.db import connection, connections, transaction
 
 
 @contextmanager
@@ -43,6 +43,32 @@ def com_barbearia(barbearia_id):
 
     with transaction.atomic(durable=True):
         with connection.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.barbearia_id', %s, true)",
+                [str(barbearia_id)],
+            )
+        yield
+
+
+@contextmanager
+def com_barbearia_admin(barbearia_id):
+    """Irma de `com_barbearia` acima — o MESMO contrato (RLS por transacao,
+    `durable=True` pelo mesmo motivo), so' que na conexao `"admin"` (papel
+    `brutus_admin`) em vez de `"default"` (`brutus_app`).
+
+    O admin da plataforma continua sujeito ao RLS em toda tabela de tenant —
+    nao ha `BYPASSRLS` (spec do admin, §5). O que ele tem a mais e' um GRANT
+    de INSERT/UPDATE em `Barbearia`, que `brutus_app` nao tem de proposito.
+    E' por isso que criar barbearia/dono e trocar `ativo` precisam desta
+    conexao, mas contar barbeiros/agendamentos por tenant (que so' precisa de
+    SELECT, ja concedido aos dois papeis) tambem passa por aqui: uma unica
+    conexao admin por request e' mais simples que alternar entre as duas.
+    """
+    if not barbearia_id:
+        raise ValueError("com_barbearia_admin precisa de um barbearia_id")
+
+    with transaction.atomic(using="admin", durable=True):
+        with connections["admin"].cursor() as cur:
             cur.execute(
                 "SELECT set_config('app.barbearia_id', %s, true)",
                 [str(barbearia_id)],
