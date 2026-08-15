@@ -2,6 +2,12 @@ from rest_framework.exceptions import APIException, NotFound
 
 from app.services.sessao import COOKIE_SESSAO, da_requisicao
 
+# Corpo do 404 do painel, repetido em toda rota que carrega um registro por
+# id dentro do tenant (bloqueio, agendamento, barbeiro da equipe, ...). Um so
+# lugar para o texto, porque a mensagem generica ("Não encontrado.") e' o que
+# faz o 404 nao revelar se o registro alheio existe.
+NAO_ENCONTRADO = {"erro": "Não encontrado."}
+
 
 class ExigeTenant:
     """A regra do item 3 do card da fatia 1, e ela precisa existir ANTES da
@@ -96,3 +102,39 @@ class ExigeSessao(ExigeTenant):
         if resposta.status_code == 401:
             resposta.delete_cookie(COOKIE_SESSAO, path="/")
         return resposta
+
+
+class PapelInsuficiente(APIException):
+    """403, nao 404: quem falha aqui ja sabe que nao e dono (tem sessao
+    valida), entao dizer "isso e so do dono" nao conta nada que ele nao
+    soubesse — diferente do 404 do painel, que existe para nao revelar que um
+    REGISTRO alheio existe. Mesma distincao de `ehDono`/`filtroDoBarbeiro` no
+    front (src/lib/autorizacao.ts).
+    """
+
+    status_code = 403
+    default_detail = {"erro": "Só o dono mexe nisso."}
+
+
+class ExigeDono(ExigeSessao):
+    """Herdar disto e o jeito de dizer "esta rota e so do dono" — irma de
+    `ExigeSessao`, com uma pergunta a mais depois da sessao valida: o papel.
+
+    Nao ha automatismo por prefixo pelo mesmo motivo de `ExigeTenant`: nem
+    toda rota de `/api/painel` e dono-only (horarios e barbeiro-servicos sao
+    do proprio barbeiro), entao a lista de excecoes seria o lugar errado para
+    a proxima rota ser esquecida. Herdar e' explicito.
+
+    `mensagem_papel_insuficiente` e OVERRIDABLE por view: o front tinha uma
+    frase por rota ("Só o dono mexe no catálogo.", "...na equipe.", "Só o
+    dono muda isso.") — texto que a tela mostra direto, entao migrar a rota
+    sem preservar a frase seria uma regressao de UX que nenhum teste de status
+    HTTP pegaria.
+    """
+
+    mensagem_papel_insuficiente = "Só o dono mexe nisso."
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if self.papel != "DONO":
+            raise PapelInsuficiente({"erro": self.mensagem_papel_insuficiente})
