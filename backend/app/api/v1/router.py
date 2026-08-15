@@ -1,9 +1,14 @@
 from django.urls import path
 
+from .views.agenda_painel import AgendaPainelView
+from .views.agendamentos_painel import AgendamentoCancelarView, AgendamentosPainelView
 from .views.autenticacao import ConviteView, EuView, LoginView, LogoutView
+from .views.barbearia_painel import BarbeariaPainelView
 from .views.barbeiro_servicos import BarbeiroServicosView
 from .views.barbeiros import BarbeirosView
 from .views.bloqueios import BloqueioDetalheView, BloqueiosView
+from .views.conflitos import ConflitosView
+from .views.dia import DiaView
 from .views.equipe import (
     EquipeConviteView,
     EquipeDesativarView,
@@ -92,4 +97,18 @@ urlpatterns = [
         EquipeConviteView.as_view(),
         name="painel-equipe-convite",
     ),
+    # Fatia 4, bloco 4 — agenda, quadro do dia, conflitos, agendamentos e a
+    # frase de horario da barbearia.
+    path("painel/agenda", AgendaPainelView.as_view(), name="painel-agenda"),
+    path("painel/dia", DiaView.as_view(), name="painel-dia"),
+    path("painel/conflitos", ConflitosView.as_view(), name="painel-conflitos"),
+    path(
+        "painel/agendamentos", AgendamentosPainelView.as_view(), name="painel-agendamentos",
+    ),
+    path(
+        "painel/agendamentos/<str:id>/cancelar",
+        AgendamentoCancelarView.as_view(),
+        name="painel-agendamentos-cancelar",
+    ),
+    path("painel/barbearia", BarbeariaPainelView.as_view(), name="painel-barbearia"),
 ]

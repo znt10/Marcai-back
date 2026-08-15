@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from tenant.datas import como_utc
+from tenant.datas import formatar_instante_iso
 
 
 class InstanteISO(serializers.Field):
@@ -17,13 +17,12 @@ class InstanteISO(serializers.Field):
     apareceria como "as respostas divergem", escondendo qualquer divergencia
     de verdade no meio.
 
-    `como_utc` antes de formatar: a coluna e `timestamp WITHOUT time zone`, e
-    imprimir um valor sem fuso com um `Z` no fim seria uma mentira de 3 horas.
+    A formatacao em si mora em `tenant/datas.py::formatar_instante_iso`, que
+    tambem serve as respostas montadas como dict puro (sem Serializer).
     """
 
     def to_representation(self, value):
-        quando = como_utc(value)
-        return f"{quando.strftime('%Y-%m-%dT%H:%M:%S')}.{quando.microsecond // 1000:03d}Z"
+        return formatar_instante_iso(value)
 
 
 class SlotSerializer(serializers.Serializer):
