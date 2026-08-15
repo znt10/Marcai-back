@@ -22,8 +22,15 @@ class Barbearia(models.Model):
     # barbearia. Nulo e string vazia seriam dois jeitos de dizer a mesma coisa.
     horario_resumo = models.TextField(null=True, db_column="horarioResumo")
     whatsapp_contato = models.TextField(db_column="whatsappContato")
-    ativo = models.BooleanField(db_column="ativo")
-    criado_em = models.DateTimeField(db_column="criadoEm")
+    # `default=True`/`default=timezone.now` espelham `@default(true)` e
+    # `@default(now())` do Prisma — mesmo motivo de `Barbeiro.ativo` (fatia
+    # 4): o Django manda TODAS as colunas declaradas no INSERT de um model
+    # managed=False, entao sem eles o cadastro de barbearia (bloco B da
+    # travessia, `POST /api/admin/barbearias`) mandaria NULL contra colunas
+    # NOT NULL. Nenhuma fatia anterior CRIAVA Barbearia pelo Django — so lia
+    # — entao o buraco nunca disparou ate agora.
+    ativo = models.BooleanField(db_column="ativo", default=True)
+    criado_em = models.DateTimeField(db_column="criadoEm", default=timezone.now)
 
     class Meta:
         managed = False
