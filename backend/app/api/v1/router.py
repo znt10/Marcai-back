@@ -1,6 +1,17 @@
 from django.urls import path
 
+from .views.admin_autenticacao import AdminLoginView, AdminLogoutView
+from .views.admin_barbearias import (
+    AdminBarbeariaConviteView,
+    AdminBarbeariaDetalheView,
+    AdminBarbeariasView,
+)
 from .views.agenda_painel import AgendaPainelView
+from .views.agendamentos import (
+    AgendamentoCancelarPublicoView,
+    AgendamentoDetalheView,
+    AgendamentosView,
+)
 from .views.agendamentos_painel import AgendamentoCancelarView, AgendamentosPainelView
 from .views.autenticacao import ConviteView, EuView, LoginView, LogoutView
 from .views.barbearia_painel import BarbeariaPainelView
@@ -8,6 +19,7 @@ from .views.barbeiro_servicos import BarbeiroServicosView
 from .views.barbeiros import BarbeirosView
 from .views.bloqueios import BloqueioDetalheView, BloqueiosView
 from .views.conflitos import ConflitosView
+from .views.cron import LembretesView
 from .views.dia import DiaView
 from .views.equipe import (
     EquipeConviteView,
@@ -41,6 +53,20 @@ urlpatterns = [
     path("servicos", ServicosView.as_view(), name="servicos"),
     path("horarios", HorariosView.as_view(), name="horarios"),
     path("dias-com-vaga", DiasComVagaView.as_view(), name="dias-com-vaga"),
+    # Fecha a travessia, bloco C — o cliente marca/consulta/cancela sozinho,
+    # sem sessao nenhuma. `<str:codigo>` e nao `<str:id>`: o codigo de 10
+    # caracteres e o que o cliente TEM em maos, nunca o id interno.
+    path("agendamentos", AgendamentosView.as_view(), name="agendamentos"),
+    path(
+        "agendamentos/<str:codigo>",
+        AgendamentoDetalheView.as_view(),
+        name="agendamentos-detalhe",
+    ),
+    path(
+        "agendamentos/<str:codigo>/cancelar",
+        AgendamentoCancelarPublicoView.as_view(),
+        name="agendamentos-cancelar",
+    ),
     # A sessao (fatia 2). As quatro atravessam JUNTAS e nao ha como separa-las:
     # o `MIGRADAS` casa por prefixo, e `/auth` pega as quatro de uma vez.
     # Tentar migrar so o login deixaria o `/auth/eu` no Next lendo um cookie
@@ -111,4 +137,27 @@ urlpatterns = [
         name="painel-agendamentos-cancelar",
     ),
     path("painel/barbearia", BarbeariaPainelView.as_view(), name="painel-barbearia"),
+    # Fecha a travessia, bloco A — sessao do admin da plataforma. So estas
+    # duas rotas chegam aqui de qualquer host que nao seja o do admin
+    # tambem por posicao: a `BarreiraAdminMiddleware` da 404 antes.
+    path("admin/auth/login", AdminLoginView.as_view(), name="admin-auth-login"),
+    path("admin/auth/logout", AdminLogoutView.as_view(), name="admin-auth-logout"),
+    # Bloco B — as barbearias em si. `ExigeAdmin` em cada view: o host ja e'
+    # o do admin (a BarreiraAdminMiddleware garante por posicao), mas a
+    # SESSAO ainda precisa ser conferida — o host certo nao e' credencial.
+    path("admin/barbearias", AdminBarbeariasView.as_view(), name="admin-barbearias"),
+    path(
+        "admin/barbearias/<str:id>",
+        AdminBarbeariaDetalheView.as_view(),
+        name="admin-barbearias-detalhe",
+    ),
+    path(
+        "admin/barbearias/<str:id>/convite",
+        AdminBarbeariaConviteView.as_view(),
+        name="admin-barbearias-convite",
+    ),
+    # Bloco D — o motor do agendador. Fora de `/painel` e de `/admin`, entao
+    # nenhum dos dois crivos posicionais mexe aqui; a credencial e' so' o
+    # bearer contra CRON_SECRET, conferido dentro da propria view.
+    path("cron/lembretes", LembretesView.as_view(), name="cron-lembretes"),
 ]

@@ -3,10 +3,6 @@ from tenant.datas import formatar_dia_longo, formatar_hora
 # Todo texto que sai pelo WhatsApp mora aqui. Porte fiel de
 # marcai-front/src/lib/mensagens.ts — espalhar template pelas rotas e como
 # duas mensagens do mesmo evento acabam divergindo.
-#
-# So as tres que o painel usa: confirmacao (marcar no balcao), cancelamento
-# pela barbearia e convite. `msgCancelamento` (cliente cancelando) e
-# `msgLembrete` sao do fluxo publico/cron, fora desta fatia.
 
 
 def msg_confirmacao(
@@ -32,6 +28,26 @@ def msg_cancelamento_pela_barbearia(
         f"{servico_nome.lower()} de {formatar_dia_longo(inicio)} às "
         f"{formatar_hora(inicio)} com {barbeiro_nome}. Desculpa pelo transtorno — "
         f"chama a gente que remarcamos."
+    )
+
+
+def msg_cancelamento(*, barbeiro_nome: str, inicio) -> str:
+    """O cliente que cancelou o PRÓPRIO horário — por isso, ao contrário de
+    `msg_cancelamento_pela_barbearia`, nao ha "Oi, fulano" nem pedido de
+    desculpa: mandar isso pra quem acabou de cancelar seria estranho, nao
+    gentil. Espelha `msgCancelamento` (mensagens.ts), que tambem ignora
+    `clienteNome`/`servicoNome`/`endereco` apesar de aceita-los no tipo.
+    """
+    return (
+        f"Seu horário de {formatar_dia_longo(inicio)} às {formatar_hora(inicio)} "
+        f"com {barbeiro_nome} foi cancelado. Até a próxima!"
+    )
+
+
+def msg_lembrete(*, servico_nome: str, barbeiro_nome: str, inicio, endereco: str) -> str:
+    return (
+        f"Lembrete: {servico_nome.lower()} hoje às {formatar_hora(inicio)} "
+        f"com {barbeiro_nome}. {endereco}"
     )
 
 
