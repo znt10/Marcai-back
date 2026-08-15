@@ -19,6 +19,7 @@ from .views.barbeiro_servicos import BarbeiroServicosView
 from .views.barbeiros import BarbeirosView
 from .views.bloqueios import BloqueioDetalheView, BloqueiosView
 from .views.conflitos import ConflitosView
+from .views.cron import LembretesView
 from .views.dia import DiaView
 from .views.equipe import (
     EquipeConviteView,
@@ -155,4 +156,8 @@ urlpatterns = [
         AdminBarbeariaConviteView.as_view(),
         name="admin-barbearias-convite",
     ),
+    # Bloco D — o motor do agendador. Fora de `/painel` e de `/admin`, entao
+    # nenhum dos dois crivos posicionais mexe aqui; a credencial e' so' o
+    # bearer contra CRON_SECRET, conferido dentro da propria view.
+    path("cron/lembretes", LembretesView.as_view(), name="cron-lembretes"),
 ]
