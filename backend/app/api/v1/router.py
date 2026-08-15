@@ -7,6 +7,11 @@ from .views.admin_barbearias import (
     AdminBarbeariasView,
 )
 from .views.agenda_painel import AgendaPainelView
+from .views.agendamentos import (
+    AgendamentoCancelarPublicoView,
+    AgendamentoDetalheView,
+    AgendamentosView,
+)
 from .views.agendamentos_painel import AgendamentoCancelarView, AgendamentosPainelView
 from .views.autenticacao import ConviteView, EuView, LoginView, LogoutView
 from .views.barbearia_painel import BarbeariaPainelView
@@ -47,6 +52,20 @@ urlpatterns = [
     path("servicos", ServicosView.as_view(), name="servicos"),
     path("horarios", HorariosView.as_view(), name="horarios"),
     path("dias-com-vaga", DiasComVagaView.as_view(), name="dias-com-vaga"),
+    # Fecha a travessia, bloco C — o cliente marca/consulta/cancela sozinho,
+    # sem sessao nenhuma. `<str:codigo>` e nao `<str:id>`: o codigo de 10
+    # caracteres e o que o cliente TEM em maos, nunca o id interno.
+    path("agendamentos", AgendamentosView.as_view(), name="agendamentos"),
+    path(
+        "agendamentos/<str:codigo>",
+        AgendamentoDetalheView.as_view(),
+        name="agendamentos-detalhe",
+    ),
+    path(
+        "agendamentos/<str:codigo>/cancelar",
+        AgendamentoCancelarPublicoView.as_view(),
+        name="agendamentos-cancelar",
+    ),
     # A sessao (fatia 2). As quatro atravessam JUNTAS e nao ha como separa-las:
     # o `MIGRADAS` casa por prefixo, e `/auth` pega as quatro de uma vez.
     # Tentar migrar so o login deixaria o `/auth/eu` no Next lendo um cookie
