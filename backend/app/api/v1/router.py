@@ -1,9 +1,11 @@
 from django.urls import path
 
 from .views.autenticacao import ConviteView, EuView, LoginView, LogoutView
+from .views.barbeiro_servicos import BarbeiroServicosView
 from .views.barbeiros import BarbeirosView
 from .views.horarios import DiasComVagaView, HorariosView
 from .views.servicos import ServicosView
+from .views.servicos_painel import ServicoPainelDetalheView, ServicosPainelView
 
 # SEM DefaultRouter, e isso e uma decisao, nao esquecimento.
 #
@@ -40,4 +42,19 @@ urlpatterns = [
     # barra. `path:` engoliria barras e faria `/auth/convite/a/b` casar, o que
     # so serviria para transformar um erro de digitacao em uma busca a mais.
     path("auth/convite/<str:token>", ConviteView.as_view(), name="auth-convite"),
+    # Fatia 4, bloco 1 — catalogo e vinculos. `CrivoPainelMiddleware` ja
+    # protege tudo sob `/api/painel/*` por POSICAO; estas views herdam
+    # `ExigeSessao` so para ganhar `self.sessao`/`self.papel` sem consulta
+    # nova, nao para repetir a checagem de autenticacao.
+    path("painel/servicos", ServicosPainelView.as_view(), name="painel-servicos"),
+    path(
+        "painel/servicos/<str:id>",
+        ServicoPainelDetalheView.as_view(),
+        name="painel-servicos-detalhe",
+    ),
+    path(
+        "painel/barbeiro-servicos",
+        BarbeiroServicosView.as_view(),
+        name="painel-barbeiro-servicos",
+    ),
 ]
