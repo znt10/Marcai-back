@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .views.admin_autenticacao import AdminLoginView, AdminLogoutView
 from .views.agenda_painel import AgendaPainelView
 from .views.agendamentos_painel import AgendamentoCancelarView, AgendamentosPainelView
 from .views.autenticacao import ConviteView, EuView, LoginView, LogoutView
@@ -111,4 +112,9 @@ urlpatterns = [
         name="painel-agendamentos-cancelar",
     ),
     path("painel/barbearia", BarbeariaPainelView.as_view(), name="painel-barbearia"),
+    # Fecha a travessia, bloco A — sessao do admin da plataforma. So estas
+    # duas rotas chegam aqui de qualquer host que nao seja o do admin
+    # tambem por posicao: a `BarreiraAdminMiddleware` da 404 antes.
+    path("admin/auth/login", AdminLoginView.as_view(), name="admin-auth-login"),
+    path("admin/auth/logout", AdminLogoutView.as_view(), name="admin-auth-logout"),
 ]
