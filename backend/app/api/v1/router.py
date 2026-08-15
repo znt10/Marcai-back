@@ -1,6 +1,11 @@
 from django.urls import path
 
 from .views.admin_autenticacao import AdminLoginView, AdminLogoutView
+from .views.admin_barbearias import (
+    AdminBarbeariaConviteView,
+    AdminBarbeariaDetalheView,
+    AdminBarbeariasView,
+)
 from .views.agenda_painel import AgendaPainelView
 from .views.agendamentos_painel import AgendamentoCancelarView, AgendamentosPainelView
 from .views.autenticacao import ConviteView, EuView, LoginView, LogoutView
@@ -117,4 +122,18 @@ urlpatterns = [
     # tambem por posicao: a `BarreiraAdminMiddleware` da 404 antes.
     path("admin/auth/login", AdminLoginView.as_view(), name="admin-auth-login"),
     path("admin/auth/logout", AdminLogoutView.as_view(), name="admin-auth-logout"),
+    # Bloco B — as barbearias em si. `ExigeAdmin` em cada view: o host ja e'
+    # o do admin (a BarreiraAdminMiddleware garante por posicao), mas a
+    # SESSAO ainda precisa ser conferida — o host certo nao e' credencial.
+    path("admin/barbearias", AdminBarbeariasView.as_view(), name="admin-barbearias"),
+    path(
+        "admin/barbearias/<str:id>",
+        AdminBarbeariaDetalheView.as_view(),
+        name="admin-barbearias-detalhe",
+    ),
+    path(
+        "admin/barbearias/<str:id>/convite",
+        AdminBarbeariaConviteView.as_view(),
+        name="admin-barbearias-convite",
+    ),
 ]
