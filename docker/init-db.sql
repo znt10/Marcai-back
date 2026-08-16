@@ -35,6 +35,13 @@ CREATE DATABASE brutus_test OWNER brutus_owner;
 -- banco dela.
 CREATE DATABASE evolution   OWNER evolution;
 
+-- Espelha brutus/brutus_test (mesmo motivo, card "Bancos de teste separados
+-- por repositório"): sem um banco de teste PRÓPRIO, a suíte do zelador leria
+-- e apagaria dado de uma instância de Evolution rodando de verdade. A
+-- Evolution nunca fala com este banco — só a suíte de teste do Django, via
+-- `DATABASES["evolution"]` com `PGDATABASE_EVOLUTION=evolution_test`.
+CREATE DATABASE evolution_test OWNER evolution;
+
 \connect brutus
 GRANT USAGE ON SCHEMA public TO brutus_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE brutus_owner IN SCHEMA public

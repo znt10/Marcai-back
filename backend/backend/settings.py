@@ -54,7 +54,8 @@ CORS_ALLOW_HEADERS = [*default_headers, "x-brutus-cliente"]
 # contenttypes criaria django_content_type (e django_migrations junto, so de
 # existir uma migration para rodar) do mesmo jeito que os outros tres criariam
 # a deles. Sem django_celery_beat pela mesma razao — o beat usa o agendador de
-# arquivo, e a agenda em tabela e da fatia 7.
+# arquivo, e a agenda em tabela so entra na fatia 8, quando o Django virar
+# dono do DDL.
 INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
@@ -110,6 +111,22 @@ DATABASES = {
     # `tenant.rls.com_barbearia_admin` e por leituras diretas de `Barbearia`
     # (fora do RLS) nas rotas de admin.
     "admin": _banco("brutus_admin", "admin"),
+    # O banco da Evolution — outro banco FISICO, dono e credencial proprios
+    # (docker/init-db.sql), sem relacao nenhuma com PGDATABASE (que so
+    # escolhe entre `brutus`/`brutus_test`). So o zelador (fatia 7,
+    # app/services/zelador.py) usa este alias, com SQL cru — sem models: o
+    # schema e' da Evolution, nao e' nosso pra declarar.
+    #
+    # `_banco()` nao serve aqui sem adaptar: ela deriva o sufixo do env var
+    # de senha de `usuario.split('_')[1]`, e "evolution" nao tem `_`.
+    "evolution": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ.get("PGDATABASE_EVOLUTION", "evolution"),
+        "USER": "evolution",
+        "PASSWORD": os.environ.get("PGPASSWORD_EVOLUTION", "evolution"),
+        "HOST": os.environ.get("PGHOST", "db"),
+        "PORT": os.environ.get("PGPORT", "5432"),
+    },
 }
 
 # DRF sem autenticacao nem permissao por padrao: a sessao e a fatia 3, e um
@@ -132,10 +149,16 @@ CELERY_BROKER_URL = os.environ.get("REDIS_URL", "redis://redis:6379/1")
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_TIMEZONE = "America/Sao_Paulo"
 
-# Cadencia alta de proposito: e um sinal de vida, e um sinal de vida que
-# aparece uma vez por hora nao serve para descobrir que o beat morreu.
+# Fatia 7: `ping` (que so provava que worker/beat respondem) deu lugar as
+# tres tarefas de verdade que substituem os `while true` do docker-compose.
+# Os tiques espelham exatamente o `sleep` que cada um tinha: 600s para
+# lembrete e healthcheck do WhatsApp (giravam a cada 10 min), 3600s para o
+# zelador (girava de hora em hora — recusa que ja aconteceu nao fica mais
+# urgente sendo relida seis vezes na mesma hora).
 CELERY_BEAT_SCHEDULE = {
-    "ping": {"task": "tenant.tasks.ping", "schedule": 60.0},
+    "lembretes": {"task": "app.tasks.lembretes", "schedule": 600.0},
+    "whatsapp-healthcheck": {"task": "app.tasks.whatsapp_healthcheck", "schedule": 600.0},
+    "zelador": {"task": "app.tasks.zelador", "schedule": 3600.0},
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
