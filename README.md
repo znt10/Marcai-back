@@ -52,8 +52,10 @@ docker compose up -d --build
 ```
 
 Isso sobe `db` (Postgres, publicado em `localhost:5433`), `redis`,
-`evolution` (WhatsApp), `api` (Django em `localhost:8000`), `worker`, `beat`,
-`agendador` e `zelador`. Confira o estado com:
+`evolution` (WhatsApp), `api` (Django em `localhost:8000`), `worker` e
+`beat`. Desde a fatia 7, `worker`/`beat` também fazem o que `agendador` e
+`zelador` faziam (lembrete, healthcheck do WhatsApp e poda do histórico) —
+os dois contêineres separados saíram do compose. Confira o estado com:
 
 ```
 docker compose ps

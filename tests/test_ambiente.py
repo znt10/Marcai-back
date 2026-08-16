@@ -22,44 +22,33 @@ def test_a_chave_da_evolution_exigida_pelo_servico_evolution():
     assert "AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}" in compose
 
 
-def test_o_agendador_confere_o_whatsapp_no_mesmo_tique_do_lembrete():
-    """O vínculo do WhatsApp cai sozinho (`Instance - LOGOUT`, sem ninguém
-    pedir) e depois disso a Evolution responde 201 com `status: PENDING`
-    para TUDO, sem entregar nada. Aconteceu, e ficou quase duas horas assim:
-    o sintoma é cliente deixando de receber confirmação, que ninguém
-    descobre olhando tela. O agendador não conserta — reconectar exige o QR,
-    que exige uma pessoa — mas grita, e era isso que faltava.
+def test_o_worker_fala_com_a_evolution_desde_a_fatia_7():
+    """Antes da fatia 7, so' o `agendador` (contêiner de `curl`) conferia
+    `connectionState` — comportamento hoje testado de verdade em
+    `test_whatsapp.py::test_estado_da_instancia_*` e
+    `test_celery.py::test_whatsapp_healthcheck_*`, nao mais por grep neste
+    arquivo. O que resta verificar aqui e' so' a fiacao do compose: o
+    `worker` (que executa a tarefa) precisa das MESMAS credenciais que o
+    `api` ja tinha.
     """
     compose = _ler("docker-compose.yml")
-    assert "connectionState" in compose
-    assert "WHATSAPP FORA DO AR" in compose
-    # A cadência do aviso é a mesma do lembrete de propósito: um processo, um
-    # laço, um lugar para olhar.
+    assert "EVOLUTION_API_URL: http://evolution:8080" in compose
     assert "EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}" in compose
 
 
-def test_o_zelador_alarma_envio_recusado_e_poda_o_historico():
+def test_evolution_guarda_so_o_texto_que_o_produto_manda():
+    """As propriedades do ZELADOR em si (conta recusado, poda o que
+    envelhece, MessageUpdate antes de Message) viraram testes de
+    comportamento de verdade em `test_zelador.py`, contra um banco real —
+    nao mais grep num script de shell que nao existe mais
+    (`docker/zelador.sh`, apagado na fatia 7: a logica virou
+    `app/services/zelador.py`, tarefa de beat).
+
+    O que resta aqui e' so' a config do `evolution` que nao mudou: os dois
+    flags que fazem o rastreio de status existir andam juntos, e conversa de
+    cliente continua fora.
+    """
     compose = _ler("docker-compose.yml")
-    zelador = _ler("docker/zelador.sh")
-
-    # O WhatsApp rejeita de forma ASSÍNCRONA: quando a recusa chega, a
-    # Evolution já devolveu 201 ao app. `status = 'ERROR'` é o único registro
-    # disso, e sem alguém lendo esse registro a mensagem que não chega é
-    # invisível.
-    assert "status = 'ERROR'" in zelador
-    assert "RECUSADO" in zelador
-
-    # A poda existe porque o rastreio de status EXIGE guardar o texto que nós
-    # mandamos — medido: sem a linha da mensagem, a MessageUpdate fica vazia.
-    # Sem poda, o histórico cresceria para sempre.
-    # As aspas viajam escapadas dentro da string de shell: \"Message\".
-    assert 'DELETE FROM \\"Message\\"' in zelador
-    assert "DIAS_DE_HISTORICO=" in zelador
-    # MessageUpdate primeiro: ela referencia Message.
-    assert zelador.index('DELETE FROM \\"MessageUpdate\\"') < zelador.index(
-        'DELETE FROM \\"Message\\"'
-    )
-
     # Os dois flags andam juntos — ligar só um deixa a tabela de status vazia.
     assert 'DATABASE_SAVE_DATA_NEW_MESSAGE: "true"' in compose
     assert 'DATABASE_SAVE_MESSAGE_UPDATE: "true"' in compose
