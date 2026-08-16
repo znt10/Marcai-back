@@ -25,7 +25,7 @@ def _logar(client, barbeiro, barbearia_id, host="brutus.localhost"):
     return host
 
 
-def _servico_vinculado(barbearia_id, barbeiro, duracao_min=30):
+def _servico_vinculado(barbearia_id, barbeiro, duracao_min=30, preco_centavos=None):
     from tenant.models import BarbeiroServico, Servico
 
     servico = Servico.objects.using("owner").create(
@@ -34,7 +34,7 @@ def _servico_vinculado(barbearia_id, barbeiro, duracao_min=30):
     )
     BarbeiroServico.objects.using("owner").create(
         barbeiro_id=barbeiro.id, servico_id=servico.id, barbearia_id=barbearia_id,
-        duracao_min=duracao_min, ativo=True,
+        duracao_min=duracao_min, preco_centavos=preco_centavos, ativo=True,
     )
     return servico
 
@@ -91,6 +91,34 @@ def test_marca_e_manda_confirmacao(client, cenario):
     assert criado.status == "CONFIRMADO"
     # Dentro da janela do lembrete (< 60 min de agora): nasce ja avisado.
     assert criado.lembrete_enviado_em is not None
+
+
+def test_marcar_no_balcao_tambem_snapshota_o_preco(client, cenario):
+    """`marcar()` e' compartilhado entre painel e publico — este teste so'
+    confirma que o balcao herda o mesmo snapshot, sem repetir toda a
+    cobertura ja feita em test_agendamentos.py."""
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    host = _logar(client, barbeiro, b.id)
+    servico = _servico_vinculado(b.id, barbeiro, preco_centavos=3500)
+    inicio = _proximo_slot_livre(barbeiro, servico)
+
+    with patch("app.api.v1.views.agendamentos_painel.enviar_texto"):
+        r = client.post(
+            "/api/painel/agendamentos",
+            {
+                "barbeiroId": barbeiro.id, "servicoId": servico.id,
+                "inicio": inicio.isoformat(), "nome": "Cliente Novo",
+                "whatsapp": "11977778888",
+            },
+            content_type="application/json", headers={"host": host, **CABECALHO},
+        )
+    assert r.status_code == 201
+
+    from tenant.models import Agendamento
+
+    criado = Agendamento.objects.using("owner").get(codigo=r.json()["codigo"])
+    assert criado.preco_centavos == 3500
 
 
 def test_marcar_no_passado_e_422(client, cenario):

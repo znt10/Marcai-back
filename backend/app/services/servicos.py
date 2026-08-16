@@ -44,7 +44,14 @@ def listar_para_agendamento(barbearia_id: str, barbeiro_id: str = QUALQUER) -> l
             vinculos.values("servico_id", "servico__nome", "servico__ordem")
             # Alias `duracao` e nao `duracao_min`: o Django recusa uma anotacao
             # com o mesmo nome de um campo do model ("conflicts with a field").
-            .annotate(duracao=Min("duracao_min"))
+            #
+            # `preco` pelo mesmo `Min`, e pelo mesmo motivo de produto: o
+            # cliente ainda nao escolheu barbeiro, entao o menor preco e' a
+            # promessa que a escolha seguinte consegue cumprir. `Min` ignora
+            # NULL sozinho — um barbeiro sem preco definido nao participa da
+            # conta, e se NINGUEM tiver preco o resultado e' None (a tela nao
+            # mostra preco nenhum pra aquele servico).
+            .annotate(duracao=Min("duracao_min"), preco=Min("preco_centavos"))
             # `servico__nome` como desempate NAO existe no route.ts, e entra de
             # proposito: la a ordem de dois servicos com a mesma `ordem` sai da
             # ordem de insercao num Map, que vem de um `findMany` sem
@@ -77,6 +84,24 @@ def validar_duracao(duracao_min: int, servico_duracao_minima_min: int) -> None:
         raise ErroDuracao(f"A duração pode ser de no máximo {DURACAO_MAXIMA_MIN} minutos.")
     if duracao_min < servico_duracao_minima_min:
         raise ErroDuracao(f"Esse serviço precisa de pelo menos {servico_duracao_minima_min} minutos.")
+
+
+class ErroPreco(Exception):
+    """Mesmo estilo de `ErroDuracao`: a mensagem VAI pra tela, redundante de
+    proposito com o CHECK do banco (`barbeiro_servico_preco_valido`) — aqui
+    a mensagem e' legivel, a do CHECK e' um despejo do Postgres."""
+
+
+def validar_preco(preco_centavos: int | None) -> None:
+    """`None` e' um valor VALIDO — o barbeiro ainda nao decidiu, e marcar nao
+    pode passar a exigir preco. So recusa quando ALGUEM tentou um preco que
+    nao faz sentido: nao-inteiro, ou <= 0."""
+    if preco_centavos is None:
+        return
+    if not isinstance(preco_centavos, int) or isinstance(preco_centavos, bool):
+        raise ErroPreco("O preço precisa ser um número inteiro de centavos.")
+    if preco_centavos <= 0:
+        raise ErroPreco("O preço precisa ser maior que zero.")
 
 
 def limites_do_servico(duracao_minima_min: int, duracao_sugerida_min: int) -> str | None:
