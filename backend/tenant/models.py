@@ -166,6 +166,11 @@ class BarbeiroServico(models.Model):
     )
     barbearia_id = models.TextField(db_column="barbeariaId")
     duracao_min = models.IntegerField(db_column="duracaoMin")
+    # Nulo ate o barbeiro decidir — sem `default=`, de proposito: ao
+    # contrario de `duracao_min` (que sempre tem um valor resolvido, a
+    # sugerida do servico quando falta o praticado), preco nao tem
+    # sugestao nenhuma pra herdar do catalogo. Quem cobra e' o barbeiro.
+    preco_centavos = models.IntegerField(db_column="precoCentavos", null=True)
     ativo = models.BooleanField(db_column="ativo", default=True)
 
     class Meta:
@@ -294,6 +299,11 @@ class Agendamento(models.Model):
     inicio = models.DateTimeField(db_column="inicio")
     fim = models.DateTimeField(db_column="fim")
     duracao_min = models.IntegerField(db_column="duracaoMin")
+    # Snapshot do preco praticado no momento de marcar — mesma razao de
+    # `servico_nome`/`duracao_min`: repreçar depois nao pode reescrever
+    # quanto um agendamento passado custou. Nulo quando o barbeiro nao
+    # tinha preco definido pra aquele servico na hora de marcar.
+    preco_centavos = models.IntegerField(db_column="precoCentavos", null=True)
     status = models.TextField(db_column="status", default="CONFIRMADO")
     # So a fatia 4 (cancelamento pelo painel) escreve nesta coluna. Nulo na
     # criacao (omitida do INSERT quando a chamada nao a cita, ver Bloqueio),

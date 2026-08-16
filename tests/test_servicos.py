@@ -31,7 +31,7 @@ def _barbeiro(barbearia_id, nome, ativo=True):
     )
 
 
-def _vinculo(barbearia_id, barbeiro, servico, duracao=30, ativo=True):
+def _vinculo(barbearia_id, barbeiro, servico, duracao=30, ativo=True, preco=None):
     from tenant.models import BarbeiroServico
 
     return BarbeiroServico.objects.using("owner").create(
@@ -39,6 +39,7 @@ def _vinculo(barbearia_id, barbeiro, servico, duracao=30, ativo=True):
         servico_id=servico.id,
         barbearia_id=barbearia_id,
         duracao_min=duracao,
+        preco_centavos=preco,
         ativo=ativo,
     )
 
@@ -53,7 +54,7 @@ def test_o_envelope_e_os_campos_sao_os_mesmos_do_next(client, cenario):
 
     corpo = _pedir(client).json()
     assert set(corpo) == {"servicos"}
-    assert set(corpo["servicos"][0]) == {"id", "nome", "duracaoMin"}
+    assert set(corpo["servicos"][0]) == {"id", "nome", "duracaoMin", "precoCentavos"}
     # `ordem` e chave de ordenacao e nao pode vazar: se vazasse, a tela
     # ganharia a tentacao de reordenar por conta propria e passariam a existir
     # duas ordenacoes, uma em cada lado.
@@ -98,7 +99,7 @@ def test_com_qualquer_a_duracao_e_a_MENOR_entre_os_barbeiros(client, cenario):
     _vinculo(b, _barbeiro(b, "Caprichoso"), servico, duracao=45)
 
     assert _pedir(client).json()["servicos"] == [
-        {"id": servico.id, "nome": "Corte", "duracaoMin": 20}
+        {"id": servico.id, "nome": "Corte", "duracaoMin": 20, "precoCentavos": None}
     ]
 
 
@@ -115,7 +116,9 @@ def test_com_barbeiro_escolhido_a_duracao_e_a_DELE(client, cenario):
     _vinculo(b, caprichoso, servico, duracao=45)
 
     corpo = _pedir(client, barbeiroId=caprichoso.id).json()
-    assert corpo["servicos"] == [{"id": servico.id, "nome": "Corte", "duracaoMin": 45}]
+    assert corpo["servicos"] == [
+        {"id": servico.id, "nome": "Corte", "duracaoMin": 45, "precoCentavos": None}
+    ]
 
 
 def test_o_servico_aparece_UMA_vez_mesmo_com_varios_barbeiros(client, cenario):
@@ -198,3 +201,52 @@ def test_o_rls_isola_uma_barbearia_da_outra(client, cenario):
 
 def test_do_host_do_admin_da_404(client, cenario):
     assert _pedir(client, "admin.localhost").status_code == 404
+
+
+# ------------------------------------------------------------------- preco
+
+
+def test_com_qualquer_o_preco_e_o_MENOR_entre_os_barbeiros(client, cenario):
+    """Mesma decisao de produto da duracao: o cliente ainda nao escolheu
+    barbeiro, entao o menor preco e' a promessa que a escolha seguinte
+    consegue cumprir."""
+    b = cenario["brutus"].id
+    servico = _servico(b)
+    _vinculo(b, _barbeiro(b, "Junior"), servico, preco=3000)
+    _vinculo(b, _barbeiro(b, "Senior"), servico, preco=7000)
+
+    corpo = _pedir(client).json()["servicos"]
+    assert corpo[0]["precoCentavos"] == 3000
+
+
+def test_com_barbeiro_escolhido_o_preco_e_o_DELE(client, cenario):
+    b = cenario["brutus"].id
+    servico = _servico(b)
+    _vinculo(b, _barbeiro(b, "Junior"), servico, preco=3000)
+    senior = _barbeiro(b, "Senior")
+    _vinculo(b, senior, servico, preco=7000)
+
+    corpo = _pedir(client, barbeiroId=senior.id).json()["servicos"]
+    assert corpo[0]["precoCentavos"] == 7000
+
+
+def test_barbeiro_sem_preco_nao_participa_do_minimo(client, cenario):
+    """Um barbeiro que ainda nao precificou nao pode fingir ser o mais
+    barato: `Min` ignora NULL, entao so' quem tem preco de verdade conta."""
+    b = cenario["brutus"].id
+    servico = _servico(b)
+    _vinculo(b, _barbeiro(b, "SemPreco"), servico, preco=None)
+    _vinculo(b, _barbeiro(b, "Senior"), servico, preco=7000)
+
+    corpo = _pedir(client).json()["servicos"]
+    assert corpo[0]["precoCentavos"] == 7000
+
+
+def test_ninguem_precificou_o_preco_vem_nulo(client, cenario):
+    b = cenario["brutus"].id
+    servico = _servico(b)
+    _vinculo(b, _barbeiro(b, "Um"), servico, preco=None)
+    _vinculo(b, _barbeiro(b, "Dois"), servico, preco=None)
+
+    corpo = _pedir(client).json()["servicos"]
+    assert corpo[0]["precoCentavos"] is None

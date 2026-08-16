@@ -51,7 +51,7 @@ def test_get_lista_todos_ativos_com_faz_falso_quando_sem_vinculo(client, cenario
     assert corpo["vinculos"] == [
         {
             "servicoId": servico.id, "nome": "Corte", "duracaoMinimaMin": 20,
-            "faz": False, "duracaoMin": 25,
+            "faz": False, "duracaoMin": 25, "precoCentavos": None,
         }
     ]
 
@@ -200,3 +200,199 @@ def test_put_dois_servicos_do_mesmo_barbeiro_nao_se_confundem(client, cenario):
     )
     assert vinculo_corte.ativo is True and vinculo_corte.duracao_min == 30
     assert vinculo_barba.ativo is False and vinculo_barba.duracao_min == 20
+
+
+# ------------------------------------------------------------------- preco
+
+
+def test_put_grava_o_preco_informado(client, cenario):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    host = _logar(client, barbeiro, b.id)
+    servico = _servico(b.id)
+
+    r = client.put(
+        "/api/painel/barbeiro-servicos",
+        {"servicoId": servico.id, "faz": True, "precoCentavos": 4500},
+        content_type="application/json",
+        headers={"host": host, **CABECALHO},
+    )
+    assert r.status_code == 200
+
+    from tenant.models import BarbeiroServico
+
+    vinculo = BarbeiroServico.objects.using("owner").get(
+        barbeiro_id=barbeiro.id, servico_id=servico.id
+    )
+    assert vinculo.preco_centavos == 4500
+
+
+def test_put_vinculo_novo_sem_preco_fica_nulo(client, cenario):
+    """Diferente da duracao (que herda a sugerida do servico), preco NAO tem
+    pra onde cair — o barbeiro so' ainda nao decidiu."""
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    host = _logar(client, barbeiro, b.id)
+    servico = _servico(b.id)
+
+    r = client.put(
+        "/api/painel/barbeiro-servicos",
+        {"servicoId": servico.id, "faz": True},
+        content_type="application/json",
+        headers={"host": host, **CABECALHO},
+    )
+    assert r.status_code == 200
+
+    from tenant.models import BarbeiroServico
+
+    vinculo = BarbeiroServico.objects.using("owner").get(
+        barbeiro_id=barbeiro.id, servico_id=servico.id
+    )
+    assert vinculo.preco_centavos is None
+
+
+def test_put_sem_preco_no_pedido_preserva_o_praticado(client, cenario):
+    """Mesma precedencia da duracao: pedido manda; sem pedido, o que ja
+    estava praticado continua valendo — um PUT sem `precoCentavos` (ex.: so'
+    mudando a duracao) nao pode apagar o preco que o barbeiro ja tinha
+    decidido."""
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    host = _logar(client, barbeiro, b.id)
+    servico = _servico(b.id, sugerida=30)
+
+    from tenant.models import BarbeiroServico
+
+    BarbeiroServico.objects.using("owner").create(
+        barbeiro_id=barbeiro.id, servico_id=servico.id, barbearia_id=b.id,
+        duracao_min=30, preco_centavos=5000, ativo=True,
+    )
+
+    r = client.put(
+        "/api/painel/barbeiro-servicos",
+        {"servicoId": servico.id, "faz": True, "duracaoMin": 40},
+        content_type="application/json",
+        headers={"host": host, **CABECALHO},
+    )
+    assert r.status_code == 200
+
+    vinculo = BarbeiroServico.objects.using("owner").get(
+        barbeiro_id=barbeiro.id, servico_id=servico.id
+    )
+    assert vinculo.duracao_min == 40
+    assert vinculo.preco_centavos == 5000
+
+
+def test_put_preco_zero_e_422(client, cenario):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    host = _logar(client, barbeiro, b.id)
+    servico = _servico(b.id)
+
+    r = client.put(
+        "/api/painel/barbeiro-servicos",
+        {"servicoId": servico.id, "faz": True, "precoCentavos": 0},
+        content_type="application/json",
+        headers={"host": host, **CABECALHO},
+    )
+    assert r.status_code == 422
+
+
+def test_put_preco_negativo_e_422(client, cenario):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    host = _logar(client, barbeiro, b.id)
+    servico = _servico(b.id)
+
+    r = client.put(
+        "/api/painel/barbeiro-servicos",
+        {"servicoId": servico.id, "faz": True, "precoCentavos": -100},
+        content_type="application/json",
+        headers={"host": host, **CABECALHO},
+    )
+    assert r.status_code == 422
+
+
+def test_dois_barbeiros_praticam_precos_diferentes_no_mesmo_servico(client, cenario):
+    """A premissa inteira da fatia: sênior cobra mais que quem chegou agora,
+    e cada um cadastra o proprio — sem afetar o vinculo do colega."""
+    b = cenario["brutus"]
+    junior = _barbeiro(b.id, nome="Junior")
+    senior = _barbeiro(b.id, nome="Senior")
+    servico = _servico(b.id)
+
+    host = _logar(client, junior, b.id)
+    client.put(
+        "/api/painel/barbeiro-servicos",
+        {"servicoId": servico.id, "faz": True, "precoCentavos": 3000},
+        content_type="application/json",
+        headers={"host": host, **CABECALHO},
+    )
+
+    host = _logar(client, senior, b.id)
+    client.put(
+        "/api/painel/barbeiro-servicos",
+        {"servicoId": servico.id, "faz": True, "precoCentavos": 7000},
+        content_type="application/json",
+        headers={"host": host, **CABECALHO},
+    )
+
+    from tenant.models import BarbeiroServico
+
+    v_junior = BarbeiroServico.objects.using("owner").get(
+        barbeiro_id=junior.id, servico_id=servico.id
+    )
+    v_senior = BarbeiroServico.objects.using("owner").get(
+        barbeiro_id=senior.id, servico_id=servico.id
+    )
+    assert v_junior.preco_centavos == 3000
+    assert v_senior.preco_centavos == 7000
+
+
+def test_get_reflete_o_preco_gravado(client, cenario):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    host = _logar(client, barbeiro, b.id)
+    servico = _servico(b.id)
+
+    client.put(
+        "/api/painel/barbeiro-servicos",
+        {"servicoId": servico.id, "faz": True, "precoCentavos": 5500},
+        content_type="application/json",
+        headers={"host": host, **CABECALHO},
+    )
+
+    r = client.get(
+        "/api/painel/barbeiro-servicos", {"barbeiroId": barbeiro.id},
+        headers={"host": host},
+    )
+    vinculo = next(v for v in r.json()["vinculos"] if v["servicoId"] == servico.id)
+    assert vinculo["precoCentavos"] == 5500
+
+
+def test_dono_edita_o_preco_de_outro_barbeiro(client, cenario):
+    """O mecanismo `alvo_do_barbeiro` ja resolvia isso pra duracao — preco
+    anda pelo MESMO caminho, sem peca de autorizacao nova."""
+    b = cenario["brutus"]
+    dono = _barbeiro(b.id, nome="Dono", papel="DONO")
+    colega = _barbeiro(b.id, nome="Colega")
+    servico = _servico(b.id)
+    host = _logar(client, dono, b.id)
+
+    r = client.put(
+        "/api/painel/barbeiro-servicos",
+        {
+            "barbeiroId": colega.id, "servicoId": servico.id,
+            "faz": True, "precoCentavos": 6000,
+        },
+        content_type="application/json",
+        headers={"host": host, **CABECALHO},
+    )
+    assert r.status_code == 200
+
+    from tenant.models import BarbeiroServico
+
+    vinculo = BarbeiroServico.objects.using("owner").get(
+        barbeiro_id=colega.id, servico_id=servico.id
+    )
+    assert vinculo.preco_centavos == 6000
