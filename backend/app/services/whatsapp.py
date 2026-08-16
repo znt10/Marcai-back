@@ -136,3 +136,41 @@ def numero_existe(whatsapp_digitos: str, ip: str) -> str:
     existe = isinstance(dados, list) and len(dados) > 0 and dados[0].get("exists") is True
     _cache_numero[whatsapp_digitos] = {"existe": existe, "expira_em": _agora_ms() + CHECK_NUMERO_TTL_MS}
     return "existe" if existe else "nao_existe"
+
+
+def estado_da_instancia() -> str:
+    """Porte do healthcheck que vivia no `agendador` (docker-compose, antes
+    da fatia 7): `"open"` quando o vinculo do WhatsApp esta de pe; senao, o
+    corpo cru da resposta (o mesmo que o log gritava) — a chamadora decide o
+    que fazer com isso, esta funcao so' NUNCA lanca, mesmo padrao de
+    `enviar_texto`/`numero_existe` acima. Quem chama e' uma tarefa periodica,
+    e uma excecao aqui mataria o tique inteiro em vez de so' logar e tentar
+    de novo no proximo.
+
+    Casamento por SUBSTRING, e nao por chave de JSON — porte fiel do `case`
+    do compose (`*\"state\":\"open\"*`), que nunca precisou saber se `state`
+    vem no topo do corpo ou aninhado sob `instance`. Reescrever isso como
+    acesso a chave arriscaria adivinhar uma forma que o shell nunca precisou
+    conhecer.
+    """
+    cfg = _config()
+    if not cfg["url"]:
+        return "sem-configuracao"
+
+    try:
+        r = requests.get(
+            f"{cfg['url']}/instance/connectionState/{cfg['instancia']}",
+            headers={"apikey": cfg["chave"]},
+            timeout=3,
+        )
+    except requests.RequestException as e:
+        logger.error("[whatsapp] falha ao consultar estado da instancia: %s", e)
+        return "erro"
+
+    if not r.ok:
+        logger.error(
+            "[whatsapp] consulta de estado recusada (%s): %s", r.status_code, r.text[:300],
+        )
+        return "erro"
+
+    return "open" if '"state":"open"' in r.text else r.text[:300]

@@ -101,6 +101,13 @@ ADMIN_TRAVA_TETO_MS = 60_000
 ADMIN_TRAVA_TENTATIVAS = 5
 ADMIN_TRAVA_BLOQUEIO_MS = 10 * 60_000
 
+# ---- Zelador do historico da Evolution (docker/zelador.sh, fatia 7) ----
+#
+# O rastreio de status EXIGE guardar o texto que a Evolution mandou — sem a
+# linha da mensagem, o status nao tem onde pousar (medido em 10/08). Como o
+# historico nao pode crescer para sempre, poda-se o que passou deste prazo.
+ZELADOR_DIAS_DE_HISTORICO = 7
+
 
 def regex_de_origem(dominio_base: str) -> str:
     """Regex de origem para o django-cors-headers.
