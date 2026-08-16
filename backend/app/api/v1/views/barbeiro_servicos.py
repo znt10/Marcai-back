@@ -42,6 +42,7 @@ class BarbeiroServicosView(ExigeSessao, APIView):
 
         resultado = definir_vinculo(
             self.barbearia_id, barbeiro_id, d["servicoId"], d["faz"], d.get("duracaoMin"),
+            d.get("precoCentavos"),
         )
         if resultado["tipo"] == "nao_encontrado":
             return Response(NAO_ENCONTRADO, status=404)

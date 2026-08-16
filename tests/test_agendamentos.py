@@ -19,7 +19,7 @@ def _barbeiro(barbearia_id, nome="Zeca"):
     )
 
 
-def _servico_vinculado(barbearia_id, barbeiro, duracao_min=30):
+def _servico_vinculado(barbearia_id, barbeiro, duracao_min=30, preco_centavos=None):
     from tenant.models import BarbeiroServico, Servico
 
     servico = Servico.objects.using("owner").create(
@@ -28,7 +28,7 @@ def _servico_vinculado(barbearia_id, barbeiro, duracao_min=30):
     )
     BarbeiroServico.objects.using("owner").create(
         barbeiro_id=barbeiro.id, servico_id=servico.id, barbearia_id=barbearia_id,
-        duracao_min=duracao_min, ativo=True,
+        duracao_min=duracao_min, preco_centavos=preco_centavos, ativo=True,
     )
     return servico
 
@@ -53,7 +53,10 @@ def _proximo_slot_livre(barbeiro, servico, daqui_a_min=30):
     return base
 
 
-def _agendamento(barbearia_id, barbeiro, inicio, duracao_min=30, status="CONFIRMADO", codigo=None):
+def _agendamento(
+    barbearia_id, barbeiro, inicio, duracao_min=30, status="CONFIRMADO", codigo=None,
+    preco_centavos=None,
+):
     from tenant.models import Agendamento, Cliente, Servico
 
     cliente = Cliente.objects.using("owner").create(
@@ -69,7 +72,7 @@ def _agendamento(barbearia_id, barbeiro, inicio, duracao_min=30, status="CONFIRM
         codigo=codigo or str(uuid.uuid4())[:10],
         barbeiro_id=barbeiro.id, cliente_id=cliente.id, servico_id=servico.id,
         servico_nome="Corte", inicio=inicio, fim=inicio + timedelta(minutes=duracao_min),
-        duracao_min=duracao_min, status=status,
+        duracao_min=duracao_min, preco_centavos=preco_centavos, status=status,
     )
 
 
@@ -108,6 +111,56 @@ def test_marca_sem_sessao_e_manda_confirmacao(client, cenario):
 
     criado = Agendamento.objects.using("owner").get(codigo=r.json()["codigo"])
     assert criado.status == "CONFIRMADO"
+
+
+def test_marcar_com_preco_definido_grava_o_snapshot(client, cenario):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    servico = _servico_vinculado(b.id, barbeiro, preco_centavos=4500)
+    inicio = _proximo_slot_livre(barbeiro, servico)
+
+    with patch("app.api.v1.views.agendamentos.enviar_texto"):
+        r = client.post(
+            "/api/agendamentos",
+            {
+                "barbeiroId": barbeiro.id, "servicoId": servico.id,
+                "inicio": inicio.isoformat(), "nome": "Cliente Novo",
+                "whatsapp": "11977778888",
+            },
+            content_type="application/json", headers={"host": HOST, **CABECALHO},
+        )
+    assert r.status_code == 201
+
+    from tenant.models import Agendamento
+
+    criado = Agendamento.objects.using("owner").get(codigo=r.json()["codigo"])
+    assert criado.preco_centavos == 4500
+
+
+def test_marcar_sem_preco_definido_continua_funcionando(client, cenario):
+    """A barbearia funciona sem preco nenhum ha muito tempo — esta fatia nao
+    pode passar a bloquear quem ainda nao precificou."""
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    servico = _servico_vinculado(b.id, barbeiro)  # preco_centavos=None
+    inicio = _proximo_slot_livre(barbeiro, servico)
+
+    with patch("app.api.v1.views.agendamentos.enviar_texto"):
+        r = client.post(
+            "/api/agendamentos",
+            {
+                "barbeiroId": barbeiro.id, "servicoId": servico.id,
+                "inicio": inicio.isoformat(), "nome": "Cliente Novo",
+                "whatsapp": "11977778888",
+            },
+            content_type="application/json", headers={"host": HOST, **CABECALHO},
+        )
+    assert r.status_code == 201
+
+    from tenant.models import Agendamento
+
+    criado = Agendamento.objects.using("owner").get(codigo=r.json()["codigo"])
+    assert criado.preco_centavos is None
 
 
 def test_numero_sem_whatsapp_e_recusado_antes_da_transacao(client, cenario, monkeypatch):
@@ -239,6 +292,28 @@ def test_detalhe_dentro_do_prazo_pode_cancelar(client, cenario):
     # O nome do cliente sai; o WhatsApp dele, nunca (§9.1).
     assert "clienteWhatsapp" not in corpo
     assert "whatsapp" not in corpo
+
+
+def test_detalhe_devolve_o_preco_snapshotado(client, cenario):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    inicio = datetime.now(timezone.utc) + timedelta(hours=3)
+    a = _agendamento(b.id, barbeiro, inicio, preco_centavos=4500)
+
+    r = client.get(f"/api/agendamentos/{a.codigo}", headers={"host": HOST})
+    assert r.status_code == 200
+    assert r.json()["precoCentavos"] == 4500
+
+
+def test_detalhe_sem_preco_snapshotado_devolve_nulo(client, cenario):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    inicio = datetime.now(timezone.utc) + timedelta(hours=3)
+    a = _agendamento(b.id, barbeiro, inicio)  # preco_centavos=None
+
+    r = client.get(f"/api/agendamentos/{a.codigo}", headers={"host": HOST})
+    assert r.status_code == 200
+    assert r.json()["precoCentavos"] is None
 
 
 def test_detalhe_dentro_do_prazo_de_cancelamento_nao_pode_cancelar(client, cenario):

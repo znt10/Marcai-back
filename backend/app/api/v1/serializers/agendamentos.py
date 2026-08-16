@@ -27,6 +27,9 @@ class AgendamentoDetalheSerializer(serializers.Serializer):
     barbeiroNome = serializers.CharField(source="barbeiro_nome")
     servicoNome = serializers.CharField(source="servico_nome")
     duracaoMin = serializers.IntegerField(source="duracao_min")
+    # Snapshot do momento de marcar — nulo quando o barbeiro nao tinha preco
+    # definido pra aquele servico naquela hora.
+    precoCentavos = serializers.IntegerField(source="preco_centavos", allow_null=True)
     inicio = InstanteISO()
     fim = InstanteISO()
     status = serializers.CharField()
