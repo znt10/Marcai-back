@@ -178,3 +178,49 @@ def test_numero_existe_ip_diferente_tem_janela_propria(monkeypatch):
             whatsapp.numero_existe(f"1197777000{i}", "3.3.3.3")
         assert whatsapp.numero_existe("11977779999", "4.4.4.4") == "existe"
     assert mock_post.call_count == whatsapp.CHECK_NUMERO_LIMITE_POR_IP_HORA + 1
+
+
+# ------------------------------------------------------------ estado_da_instancia
+
+
+def test_estado_da_instancia_sem_url_e_sem_configuracao(monkeypatch):
+    monkeypatch.delenv("EVOLUTION_API_URL", raising=False)
+    assert whatsapp.estado_da_instancia() == "sem-configuracao"
+
+
+def test_estado_da_instancia_open(monkeypatch):
+    _config_evolution(monkeypatch)
+    resposta = Mock(ok=True, text='{"instance":{"state":"open"}}')
+    with patch.object(whatsapp.requests, "get", return_value=resposta) as mock_get:
+        assert whatsapp.estado_da_instancia() == "open"
+    mock_get.assert_called_once()
+    url_chamada = mock_get.call_args.args[0]
+    assert url_chamada == "http://evolution:8080/instance/connectionState/brutus"
+
+
+def test_estado_da_instancia_close_devolve_o_corpo_cru(monkeypatch):
+    """Casamento por SUBSTRING, igual ao `case` do compose antigo — nao por
+    chave de JSON, porque a forma exata do corpo nunca foi documentada aqui."""
+    _config_evolution(monkeypatch)
+    resposta = Mock(ok=True, text='{"instance":{"state":"close"}}')
+    with patch.object(whatsapp.requests, "get", return_value=resposta):
+        assert whatsapp.estado_da_instancia() == '{"instance":{"state":"close"}}'
+
+
+def test_estado_da_instancia_falha_de_rede_e_erro(monkeypatch, caplog):
+    _config_evolution(monkeypatch)
+    import requests
+
+    with patch.object(whatsapp.requests, "get", side_effect=requests.ConnectionError("boom")):
+        with caplog.at_level("ERROR"):
+            assert whatsapp.estado_da_instancia() == "erro"
+    assert "falha ao consultar estado" in caplog.text
+
+
+def test_estado_da_instancia_resposta_recusada_e_erro(monkeypatch, caplog):
+    _config_evolution(monkeypatch)
+    resposta = Mock(ok=False, status_code=401, text="Unauthorized")
+    with patch.object(whatsapp.requests, "get", return_value=resposta):
+        with caplog.at_level("ERROR"):
+            assert whatsapp.estado_da_instancia() == "erro"
+    assert "401" in caplog.text
