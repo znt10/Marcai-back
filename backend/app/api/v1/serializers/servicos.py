@@ -17,6 +17,10 @@ class ServicoParaAgendamentoSerializer(serializers.Serializer):
     id = serializers.CharField(source="servico_id")
     nome = serializers.CharField(source="servico__nome")
     duracaoMin = serializers.IntegerField(source="duracao")
+    # Nulo quando NINGUEM que faz este servico definiu preco ainda — o menor
+    # preco entre quem faz, mesmo raciocinio do `duracaoMin` acima (ver
+    # `listar_para_agendamento`).
+    precoCentavos = serializers.IntegerField(source="preco", allow_null=True)
 
 
 # ---------------------------------------------------------------- painel
@@ -60,6 +64,7 @@ class BarbeiroServicoPainelSerializer(serializers.Serializer):
     duracaoMinimaMin = serializers.IntegerField(source="duracao_minima_min")
     faz = serializers.BooleanField()
     duracaoMin = serializers.IntegerField(source="duracao_min")
+    precoCentavos = serializers.IntegerField(source="preco_centavos", allow_null=True)
 
 
 class DefinirVinculoSerializer(serializers.Serializer):
@@ -67,3 +72,4 @@ class DefinirVinculoSerializer(serializers.Serializer):
     servicoId = serializers.CharField()
     faz = serializers.BooleanField()
     duracaoMin = serializers.IntegerField(required=False, allow_null=True)
+    precoCentavos = serializers.IntegerField(required=False, allow_null=True)

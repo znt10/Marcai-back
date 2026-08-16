@@ -89,7 +89,10 @@ def marcar(
             raise ErroCliente(422, "Esse barbeiro não faz esse serviço.")
 
         # A duracao vem do banco. O que veio no corpo e' sugestao de atacante.
+        # O preco tambem — e pode ser None: o barbeiro pode nao ter
+        # precificado ainda, e isso nao pode bloquear a marcacao.
         duracao_min = vinculo.duracao_min
+        preco_centavos = vinculo.preco_centavos
         fim = inicio + timedelta(minutes=duracao_min)
 
         if inicio <= agora:
@@ -112,6 +115,9 @@ def marcar(
             id=novo_id, barbearia_id=barbearia_id, codigo=codigo,
             barbeiro_id=barbeiro_id, cliente_id=cliente_id, servico_id=servico_id,
             servico_nome=vinculo.servico.nome, inicio=inicio, fim=fim, duracao_min=duracao_min,
+            # Snapshot do preco praticado agora — reprecar depois nao pode
+            # reescrever quanto ESTE agendamento custou.
+            preco_centavos=preco_centavos,
             status="CONFIRMADO",
             # Dentro da janela do lembrete, a confirmacao que sai a seguir JA
             # e' o lembrete: nasce avisado, o cron nunca o ve.
@@ -180,6 +186,7 @@ def detalhe_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict | N
             "barbeiro_nome": a.barbeiro.nome,
             "servico_nome": a.servico_nome,
             "duracao_min": a.duracao_min,
+            "preco_centavos": a.preco_centavos,
             "inicio": a.inicio,
             "fim": a.fim,
             "status": a.status,
