@@ -113,7 +113,8 @@ def cenario():
     `uuid` de verdade e os dois funcionam — UUIDField converte a string na
     entrada. Fica como esta porque a fatia 1 nao mexe em teste que ja passa.
     """
-    from tenant.models import Barbearia, Barbeiro
+    from fabricas import criar_barbeiro
+    from tenant.models import Barbearia
 
     dados = {}
     for slug, nome in (("brutus", "Brutus"), ("dontony", "Dom Tony")):
@@ -127,12 +128,24 @@ def cenario():
             ativo=True,
             criado_em="2026-08-11T12:00:00Z",
         )
-        Barbeiro.objects.using("owner").create(
-            id=str(uuid.uuid4()),
+        # Identidade + perfil, sempre os dois: desde a fatia 3
+        # `Barbeiro.usuario` e obrigatorio, porque um perfil sem conta seria
+        # alguem que aparece na agenda e nao consegue entrar no sistema.
+        #
+        # O whatsapp e' o MESMO nas duas barbearias de proposito (ele so' precisa
+        # ser unico dentro do tenant), mas o `login` NAO pode ser: ele e unico
+        # no sistema inteiro. Por isso o slug entra no login — e' a diferenca
+        # entre `Barbeiro` e `Usuario` que o cenario tem de respeitar.
+        criar_barbeiro(
             barbearia_id=b.id,
             nome=f"Barbeiro da {nome}",
             whatsapp="11911112222",
             ativo=True,
+            # `login` explicito: o whatsapp e' o MESMO nas duas barbearias (ele
+            # so' precisa ser unico dentro do tenant), mas `Usuario.login` e
+            # unico no sistema inteiro — deixar a fabrica derivar do whatsapp
+            # faria a segunda barbearia colidir com a primeira.
+            login=f"barbeiro@{slug}.com",
         )
         dados[slug] = b
     return dados

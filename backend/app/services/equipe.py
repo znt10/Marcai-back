@@ -4,7 +4,8 @@ from django.db.models import Count, F, Max, Q
 
 from app.services.convite import gerar_convite
 from tenant.datas import como_utc, formatar_dia_curto
-from tenant.models import Agendamento, Barbeiro
+from tenant.identidade import normalizar_login
+from tenant.models import Agendamento, Barbeiro, PapelUsuario, Usuario
 from tenant.rls import com_barbearia
 
 # ---------------------------------------------------------------- recusas puras
@@ -46,8 +47,12 @@ def _contar_donos_ativos(barbearia_id: str) -> int:
     Barbearia — o papel `brutus_app` nao tem UPDATE ali de proposito) para
     que duas desativacoes/rebaixamentos simultaneos nao leiam '2' os dois e
     deixem a barbearia com zero donos ativos."""
-    return Barbeiro.objects.select_for_update().filter(
-        barbearia_id=barbearia_id, papel="DONO", ativo=True
+    # Conta e trava `Usuario`, e nao `Barbeiro`: o papel mora na identidade
+    # desde a fatia 2. `perfil__ativo` entra junto porque "dono ativo" quer
+    # dizer alguem que ainda atende — os dois estados andam colados (ver
+    # `desativar`), e travar so' um deles deixaria a corrida aberta pelo outro.
+    return Usuario.objects.select_for_update().filter(
+        barbearia_id=barbearia_id, papel=PapelUsuario.DONO, ativo=True, perfil__ativo=True,
     ).count()
 
 
@@ -59,8 +64,16 @@ def _agenda_futura_de(barbeiro_id: str, agora) -> dict:
 
 
 def _carregar(barbeiro_id: str) -> dict | None:
+    """Junta o perfil e a identidade numa leitura so'. `papel`, `token_version`
+    e `usuario_id` vem de `Usuario`; `nome`, `whatsapp` e `ativo`, do perfil.
+
+    O resto do modulo continua falando em `atual["papel"]` como antes — o que
+    mudou foi de ONDE cada campo vem, nao o formato do dict."""
     return Barbeiro.objects.filter(id=barbeiro_id).values(
-        "id", "nome", "papel", "ativo", "whatsapp", "token_version"
+        "id", "nome", "ativo", "whatsapp",
+        papel=F("usuario__papel"),
+        token_version=F("usuario__token_version"),
+        conta=F("usuario_id"),
     ).first()
 
 
@@ -78,8 +91,11 @@ def listar(barbearia_id: str, agora) -> list[dict]:
             )
             .order_by("-ativo", "ordem")
             .values(
-                "id", "nome", "whatsapp", "papel", "ativo", "desativado_em",
-                "senha_hash", "convite_expira_em", "servicos", "expediente",
+                "id", "nome", "whatsapp", "ativo", "desativado_em",
+                "servicos", "expediente",
+                papel=F("usuario__papel"),
+                senha_hash=F("usuario__senha_hash"),
+                convite_expira_em=F("usuario__convite_expira_em"),
             )
         )
         futuros = dict(
@@ -91,10 +107,11 @@ def listar(barbearia_id: str, agora) -> list[dict]:
 
     saida = []
     for b in barbeiros:
-        # `como_utc`: a coluna e' `timestamp WITHOUT time zone`, e comparar o
-        # valor cru (naive) contra `agora` (aware) estoura em Python — mesmo
-        # que o filtro por queryset (`_agenda_futura_de` abaixo) va bem, porque
-        # ali quem compara e' o Postgres, nao o Python.
+        # `como_utc` virou no-op na fatia 1 (as colunas passaram a ser
+        # `timestamptz`), e continua chamado de proposito: ele e' o unico lugar
+        # que sabe responder "esta data ja esta rotulada?", e tirar a chamada
+        # so' porque hoje ela nao faz nada deixaria a comparacao a merce do
+        # proximo campo de data que entrar por outro caminho.
         convite_expira_em = como_utc(b["convite_expira_em"])
         convite_expirado = (
             b["senha_hash"] is None
@@ -128,12 +145,22 @@ def criar(barbearia_id: str, nome: str, whatsapp: str, papel: str) -> dict:
 
         convite = gerar_convite()
         ultimo = Barbeiro.objects.order_by("-ordem").values("ordem").first()
-        novo_id = str(uuid.uuid4())
-        Barbeiro.objects.create(
-            id=novo_id, barbearia_id=barbearia_id, nome=nome, whatsapp=whatsapp, papel=papel,
+
+        # DUAS linhas desde a fatia 3: a identidade e o perfil. O login do
+        # barbeiro e' o whatsapp dele, normalizado pela forma — e' o que faz
+        # `(11) 99999-8888` e `11999998888` serem a mesma conta na hora de
+        # entrar.
+        conta = Usuario.objects.create(
+            id=uuid.uuid4(), login=normalizar_login(whatsapp), papel=papel,
+            barbearia_id=barbearia_id,
             # Nasce SEM senha: quem entra e' quem abrir o link do convite.
             senha_hash=None,
             convite_token_hash=convite["hash"], convite_expira_em=convite["expira_em"],
+        )
+        novo_id = uuid.uuid4()
+        Barbeiro.objects.create(
+            id=novo_id, barbearia_id=barbearia_id, usuario=conta,
+            nome=nome, whatsapp=whatsapp,
             ordem=(ultimo["ordem"] if ultimo else -1) + 1,
         )
         return {"tipo": "ok", "id": novo_id, "convite": convite}
@@ -178,10 +205,26 @@ def atualizar(barbearia_id: str, sessao: dict, barbeiro_id: str, campos: dict) -
             or (novo_whatsapp is not None and novo_whatsapp != atual["whatsapp"])
         )
 
-        atualizacao = dict(campos)
+        # A partir daqui o update se PARTE em dois, porque os campos moram em
+        # tabelas diferentes desde a fatia 2: `nome` e `whatsapp` sao perfil,
+        # `papel` e `token_version` sao identidade.
+        do_perfil = {k: v for k, v in campos.items() if k in ("nome", "whatsapp")}
+        da_conta = {k: v for k, v in campos.items() if k == "papel"}
+
+        # Trocar o numero tem de trocar o LOGIN junto. O whatsapp e' por onde o
+        # barbeiro entra, e atualizar so' o perfil deixaria ele entrando pelo
+        # numero VELHO — que some da tela da equipe e continua valendo no
+        # login, a pior combinacao possivel.
+        if novo_whatsapp is not None and novo_whatsapp != atual["whatsapp"]:
+            da_conta["login"] = normalizar_login(novo_whatsapp)
+
         if mudou_sessao:
-            atualizacao["token_version"] = F("token_version") + 1
-        Barbeiro.objects.filter(id=barbeiro_id).update(**atualizacao)
+            da_conta["token_version"] = F("token_version") + 1
+
+        if do_perfil:
+            Barbeiro.objects.filter(id=barbeiro_id).update(**do_perfil)
+        if da_conta:
+            Usuario.objects.filter(id=atual["conta"]).update(**da_conta)
         return {"tipo": "ok"}
 
 
@@ -193,7 +236,11 @@ def desativar(barbearia_id: str, sessao: dict, barbeiro_id: str, agora) -> dict:
 
         agenda = _agenda_futura_de(barbeiro_id, agora)
         recusa = pode_desativar(
-            eh_eu_mesmo=(atual["id"] == sessao["sub"]),
+            # Compara a IDENTIDADE, nao o perfil: `sub` e o id do usuario
+            # desde a fatia 3. Comparar contra `atual["id"]` (o perfil) nunca
+            # daria igual, e a recusa de "voce nao pode se desativar" pararia
+            # de disparar — deixando o unico dono ativo se desligar sozinho.
+            eh_eu_mesmo=(atual["conta"] == sessao["sub"]),
             papel=atual["papel"],
             donos_ativos=_contar_donos_ativos(barbearia_id),
             agendamentos_futuros=agenda["quantos"],
@@ -202,7 +249,12 @@ def desativar(barbearia_id: str, sessao: dict, barbeiro_id: str, agora) -> dict:
         if recusa:
             return {"tipo": "recusado", "erro": recusa}
 
-        Barbeiro.objects.filter(id=barbeiro_id).update(
+        # Os DOIS lados, e nao so' um: um usuario ativo com perfil desativado
+        # entraria no sistema e nao existiria na agenda (telas vazias sem
+        # explicacao), e um perfil ativo com usuario desativado apareceria na
+        # equipe sem conseguir entrar.
+        Barbeiro.objects.filter(id=barbeiro_id).update(ativo=False, desativado_em=agora)
+        Usuario.objects.filter(id=atual["conta"]).update(
             ativo=False, desativado_em=agora,
             # Derruba a sessao na hora — sem isto, quem saiu da equipe
             # continuaria dentro do painel por ate 12 horas.
@@ -213,12 +265,15 @@ def desativar(barbearia_id: str, sessao: dict, barbeiro_id: str, agora) -> dict:
 
 def reativar(barbearia_id: str, barbeiro_id: str) -> dict:
     with com_barbearia(barbearia_id):
-        if not Barbeiro.objects.filter(id=barbeiro_id).exists():
+        atual = _carregar(barbeiro_id)
+        if atual is None:
             return {"tipo": "nao_encontrado"}
 
         # NAO incrementa token_version: quem estava desativado nao tem
         # sessao para derrubar. Volta como estava, inclusive sem senha.
+        # Os dois lados, pelo mesmo motivo de `desativar`.
         Barbeiro.objects.filter(id=barbeiro_id).update(ativo=True, desativado_em=None)
+        Usuario.objects.filter(id=atual["conta"]).update(ativo=True, desativado_em=None)
         return {"tipo": "ok"}
 
 
@@ -234,7 +289,7 @@ def reconvidar(barbearia_id: str, barbeiro_id: str) -> dict:
             return {"tipo": "desativado"}
 
         convite = gerar_convite()
-        Barbeiro.objects.filter(id=barbeiro_id).update(
+        Usuario.objects.filter(id=atual["conta"]).update(
             senha_hash=None,
             convite_token_hash=convite["hash"], convite_expira_em=convite["expira_em"],
             token_version=F("token_version") + 1,

@@ -19,11 +19,6 @@ from django.utils import timezone
 # fora da lista; quem passa a recusar sao os `choices` do Django e as rotas —
 # e nenhuma delas aceita valor livre. A garantia que importava de verdade
 # (dupla marcacao) nunca foi o enum, e continua sendo o EXCLUDE da 0003.
-class PapelBarbeiro(models.TextChoices):
-    DONO = "DONO"
-    BARBEIRO = "BARBEIRO"
-
-
 class MotivoBloqueio(models.TextChoices):
     ALMOCO = "ALMOCO"
     FOLGA = "FOLGA"
@@ -69,8 +64,10 @@ class Barbearia(models.Model):
 
 class PapelUsuario(models.TextChoices):
     """Os tres papeis do sistema, e note que ADMIN nao existe em
-    `PapelBarbeiro`: o admin da plataforma nunca foi barbeiro de lugar nenhum —
-    ate a fatia 2 ele nao tinha tabela nenhuma, morava em variavel de ambiente.
+    `PapelBarbeiro`, que existia ate a fatia 3 e cobria so' DONO/BARBEIRO: o
+    admin da plataforma nunca foi barbeiro de lugar nenhum — ele nao tinha
+    tabela, morava em variavel de ambiente. Com o papel migrando para
+    `Usuario`, aquele enum ficou sem nenhum campo apontando para ele e saiu.
     """
 
     ADMIN = "ADMIN"
@@ -174,17 +171,15 @@ class Barbeiro(models.Model):
     # sozinho (o ADMIN nao tem perfil de agenda nenhum), um Barbeiro sem
     # Usuario nao entra no sistema.
     #
-    # NULO nesta fatia, e so' nesta. A fatia 2 e' aditiva de proposito: nada
-    # ainda CRIA um Usuario — quem vai criar e' a fatia 3, junto com o convite
-    # e o cadastro de equipe. Exigir o vinculo agora quebraria todo
-    # `Barbeiro.objects.create(...)` que ja existe em service e teste, para
-    # apontar para uma tabela que continua vazia. A fatia 3 aperta para
-    # `null=False` quando houver quem preencha.
+    # OBRIGATORIO desde a fatia 3: quem cria perfil agora cria a identidade
+    # junto (equipe.criar e admin_barbearias.criar, os dois numa transacao so').
+    # Um perfil sem usuario seria alguem que aparece na agenda e nao consegue
+    # entrar no sistema — e nada mais o produziria.
     #
     # RESTRICT e nao CASCADE: apagar a identidade nao pode levar junto o perfil
     # que carrega a agenda. Desligar alguem e' `ativo=False`, nunca DELETE.
     usuario = models.OneToOneField(
-        "Usuario", on_delete=models.RESTRICT, related_name="perfil", null=True,
+        "Usuario", on_delete=models.RESTRICT, related_name="perfil",
     )
     nome = models.TextField()
     whatsapp = models.TextField()
@@ -193,29 +188,7 @@ class Barbeiro(models.Model):
     foto_url = models.TextField(null=True)
     ordem = models.IntegerField(default=0)
 
-    # ---- A sessao ----
-    #
-    # Nenhum destes sai em resposta nenhuma. Eles existem para que o login e o
-    # convite possam ser DECIDIDOS aqui; o que o cliente ve continua sendo o
-    # que o serializer lista, e ele nao lista nenhum deles.
-    papel = models.CharField(
-        max_length=20, choices=PapelBarbeiro, default=PapelBarbeiro.BARBEIRO,
-    )
-    # Nulo ate o convite ser aceito: o admin cria o dono SEM senha, e o
-    # `senha_hash` nulo e o que a rota do login tem que recusar sem revelar que
-    # o numero existe.
-    senha_hash = models.TextField(null=True)
-    # O que faz "desligar o barbeiro" derrubar a sessao dele na hora. O numero
-    # viaja dentro do cookie (`tv`) e e conferido contra a coluna a cada
-    # pedido; incrementa-lo invalida todo cookie ja emitido sem que exista
-    # lista de sessao nenhuma para varrer.
-    token_version = models.IntegerField(default=0)
-    convite_token_hash = models.TextField(null=True)
-    convite_expira_em = models.DateTimeField(null=True)
-    tentativas_login = models.IntegerField(default=0)
-    bloqueado_ate = models.DateTimeField(null=True)
-    # Nulo ate desativar, de novo nulo ao reativar — a mesma logica de
-    # "ausencia e o estado" do resto do schema.
+    # Nulo ate desativar, de novo nulo ao reativar.
     desativado_em = models.DateTimeField(null=True)
     criado_em = models.DateTimeField(default=timezone.now)
 

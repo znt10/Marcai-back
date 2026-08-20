@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from app.services.sessao import COOKIE_SESSAO, emitir
+from fabricas import criar_barbeiro
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
@@ -12,9 +13,9 @@ CABECALHO = {"x-brutus-cliente": "web"}
 
 
 def _barbeiro(barbearia_id, nome="Zeca", papel="BARBEIRO", ativo=True, **extra):
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
-    return Barbeiro.objects.using("owner").create(
+    return criar_barbeiro(
         id=str(uuid.uuid4()), barbearia_id=barbearia_id, nome=nome,
         whatsapp=f"1199{uuid.uuid4().int % 10**7:07d}", papel=papel, ativo=ativo,
         **extra,
@@ -27,10 +28,11 @@ def _logar(client, barbeiro, barbearia_id, host="brutus.localhost"):
     pode ter incrementado o token_version daquele barbeiro, e logar com um
     valor desatualizado forjaria uma sessao invalida (401) sem que o teste
     tenha nada a ver com isso."""
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
-    tv = Barbeiro.objects.using("owner").get(id=barbeiro.id).token_version
-    client.cookies[COOKIE_SESSAO] = emitir(sub=barbeiro.id, bid=barbearia_id, papel=barbeiro.papel, tv=tv)
+    # O `token_version` mora na IDENTIDADE desde a fatia 3.
+    tv = Usuario.objects.using("owner").get(id=barbeiro.usuario_id).token_version
+    client.cookies[COOKIE_SESSAO] = emitir(sub=barbeiro.usuario_id, bid=barbearia_id, papel=barbeiro.usuario.papel, tv=tv)
     return host
 
 
@@ -105,11 +107,11 @@ def test_post_cria_e_manda_convite(client, cenario):
     assert "linkConvite" in r.json()
     mock_envia.assert_called_once()
 
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
     criado = Barbeiro.objects.using("owner").get(id=r.json()["id"])
-    assert criado.senha_hash is None
-    assert criado.convite_token_hash is not None
+    assert criado.usuario.senha_hash is None
+    assert criado.usuario.convite_token_hash is not None
 
 
 def test_post_celular_repetido_ativo_da_409(client, cenario):
@@ -158,11 +160,11 @@ def test_patch_rebaixar_com_outro_dono_ativo_funciona_e_derruba_sessao(client, c
     )
     assert r.status_code == 200
 
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
     atualizado = Barbeiro.objects.using("owner").get(id=dono2.id)
-    assert atualizado.papel == "BARBEIRO"
-    assert atualizado.token_version == 1
+    assert atualizado.usuario.papel == "BARBEIRO"
+    assert atualizado.usuario.token_version == 1
 
 
 def test_patch_so_o_nome_nao_derruba_sessao(client, cenario):
@@ -178,11 +180,11 @@ def test_patch_so_o_nome_nao_derruba_sessao(client, cenario):
     )
     assert r.status_code == 200
 
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
     atualizado = Barbeiro.objects.using("owner").get(id=alvo.id)
     assert atualizado.nome == "Nome Novo"
-    assert atualizado.token_version == 0
+    assert atualizado.usuario.token_version == 0
 
 
 def test_patch_whatsapp_repetido_e_recusado(client, cenario):
@@ -303,12 +305,12 @@ def test_desativar_com_sucesso_derruba_sessao(client, cenario):
     )
     assert r.status_code == 200
 
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
     atualizado = Barbeiro.objects.using("owner").get(id=alvo.id)
     assert atualizado.ativo is False
     assert atualizado.desativado_em is not None
-    assert atualizado.token_version == 1
+    assert atualizado.usuario.token_version == 1
 
 
 # ---------------------------------------------------------------- reativar
@@ -326,12 +328,12 @@ def test_reativar_nao_derruba_sessao(client, cenario):
     )
     assert r.status_code == 200
 
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
     atualizado = Barbeiro.objects.using("owner").get(id=alvo.id)
     assert atualizado.ativo is True
     assert atualizado.desativado_em is None
-    assert atualizado.token_version == 0
+    assert atualizado.usuario.token_version == 0
 
 
 # ---------------------------------------------------------------- convite
@@ -354,11 +356,11 @@ def test_reconvidar_reseta_a_senha_e_manda_whatsapp(client, cenario):
     assert "linkConvite" in r.json()
     mock_envia.assert_called_once()
 
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
     atualizado = Barbeiro.objects.using("owner").get(id=alvo.id)
-    assert atualizado.senha_hash is None
-    assert atualizado.token_version == 1
+    assert atualizado.usuario.senha_hash is None
+    assert atualizado.usuario.token_version == 1
 
 
 def test_reconvidar_barbeiro_desativado_e_recusado(client, cenario):
@@ -385,10 +387,11 @@ def test_o_rls_isola_a_equipe(client, cenario):
         _barbeiro(b.id, nome)
 
     dono_brutus = None
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
+    # O papel mora na IDENTIDADE: a travessia do filtro e' `usuario__papel`.
     dono_brutus = Barbeiro.objects.using("owner").filter(
-        barbearia_id=cenario["brutus"].id, papel="DONO"
+        barbearia_id=cenario["brutus"].id, usuario__papel="DONO"
     ).first()
     host = _logar(client, dono_brutus, cenario["brutus"].id)
 

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import pytest
 
 from app.services.sessao import COOKIE_SESSAO, emitir
+from fabricas import criar_barbeiro
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
@@ -13,14 +14,14 @@ CABECALHO = {"x-brutus-cliente": "web"}
 def _barbeiro(barbearia_id, nome="Zeca", papel="BARBEIRO"):
     from tenant.models import Barbeiro
 
-    return Barbeiro.objects.using("owner").create(
+    return criar_barbeiro(
         id=str(uuid.uuid4()), barbearia_id=barbearia_id, nome=nome,
         whatsapp=f"1199{uuid.uuid4().int % 10**7:07d}", papel=papel, ativo=True,
     )
 
 
 def _logar(client, barbeiro, barbearia_id, host="brutus.localhost"):
-    client.cookies[COOKIE_SESSAO] = emitir(sub=barbeiro.id, bid=barbearia_id, papel=barbeiro.papel, tv=0)
+    client.cookies[COOKIE_SESSAO] = emitir(sub=barbeiro.usuario_id, bid=barbearia_id, papel=barbeiro.usuario.papel, tv=0)
     return host
 
 

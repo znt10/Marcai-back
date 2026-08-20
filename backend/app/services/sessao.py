@@ -5,7 +5,7 @@ import jwt
 
 from tenant.config import SESSAO_BARBEIRO_COOKIE, SESSAO_BARBEIRO_HORAS
 from tenant.identidade import como_uuid
-from tenant.models import Barbeiro
+from tenant.models import Usuario
 from tenant.rls import com_barbearia
 
 COOKIE_SESSAO = SESSAO_BARBEIRO_COOKIE
@@ -129,10 +129,14 @@ def da_requisicao(request) -> dict | None:
        token valido, barbeiro existente, e mesmo assim de outra barbearia. Sem
        esta linha, um dono de barbearia logado abre `outra.localhost` e entra
        no painel dela com o proprio cookie.
-    2. o barbeiro continua ATIVO. Desligar alguem tem que valer agora, nao
-       daqui a 12 horas.
-    3. `tv` == tokenVersion do banco. E o que faz "derrubar as sessoes" ser
+    2. o usuario E o perfil continuam ATIVOS. Desligar alguem tem que valer
+       agora, nao daqui a 12 horas — e sao dois estados diferentes desde a
+       fatia 2 (entrar no sistema x existir na agenda).
+    3. `tv` == token_version do banco. E o que faz "derrubar as sessoes" ser
        possivel sem existir lista de sessao para varrer.
+
+    Alem das tres, resolve o `barbeiro_id` do perfil e o acrescenta ao dict —
+    ver o comentario em `_resolver`.
 
     O resultado fica pendurado no request porque middleware e view perguntam a
     mesma coisa: sem a memoria, todo pedido de painel faria a consulta duas
@@ -164,14 +168,29 @@ def _resolver(request) -> dict | None:
         return None
 
     with com_barbearia(barbearia.id):
-        barbeiro = (
-            Barbeiro.objects.filter(id=sessao["sub"])
-            .values("ativo", "token_version")
+        # `sub` e o id do USUARIO desde a fatia 3 — era o do barbeiro. O que
+        # sai daqui junto e o id do PERFIL, e ele nao viaja no cookie de
+        # proposito: toda consulta de agenda, bloqueio e conflito filtra por
+        # `barbeiro_id`, e sem resolve-lo aqui cada uma teria de ir buscar o
+        # perfil por conta propria — ou, pior, usaria o `sub` como se fosse o
+        # id do barbeiro e leria a agenda de ninguem, calada.
+        #
+        # Resolver aqui nao custa consulta nova: esta ja existia para conferir
+        # `ativo` e `token_version`.
+        usuario = (
+            Usuario.objects.filter(id=sessao["sub"])
+            .values("ativo", "token_version", "perfil__id", "perfil__ativo")
             .first()
         )
 
-    if not barbeiro or not barbeiro["ativo"]:
+    if not usuario or not usuario["ativo"]:
         return None
-    if barbeiro["token_version"] != sessao["tv"]:
+    if usuario["token_version"] != sessao["tv"]:
         return None
-    return sessao
+    # Os DOIS precisam estar ativos, e sao coisas diferentes: a identidade
+    # (pode entrar no sistema) e o perfil (existe na agenda). Um usuario ativo
+    # com perfil desativado entraria no painel de uma agenda em que ele nao
+    # existe — telas vazias sem explicacao em vez de um 401 honesto.
+    if not usuario["perfil__id"] or not usuario["perfil__ativo"]:
+        return None
+    return {**sessao, "barbeiro_id": usuario["perfil__id"]}

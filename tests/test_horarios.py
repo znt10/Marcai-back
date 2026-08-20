@@ -2,6 +2,7 @@ import uuid
 from datetime import timedelta
 
 import pytest
+from fabricas import criar_barbeiro
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
@@ -40,7 +41,7 @@ def _servico(barbearia_id, nome="Corte"):
 def _barbeiro(barbearia_id, nome, ordem=0, ativo=True):
     from tenant.models import Barbeiro
 
-    return Barbeiro.objects.using("owner").create(
+    return criar_barbeiro(
         id=str(uuid.uuid4()),
         barbearia_id=barbearia_id,
         nome=nome,

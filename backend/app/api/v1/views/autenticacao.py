@@ -61,7 +61,7 @@ class LoginView(ExigeTenant, APIView):
 
         resultado = autenticar(
             self.barbearia_id,
-            entrada.validated_data["whatsapp"],
+            entrada.validated_data["login"],
             entrada.validated_data["senha"],
         )
 
@@ -70,16 +70,19 @@ class LoginView(ExigeTenant, APIView):
         if resultado["tipo"] == "invalido":
             return Response(INVALIDO, status=401)
 
-        barbeiro = resultado["barbeiro"]
+        # O cookie passa a carregar a IDENTIDADE: `sub` e o id do usuario, e
+        # `papel`/`tv` saem dele tambem. O nome continua vindo do PERFIL — e' a
+        # divisao que a fatia 2 criou.
+        conta = resultado["usuario"]
         jwt = emitir(
-            sub=barbeiro.id,
+            sub=conta.id,
             bid=self.barbearia_id,
-            papel=barbeiro.papel,
-            tv=barbeiro.token_version,
+            papel=conta.papel,
+            tv=conta.token_version,
         )
         # O corpo devolve nome e papel porque a tela pinta o cabecalho do
         # painel com eles sem precisar de uma segunda ida a `/auth/eu`.
-        resposta = Response({"nome": barbeiro.nome, "papel": barbeiro.papel})
+        resposta = Response({"nome": conta.perfil.nome, "papel": conta.papel})
         return _plantar_cookie(resposta, jwt)
 
 
@@ -107,7 +110,7 @@ class EuView(ExigeSessao, APIView):
     """
 
     def get(self, request):
-        barbeiro = quem_e(self.barbearia_id, self.barbeiro_id)
+        barbeiro = quem_e(self.barbearia_id, self.usuario_id)
         # `quem_e` nao volta None na pratica: o `ExigeSessao` acabou de ler
         # este barbeiro ativo, na mesma barbearia. A guarda cobre a corrida em
         # que ele e apagado entre as duas consultas, e responde 401 em vez de
