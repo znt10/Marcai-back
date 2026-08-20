@@ -67,6 +67,92 @@ class Barbearia(models.Model):
     criado_em = models.DateTimeField(default=timezone.now)
 
 
+class PapelUsuario(models.TextChoices):
+    """Os tres papeis do sistema, e note que ADMIN nao existe em
+    `PapelBarbeiro`: o admin da plataforma nunca foi barbeiro de lugar nenhum —
+    ate a fatia 2 ele nao tinha tabela nenhuma, morava em variavel de ambiente.
+    """
+
+    ADMIN = "ADMIN"
+    DONO = "DONO"
+    BARBEIRO = "BARBEIRO"
+
+
+class Usuario(models.Model):
+    """Quem faz login. Tabela PROPRIA, e nao `django.contrib.auth`.
+
+    O contrib.auth continua fora do INSTALLED_APPS pelo mesmo motivo de sempre
+    (backend/settings.py): o admin de fabrica dele enxergaria TODA barbearia,
+    que e o oposto exato do que o RLS deste banco existe para garantir. Herdar
+    dele seria herdar um modelo de permissao global num sistema cuja regra
+    central e' que ninguem ve fora do proprio tenant.
+
+    Ate aqui a identidade nunca tinha sido modelada: `Barbeiro` acumulava
+    credencial (senha, token, convite, bloqueio) junto com perfil de agenda
+    (foto, ordem, whatsapp), e as duas coisas tem ciclos de vida diferentes —
+    trocar o telefone de contato da barbearia derrubava o login do dono, porque
+    era o mesmo campo.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+
+    # ÚNICO no sistema inteiro, e nao por barbearia. Tem de ser: o login e
+    # digitado ANTES de existir sessao, e e ele que diz quem esta entrando —
+    # se o mesmo valor pudesse existir em duas barbearias, a resposta a "quem e
+    # este?" dependeria de um tenant que ainda nao foi resolvido.
+    #
+    # A consequencia e real e vale saber: hoje `Barbeiro` permite o MESMO
+    # whatsapp em barbearias diferentes (`unique(barbearia, whatsapp)`), e um
+    # login unico global tira isso de quem for barbeiro nos dois lugares. E' o
+    # preco de ter uma identidade so' por pessoa.
+    #
+    # Guardado ja normalizado — ver `tenant.identidade.normalizar_login`. O
+    # `unique` so' vale alguma coisa sobre a forma canonica: sem ela
+    # `" Joao@X.com "` e `joao@x.com` seriam duas linhas sem conflito nenhum.
+    login = models.TextField(unique=True)
+    papel = models.CharField(max_length=20, choices=PapelUsuario)
+
+    # NULO so' para o ADMIN, e a CheckConstraint abaixo amarra as duas coisas.
+    # Ele e o unico que existe fora de qualquer barbearia — e e exatamente essa
+    # nulidade que o RLS aproveita (ver a migration 0005).
+    barbearia = models.ForeignKey(
+        Barbearia, on_delete=models.RESTRICT, related_name="usuarios", null=True,
+    )
+
+    # Nulo ate o convite ser aceito. O admin cria o dono SEM senha, e e este
+    # nulo que o login tem de recusar sem revelar que a conta existe.
+    senha_hash = models.TextField(null=True)
+    # O que faz "desligar alguem" derrubar a sessao na hora: o numero viaja no
+    # cookie (`tv`) e e conferido a cada pedido, entao incrementa-lo invalida
+    # todo cookie ja emitido sem existir lista de sessao para varrer.
+    token_version = models.IntegerField(default=0)
+    convite_token_hash = models.TextField(null=True)
+    convite_expira_em = models.DateTimeField(null=True)
+    tentativas_login = models.IntegerField(default=0)
+    bloqueado_ate = models.DateTimeField(null=True)
+    ativo = models.BooleanField(default=True)
+    criado_em = models.DateTimeField(default=timezone.now)
+    desativado_em = models.DateTimeField(null=True)
+
+    class Meta:
+        constraints = [
+            # "ADMIN nao tem barbearia, todo o resto tem" escrito no BANCO, e
+            # nao so' na rota que cria. Sem ela as duas linhas erradas passam
+            # caladas: um ADMIN preso a uma barbearia (que o RLS entao
+            # esconderia do proprio admin) e um DONO sem barbearia nenhuma —
+            # invisivel para o `tenant_isolation` e, por ser NULL, visivel para
+            # a politica do admin. Os dois viram "usuario que some", o defeito
+            # mais caro de diagnosticar que esta tabela pode ter.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(papel=PapelUsuario.ADMIN, barbearia__isnull=True)
+                    | ~models.Q(papel=PapelUsuario.ADMIN) & models.Q(barbearia__isnull=False)
+                ),
+                name="admin_sem_barbearia_resto_com",
+            ),
+        ]
+
+
 class Barbeiro(models.Model):
     """Quem atende. Tambem e a tabela de tenant que o teste de RLS conta para
     provar que o escopo funciona.
@@ -83,6 +169,22 @@ class Barbeiro(models.Model):
     # que ainda tem barbeiro tem que doer, nao levar a equipe junto em silencio.
     barbearia = models.ForeignKey(
         Barbearia, on_delete=models.RESTRICT, related_name="barbeiros",
+    )
+    # O perfil aponta para a identidade, e nao o contrario: um Usuario existe
+    # sozinho (o ADMIN nao tem perfil de agenda nenhum), um Barbeiro sem
+    # Usuario nao entra no sistema.
+    #
+    # NULO nesta fatia, e so' nesta. A fatia 2 e' aditiva de proposito: nada
+    # ainda CRIA um Usuario — quem vai criar e' a fatia 3, junto com o convite
+    # e o cadastro de equipe. Exigir o vinculo agora quebraria todo
+    # `Barbeiro.objects.create(...)` que ja existe em service e teste, para
+    # apontar para uma tabela que continua vazia. A fatia 3 aperta para
+    # `null=False` quando houver quem preencha.
+    #
+    # RESTRICT e nao CASCADE: apagar a identidade nao pode levar junto o perfil
+    # que carrega a agenda. Desligar alguem e' `ativo=False`, nunca DELETE.
+    usuario = models.OneToOneField(
+        "Usuario", on_delete=models.RESTRICT, related_name="perfil", null=True,
     )
     nome = models.TextField()
     whatsapp = models.TextField()
