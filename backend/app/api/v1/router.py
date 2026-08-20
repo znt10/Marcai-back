@@ -1,5 +1,6 @@
-from django.urls import path
+from django.urls import path, register_converter
 
+from .conversores import IdConverter
 from .views.admin_autenticacao import AdminLoginView, AdminLogoutView
 from .views.admin_barbearias import (
     AdminBarbeariaConviteView,
@@ -48,13 +49,15 @@ from .views.servicos_painel import ServicoPainelDetalheView, ServicosPainelView
 # O pacote se chama v1 mas o prefixo publico e so `/api/`: a versao esta na
 # ORGANIZACAO do codigo, nao na URL, porque a URL e contrato com o front que
 # ja existe e nao pode mudar durante a travessia.
+register_converter(IdConverter, "id")
+
 urlpatterns = [
     path("barbeiros", BarbeirosView.as_view(), name="barbeiros"),
     path("servicos", ServicosView.as_view(), name="servicos"),
     path("horarios", HorariosView.as_view(), name="horarios"),
     path("dias-com-vaga", DiasComVagaView.as_view(), name="dias-com-vaga"),
     # Fecha a travessia, bloco C — o cliente marca/consulta/cancela sozinho,
-    # sem sessao nenhuma. `<str:codigo>` e nao `<str:id>`: o codigo de 10
+    # sem sessao nenhuma. `<str:codigo>` e nao `<id:id>`: o codigo de 10
     # caracteres e o que o cliente TEM em maos, nunca o id interno.
     path("agendamentos", AgendamentosView.as_view(), name="agendamentos"),
     path(
@@ -78,6 +81,22 @@ urlpatterns = [
     path("auth/login", LoginView.as_view(), name="auth-login"),
     path("auth/logout", LogoutView.as_view(), name="auth-logout"),
     path("auth/eu", EuView.as_view(), name="auth-eu"),
+    # `<id:id>` e nao `<str:id>` em toda rota de detalhe, desde a fatia 1.
+    #
+    # Enquanto `id` era TextField sobre coluna TEXT, um id malformado na URL
+    # (`/painel/servicos/nao-existe`) so nao casava com linha nenhuma, e a rota
+    # respondia o 404 que ela ja tinha escrito. Com a coluna sendo `uuid`, a
+    # mesma URL faz o Django levantar ValidationError ao preparar o parametro —
+    # e o que era 404 vira 500, numa rota que nem chegou a consultar o banco.
+    #
+    # O conversor (app/api/v1/conversores.py) entrega None nesse caso, e a view
+    # responde o 404 DELA, com corpo. O `<uuid:...>` de fabrica nao serve aqui:
+    # ele nao casaria a rota, e o 404 sairia seco, sem o `{"erro": ...}` que o
+    # front le.
+    # As duas rotas publicas de agendamento continuam com `<str:codigo>`, e
+    # `auth/convite` com `<str:token>`, porque nenhum dos dois e id de model:
+    # o codigo tem 10 caracteres e o token e base64url.
+    #
     # `<str:token>` e nao `<path:token>`: o token e base64url, que nunca tem
     # barra. `path:` engoliria barras e faria `/auth/convite/a/b` casar, o que
     # so serviria para transformar um erro de digitacao em uma busca a mais.
@@ -88,7 +107,7 @@ urlpatterns = [
     # nova, nao para repetir a checagem de autenticacao.
     path("painel/servicos", ServicosPainelView.as_view(), name="painel-servicos"),
     path(
-        "painel/servicos/<str:id>",
+        "painel/servicos/<id:id>",
         ServicoPainelDetalheView.as_view(),
         name="painel-servicos-detalhe",
     ),
@@ -101,25 +120,25 @@ urlpatterns = [
     path("painel/expediente", ExpedienteView.as_view(), name="painel-expediente"),
     path("painel/bloqueios", BloqueiosView.as_view(), name="painel-bloqueios"),
     path(
-        "painel/bloqueios/<str:id>",
+        "painel/bloqueios/<id:id>",
         BloqueioDetalheView.as_view(),
         name="painel-bloqueios-detalhe",
     ),
     # Fatia 4, bloco 3 — equipe. So o dono, nas cinco.
     path("painel/equipe", EquipeView.as_view(), name="painel-equipe"),
-    path("painel/equipe/<str:id>", EquipeDetalheView.as_view(), name="painel-equipe-detalhe"),
+    path("painel/equipe/<id:id>", EquipeDetalheView.as_view(), name="painel-equipe-detalhe"),
     path(
-        "painel/equipe/<str:id>/desativar",
+        "painel/equipe/<id:id>/desativar",
         EquipeDesativarView.as_view(),
         name="painel-equipe-desativar",
     ),
     path(
-        "painel/equipe/<str:id>/reativar",
+        "painel/equipe/<id:id>/reativar",
         EquipeReativarView.as_view(),
         name="painel-equipe-reativar",
     ),
     path(
-        "painel/equipe/<str:id>/convite",
+        "painel/equipe/<id:id>/convite",
         EquipeConviteView.as_view(),
         name="painel-equipe-convite",
     ),
@@ -132,7 +151,7 @@ urlpatterns = [
         "painel/agendamentos", AgendamentosPainelView.as_view(), name="painel-agendamentos",
     ),
     path(
-        "painel/agendamentos/<str:id>/cancelar",
+        "painel/agendamentos/<id:id>/cancelar",
         AgendamentoCancelarView.as_view(),
         name="painel-agendamentos-cancelar",
     ),
@@ -147,12 +166,12 @@ urlpatterns = [
     # SESSAO ainda precisa ser conferida — o host certo nao e' credencial.
     path("admin/barbearias", AdminBarbeariasView.as_view(), name="admin-barbearias"),
     path(
-        "admin/barbearias/<str:id>",
+        "admin/barbearias/<id:id>",
         AdminBarbeariaDetalheView.as_view(),
         name="admin-barbearias-detalhe",
     ),
     path(
-        "admin/barbearias/<str:id>/convite",
+        "admin/barbearias/<id:id>/convite",
         AdminBarbeariaConviteView.as_view(),
         name="admin-barbearias-convite",
     ),
