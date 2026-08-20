@@ -1,16 +1,15 @@
 -- Papel dono: roda migração, é dono das tabelas, IGNORA RLS.
 CREATE ROLE brutus_owner LOGIN PASSWORD 'owner';
 
--- CREATEDB: exigido por `prisma migrate dev`, que cria um shadow database
--- temporário para calcular o diff da migração. Sem isso, `migrate dev` falha
--- com P3014. Não concede acesso a dados de outros bancos, só o direito de
--- criar/derrubar bancos (o shadow database é descartado ao final).
-ALTER ROLE brutus_owner CREATEDB;
-
--- CREATEROLE: a migração admin_grants cria o papel brutus_admin, e migração
--- roda como este papel. Sem isso, `prisma migrate deploy` numa máquina nova
--- morre com "permission denied to create role" — e a alternativa seria
+-- CREATEROLE: a migration 0004_admin_grants cria o papel brutus_admin, e
+-- migration roda como este papel. Sem isso, `manage.py migrate` numa máquina
+-- nova morre com "permission denied to create role" — e a alternativa seria
 -- exigir um passo manual de superusuário antes de todo deploy.
+--
+-- CREATEDB saiu junto com o Prisma: ele era exigido só pelo shadow database
+-- que `prisma migrate dev` criava para calcular o diff da migração. O
+-- `makemigrations` do Django compara os models com o histórico em
+-- `django_migrations` e não cria banco nenhum para isso.
 -- Não é superusuário: não lê dado de outro banco nem ignora RLS.
 ALTER ROLE brutus_owner CREATEROLE;
 

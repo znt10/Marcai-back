@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 
 from tenant.config import SESSAO_BARBEIRO_COOKIE, SESSAO_BARBEIRO_HORAS
+from tenant.identidade import como_uuid
 from tenant.models import Barbeiro
 from tenant.rls import com_barbearia
 
@@ -41,11 +42,22 @@ def _segredo() -> str:
 
 
 def emitir(*, sub: str, bid: str, papel: str, tv: int) -> str:
+    """`str()` explicito em `sub` e `bid` porque desde a fatia 1 os dois chegam
+    aqui como `uuid.UUID`, e nao mais como texto: as colunas de id viraram
+    `uuid` de verdade, entao `barbeiro.id` e `barbearia.id` sao objetos.
+
+    A conversao mora AQUI, na fronteira, e nao em cada chamador. JWT e um
+    formato de texto — `jwt.encode` estoura com "Object of type UUID is not
+    JSON serializable" — e o cookie tem de continuar carregando exatamente a
+    mesma string de sempre, porque ele atravessa reinicio de processo e troca
+    de versao. Um `str()` esquecido num chamador so apareceria no login
+    daquela rota.
+    """
     agora = datetime.now(timezone.utc)
     return jwt.encode(
         {
-            "sub": sub,
-            "bid": bid,
+            "sub": str(sub),
+            "bid": str(bid),
             "papel": papel,
             "tv": tv,
             "iat": agora,
@@ -79,6 +91,21 @@ def ler(token: str | None) -> dict | None:
 
     sub, bid, papel, tv = (carga.get(k) for k in ("sub", "bid", "papel", "tv"))
     if not isinstance(sub, str) or not isinstance(bid, str):
+        return None
+    # Texto no cookie, `uuid.UUID` para dentro. A conversao acontece AQUI, e nao
+    # em cada consumidor, porque o descasamento que ela evita e SILENCIOSO: um
+    # `filter(id=sessao["sub"])` funciona com string (o Django converte), mas um
+    # `bloqueio["barbeiro_id"] != sessao["sub"]` compara UUID com str e da
+    # sempre "diferente" — sem erro nenhum. Foi assim que um DELETE legitimo de
+    # bloqueio virou 404 e que a recusa de "desativar a si mesmo" parou de
+    # disparar: os dois casos leem certo do banco e comparam errado na memoria.
+    #
+    # Um token cujo `sub`/`bid` nao tem forma de uuid nao e nosso: quem emite e'
+    # o `emitir()` logo acima, e ele so' escreve id de model. Recusar aqui e a
+    # mesma decisao do `papel not in (...)` abaixo — claim torto e token
+    # invalido, nao token a consertar.
+    sub, bid = como_uuid(sub), como_uuid(bid)
+    if sub is None or bid is None:
         return None
     if papel not in ("DONO", "BARBEIRO"):
         return None
@@ -129,6 +156,10 @@ def _resolver(request) -> dict | None:
     sessao = ler(request.COOKIES.get(COOKIE_SESSAO))
     if sessao is None:
         return None
+    # Os dois lados sao `uuid.UUID`: `barbearia.id` desde a fatia 1, e o `bid`
+    # porque `ler()` ja converteu. Sem essa conversao na entrada, aqui e' onde
+    # o descasamento apareceria primeiro — e toda sessao valida viraria 401,
+    # indistinguivel de cookie expirado.
     if sessao["bid"] != barbearia.id:
         return None
 

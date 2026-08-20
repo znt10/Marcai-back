@@ -4,14 +4,56 @@ import pytest
 from django.db import connections
 
 
-# O banco de teste ja existe (init-db.sql cria o brutus_test) e ja esta migrado
-# (o Prisma o migra via DATABASE_URL_TEST, do lado do front). Se deixassemos o
-# pytest-django cria-lo, ele nasceria SEM tabela nenhuma, porque os models sao
-# managed=False — e o sintoma seria "relation Barbearia does not exist" num
-# banco que existe e esta cheio.
+# O banco de teste ja EXISTE — `init-db.sql` cria o `brutus_test` junto com o
+# `brutus`, no mesmo volume. O que mudou na fatia 1 e quem o MIGRA: era o
+# Prisma (via DATABASE_URL_TEST, do lado do front), e agora e este `migrate`.
+#
+# Continua sem deixar o pytest-django criar/derrubar banco, e agora ha um
+# segundo motivo alem do primeiro: `brutus_owner` perdeu o CREATEDB junto com
+# o Prisma (era do shadow database dele), entao nem daria. O caminho e migrar
+# o banco que ja esta ali.
+#
+# `database="owner"` pelo mesmo motivo do entrypoint.sh: as duas conexoes
+# apontam para o mesmo banco e o que muda e o papel. `brutus_app` (o default)
+# nao tem direito de DDL, e as tabelas precisam nascer de `brutus_owner` para
+# que o `ALTER DEFAULT PRIVILEGES` do init-db.sql conceda DML aos outros dois
+# papeis.
+#
+# `migrate` e idempotente: numa segunda corrida ele le `django_migrations`, ve
+# que nao ha nada a aplicar e sai. O que ele NAO faz e reconciliar um schema
+# que mudou — depois de mexer num model, o banco de teste precisa ser
+# derrubado e recriado (`docker compose down -v` da raiz).
 @pytest.fixture(scope="session")
-def django_db_setup():
-    pass
+def django_db_setup(django_db_blocker):
+    from django.core.management import call_command
+
+    with django_db_blocker.unblock():
+        call_command("migrate", "--noinput", database="owner", verbosity=0)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _sem_flush_no_teardown():
+    """Desliga o `flush` que o pytest-django roda ao fim de cada teste
+    `transaction=True`.
+
+    Ele era inofensivo ate a fatia 1 por acidente: com todo model
+    `managed=False`, o Django nao reconhecia tabela nenhuma como sua,
+    `sql_flush()` devolvia lista vazia e o teardown nao fazia nada. Agora que o
+    Django e dono do schema, o mesmo teardown gera `TRUNCATE` das oito tabelas
+    — e o roda pela conexao `default`, que e `brutus_app`.
+
+    `brutus_app` nao tem direito de TRUNCATE, e isso e deliberado, nao uma
+    lacuna a preencher: o papel do runtime nao deve conseguir esvaziar tabela.
+    Conceder o direito so para o teste passar enfraqueceria em producao a
+    separacao que o `init-db.sql` monta de proposito.
+
+    O que se perde ao desligar e nada: `limpar_banco` (abaixo) ja TRUNCA as
+    mesmas tabelas, como `owner`, e na ENTRADA de cada teste — que e a ordem
+    mais robusta, pelo motivo que o docstring dele explica.
+    """
+    from django.test import TransactionTestCase
+
+    TransactionTestCase._fixture_teardown = lambda self: None
 
 
 @pytest.fixture(autouse=True)
@@ -41,9 +83,10 @@ def limpar_banco(request):
     ):
         with connections["owner"].cursor() as cur:
             cur.execute(
-                'TRUNCATE TABLE "Agendamento", "Cliente", "Bloqueio", '
-                '"HorarioTrabalho", "BarbeiroServico", "Servico", "Barbeiro", '
-                '"Barbearia" RESTART IDENTITY CASCADE'
+                "TRUNCATE TABLE tenant_agendamento, tenant_cliente, "
+                "tenant_bloqueio, tenant_horariotrabalho, "
+                "tenant_barbeiroservico, tenant_servico, tenant_barbeiro, "
+                "tenant_barbearia RESTART IDENTITY CASCADE"
             )
 
         from tenant.middleware import _limpar_cache_tenant
@@ -57,11 +100,12 @@ def cenario():
     """Duas barbearias com um barbeiro cada. Duas, e nao uma, porque o unico
     teste de isolamento que vale alguma coisa e o que tem de quem se isolar.
 
-    id e barbearia_id entram como `str(uuid.uuid4())`, nao como `uuid.uuid4()`
-    puro: os campos sao TextField (a coluna do Prisma e TEXT, nao uuid — ver
-    tenant/models.py), e um objeto `uuid.UUID` faria o psycopg3 mandar o
-    parametro tipado como `uuid`, reabrindo contra a propria fixture o mesmo
-    descasamento texto/uuid que o TextField foi feito para evitar.
+    O `str(uuid.uuid4())` sobreviveu a fatia 1 sem precisar mudar, mas por um
+    motivo NOVO. Antes ele era obrigatorio: os campos eram TextField sobre
+    coluna TEXT, e passar um `uuid.UUID` puro faria o psycopg mandar o
+    parametro tipado como `uuid` contra uma coluna de texto. Agora a coluna e
+    `uuid` de verdade e os dois funcionam — UUIDField converte a string na
+    entrada. Fica como esta porque a fatia 1 nao mexe em teste que ja passa.
     """
     from tenant.models import Barbearia, Barbeiro
 
