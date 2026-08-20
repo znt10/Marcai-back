@@ -17,6 +17,7 @@ from .views.agendamentos_painel import AgendamentoCancelarView, AgendamentosPain
 from .views.autenticacao import ConviteView, EuView, LoginView, LogoutView
 from .views.barbearia_painel import BarbeariaPainelView
 from .views.barbeiro_servicos import BarbeiroServicosView
+from .views.barbearia import BarbeariaView
 from .views.barbeiros import BarbeirosView
 from .views.bloqueios import BloqueioDetalheView, BloqueiosView
 from .views.conflitos import ConflitosView
@@ -52,6 +53,10 @@ from .views.servicos_painel import ServicoPainelDetalheView, ServicosPainelView
 register_converter(IdConverter, "id")
 
 urlpatterns = [
+    # A vitrine: o que a home, a pagina de convite e a de agendamento mostram
+    # antes de existir cliente, quanto mais sessao. Nasce na fatia 4, quando o
+    # front perde o Prisma e deixa de poder ler a barbearia sozinho.
+    path("barbearia", BarbeariaView.as_view(), name="barbearia"),
     path("barbeiros", BarbeirosView.as_view(), name="barbeiros"),
     path("servicos", ServicosView.as_view(), name="servicos"),
     path("horarios", HorariosView.as_view(), name="horarios"),
