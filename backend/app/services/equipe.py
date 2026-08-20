@@ -71,6 +71,7 @@ def _carregar(barbeiro_id: str) -> dict | None:
     mudou foi de ONDE cada campo vem, nao o formato do dict."""
     return Barbeiro.objects.filter(id=barbeiro_id).values(
         "id", "nome", "ativo", "whatsapp",
+        login=F("usuario__login"),
         papel=F("usuario__papel"),
         token_version=F("usuario__token_version"),
         conta=F("usuario_id"),
@@ -196,14 +197,27 @@ def atualizar(barbearia_id: str, sessao: dict, barbeiro_id: str, campos: dict) -
                 )
                 return {"tipo": "recusado", "erro": msg}
 
-        # O `papel` viaja no token: rebaixar sem invalidar deixaria alcance
-        # de dono valendo por ate 12h. O celular e' o login, entao muda-lo
-        # tambem refaz a identidade da conta. Trocar so o NOME nao derruba
-        # nada — seria expulsar o barbeiro do painel por causa de um acento.
-        mudou_sessao = (
-            (novo_papel is not None and novo_papel != atual["papel"])
-            or (novo_whatsapp is not None and novo_whatsapp != atual["whatsapp"])
+        # O celular e' o login DE QUEM ENTRA PELO CELULAR, e desde a fatia 3
+        # isso deixou de ser todo mundo: o dono entra pelo e-mail que o admin
+        # cadastrou. Perguntar em vez de presumir e' o ponto inteiro daquela
+        # fatia — sem isto, o dono que corrigisse o proprio numero tinha o
+        # login trocado para o telefone, o e-mail apagado sem aviso e a sessao
+        # derrubada. Era o mesmo acoplamento de antes, so' que mais escondido,
+        # porque a tela continuava mostrando o numero certo.
+        trocou_o_login = (
+            novo_whatsapp is not None
+            and novo_whatsapp != atual["whatsapp"]
+            and atual["login"] == normalizar_login(atual["whatsapp"])
         )
+
+        # O `papel` viaja no token: rebaixar sem invalidar deixaria alcance
+        # de dono valendo por ate 12h. Trocar so o NOME nao derruba nada —
+        # seria expulsar o barbeiro do painel por causa de um acento. E trocar
+        # o celular de quem NAO entra por ele tambem nao derruba: para essa
+        # pessoa o numero e' so' um dado de contato.
+        mudou_sessao = (
+            novo_papel is not None and novo_papel != atual["papel"]
+        ) or trocou_o_login
 
         # A partir daqui o update se PARTE em dois, porque os campos moram em
         # tabelas diferentes desde a fatia 2: `nome` e `whatsapp` sao perfil,
@@ -211,11 +225,11 @@ def atualizar(barbearia_id: str, sessao: dict, barbeiro_id: str, campos: dict) -
         do_perfil = {k: v for k, v in campos.items() if k in ("nome", "whatsapp")}
         da_conta = {k: v for k, v in campos.items() if k == "papel"}
 
-        # Trocar o numero tem de trocar o LOGIN junto. O whatsapp e' por onde o
-        # barbeiro entra, e atualizar so' o perfil deixaria ele entrando pelo
-        # numero VELHO — que some da tela da equipe e continua valendo no
-        # login, a pior combinacao possivel.
-        if novo_whatsapp is not None and novo_whatsapp != atual["whatsapp"]:
+        # Trocar o numero tem de trocar o LOGIN junto — mas so' de quem entra
+        # pelo numero. Para esse, atualizar so' o perfil deixaria ele entrando
+        # pelo numero VELHO, que some da tela da equipe e continua valendo no
+        # login: a pior combinacao possivel.
+        if trocou_o_login:
             da_conta["login"] = normalizar_login(novo_whatsapp)
 
         if mudou_sessao:

@@ -35,8 +35,7 @@ def _segredo() -> str:
     valor = os.environ.get("SESSAO_JWT_SECRET")
     if not valor:
         raise RuntimeError(
-            "SESSAO_JWT_SECRET nao definido. Ele precisa ser IGUAL ao do .env "
-            "do front: o cookie e emitido por um lado e lido pelo outro."
+            "SESSAO_JWT_SECRET nao definido. Sem ele nao ha como assinar cookie."
         )
     return valor
 

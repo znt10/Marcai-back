@@ -32,10 +32,20 @@ services:
       # Do .env do host. Sem esta linha, settings.py:8 cai no padrão
       # "inseguro-so-em-dev" e nada quebra — que é justamente o perigo.
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?defina DJANGO_SECRET_KEY no .env}
-      # O MESMO valor do .env do front. O cookie de sessao e emitido por um
-      # lado e lido pelo outro durante a travessia: segredos diferentes
-      # deslogam todo mundo a cada rota que atravessa.
+      # Assina o cookie do BARBEIRO. Desde a fatia 4 o valor nao precisa mais
+      # bater com nada do front: o Next perdeu os segredos junto com o banco,
+      # e o `proxy.ts` de la so' olha se o cookie EXISTE — quem confere
+      # assinatura, e recusa, e o Django, a cada requisicao.
       SESSAO_JWT_SECRET: ${SESSAO_JWT_SECRET:?defina SESSAO_JWT_SECRET no .env}
+      # Assina o cookie do ADMIN DA PLATAFORMA, e e' OUTRO segredo de
+      # proposito: fosse o mesmo, vazar um vazaria os dois (spec do admin §4).
+      #
+      # So' o `api` precisa dele — worker e beat nao emitem nem leem sessao de
+      # admin. Faltou desde a fatia 3, quando o login do admin passou a ser
+      # Django: a rota autenticava certo e morria em `emitir()` com 500, o que
+      # a tela mostrava como "Nao deu certo. Tenta de novo?" — indistinguivel
+      # de senha errada. So' apareceu na travessia da fatia 5.
+      ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:?defina ADMIN_JWT_SECRET no .env}
       # Nome de servico, resolvivel so DENTRO da rede do compose — igual ao
       # `app` do front. As rotas do painel (fatia 4) mandam WhatsApp
       # fire-and-forget (confirmacao, cancelamento, convite); sem isto o envio
@@ -144,9 +154,10 @@ services:
       DOMINIO_BASE: localhost
       REDIS_URL: redis://redis:6379/1
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?defina DJANGO_SECRET_KEY no .env}
-      # O MESMO valor do .env do front. O cookie de sessao e emitido por um
-      # lado e lido pelo outro durante a travessia: segredos diferentes
-      # deslogam todo mundo a cada rota que atravessa.
+      # Assina o cookie do BARBEIRO. Desde a fatia 4 o valor nao precisa mais
+      # bater com nada do front: o Next perdeu os segredos junto com o banco,
+      # e o `proxy.ts` de la so' olha se o cookie EXISTE — quem confere
+      # assinatura, e recusa, e o Django, a cada requisicao.
       SESSAO_JWT_SECRET: ${SESSAO_JWT_SECRET:?defina SESSAO_JWT_SECRET no .env}
       # Fatia 7: o `worker` PASSA A PRECISAR falar com a Evolution — a
       # tarefa `lembretes` manda WhatsApp (`enviar_texto`) e a

@@ -187,6 +187,67 @@ def test_patch_so_o_nome_nao_derruba_sessao(client, cenario):
     assert atualizado.usuario.token_version == 0
 
 
+def test_patch_no_celular_de_quem_entra_por_ele_troca_o_login_e_derruba(client, cenario):
+    """O barbeiro comum entra PELO NUMERO. Trocar o numero tem de trocar o
+    login junto, senao ele continuaria entrando pelo numero velho — que some
+    da tela da equipe e segue valendo no login, a pior combinacao possivel."""
+    from tenant.models import Usuario
+
+    b = cenario["brutus"]
+    dono = _barbeiro(b.id, papel="DONO")
+    host = _logar(client, dono, b.id)
+    alvo = _barbeiro(b.id, "Zeca")
+    assert Usuario.objects.using("owner").get(id=alvo.usuario_id).login == alvo.whatsapp
+
+    r = client.patch(
+        f"/api/painel/equipe/{alvo.id}",
+        {"whatsapp": "11988887777"},
+        content_type="application/json", headers={"host": host, **CABECALHO},
+    )
+    assert r.status_code == 200
+
+    conta = Usuario.objects.using("owner").get(id=alvo.usuario_id)
+    assert conta.login == "11988887777"
+    assert conta.token_version == 1
+
+
+def test_patch_no_celular_do_dono_nao_mexe_no_login_dele_nem_o_desloga(client, cenario):
+    """O caso que a fatia 3 existiu para permitir, e que so' apareceu na
+    travessia da fatia 5.
+
+    O dono entra pelo E-MAIL que o admin cadastrou; o celular dele e' contato,
+    nao credencial. `atualizar` presumia que celular == login e reescrevia um
+    com o outro: o dono que corrigisse o proprio numero tinha o e-mail apagado
+    sem aviso, o login trocado para o telefone e a sessao derrubada no ato.
+
+    A tela nao dava pista nenhuma — continuava mostrando o numero novo, certo.
+    """
+    from tenant.models import Usuario
+
+    b = cenario["brutus"]
+    dono = _barbeiro(b.id, papel="DONO", login="jorge@brutus.com.br")
+    host = _logar(client, dono, b.id)
+
+    r = client.patch(
+        f"/api/painel/equipe/{dono.id}",
+        {"whatsapp": "11988887777"},
+        content_type="application/json", headers={"host": host, **CABECALHO},
+    )
+    assert r.status_code == 200
+
+    from tenant.models import Barbeiro
+
+    assert Barbeiro.objects.using("owner").get(id=dono.id).whatsapp == "11988887777"
+    conta = Usuario.objects.using("owner").get(id=dono.usuario_id)
+    # O login continua sendo o dele.
+    assert conta.login == "jorge@brutus.com.br"
+    # E a sessao sobrevive: nada de identidade mudou.
+    assert conta.token_version == 0
+
+    r2 = client.get("/api/painel/equipe", headers={"host": host, **CABECALHO})
+    assert r2.status_code == 200
+
+
 def test_patch_whatsapp_repetido_e_recusado(client, cenario):
     b = cenario["brutus"]
     dono = _barbeiro(b.id, papel="DONO")
