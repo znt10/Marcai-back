@@ -86,6 +86,12 @@ def limpar_banco(request):
                 "TRUNCATE TABLE tenant_agendamento, tenant_cliente, "
                 "tenant_bloqueio, tenant_horariotrabalho, "
                 "tenant_barbeiroservico, tenant_servico, tenant_barbeiro, "
+                # `tenant_usuario` entre barbeiro e barbearia: o perfil aponta
+                # para a identidade, e a identidade para a barbearia. O CASCADE
+                # resolveria a ordem sozinho, mas listar todas deixa explicito
+                # o que esta sendo esvaziado — uma tabela ESQUECIDA aqui nao da
+                # erro, vaza para o teste seguinte.
+                "tenant_usuario, "
                 "tenant_barbearia RESTART IDENTITY CASCADE"
             )
 

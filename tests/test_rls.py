@@ -68,3 +68,77 @@ def test_aninhar_com_barbearia_falha_alto_em_vez_de_vazar(cenario):
         assert list(Barbeiro.objects.values_list("nome", flat=True)) == [
             "Barbeiro da Brutus"
         ]
+
+
+# --------------------------------------------------------------------------
+# `Usuario` (fatia 2) — as DUAS direcoes
+# --------------------------------------------------------------------------
+
+# `admin` alem de default/owner: estes dois leem pela conexao do
+# `brutus_admin`, e o pytest-django bloqueia alias nao declarado.
+_COM_ADMIN = pytest.mark.django_db(
+    databases=["default", "owner", "admin"], transaction=True,
+)
+
+
+def _usuario(login, papel, barbearia_id):
+    from tenant.models import Usuario
+
+    return Usuario.objects.using("owner").create(
+        id=uuid.uuid4(), login=login, papel=papel, barbearia_id=barbearia_id,
+    )
+
+
+def test_o_runtime_nao_enxerga_o_admin_da_plataforma(cenario):
+    """A propriedade central da fatia 2, e ela cai fora da algebra do SQL em
+    vez de depender de excecao escrita.
+
+    `tenant_isolation` compara `barbearia_id` com `current_setting`, e a linha
+    do ADMIN tem `barbearia_id` NULL. `NULL = 'algo'` nao e falso: e NULL, e
+    NULL nao satisfaz politica nenhuma. O admin da plataforma e' invisivel para
+    `brutus_app` DE GRACA, dentro do wrapper ou fora dele.
+    """
+    from tenant.models import PapelUsuario, Usuario
+
+    _usuario("admin", PapelUsuario.ADMIN, None)
+    _usuario("dono@brutus.com", PapelUsuario.DONO, cenario["brutus"].id)
+
+    with com_barbearia(cenario["brutus"].id):
+        logins = list(Usuario.objects.values_list("login", flat=True))
+
+    assert logins == ["dono@brutus.com"]
+
+
+@_COM_ADMIN
+def test_o_admin_da_plataforma_so_alcanca_a_propria_linha(cenario):
+    """A outra direcao: `admin_da_plataforma` e' `USING (barbearia_id IS NULL)`,
+    entao FORA de `com_barbearia_admin()` o admin nao ve usuario de barbearia
+    nenhuma — so' a si mesmo. Sem BYPASSRLS, igual ao resto do schema.
+    """
+    from tenant.models import PapelUsuario, Usuario
+
+    _usuario("admin", PapelUsuario.ADMIN, None)
+    _usuario("dono@brutus.com", PapelUsuario.DONO, cenario["brutus"].id)
+
+    logins = list(Usuario.objects.using("admin").values_list("login", flat=True))
+    assert logins == ["admin"]
+
+
+@_COM_ADMIN
+def test_o_admin_dentro_do_wrapper_ve_o_tenant_e_a_si_mesmo(cenario):
+    """Politicas permissivas se somam por OR: dentro de `com_barbearia_admin()`
+    o admin alcanca "o que e' do tenant corrente" OU "a linha de barbearia
+    nula". Ver as duas nao e' vazamento — e' o que faz o cadastro de barbearia
+    conseguir criar o dono e continuar enxergando quem ele acabou de criar.
+    """
+    from tenant.models import PapelUsuario, Usuario
+    from tenant.rls import com_barbearia_admin
+
+    _usuario("admin", PapelUsuario.ADMIN, None)
+    _usuario("dono@brutus.com", PapelUsuario.DONO, cenario["brutus"].id)
+    _usuario("dono@dontony.com", PapelUsuario.DONO, cenario["dontony"].id)
+
+    with com_barbearia_admin(cenario["brutus"].id):
+        logins = sorted(Usuario.objects.using("admin").values_list("login", flat=True))
+
+    assert logins == ["admin", "dono@brutus.com"]
