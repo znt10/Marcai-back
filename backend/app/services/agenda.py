@@ -1,7 +1,7 @@
 import calendar
 from datetime import datetime
 
-from django.db.models import Q
+from django.db.models import Q, F
 
 from tenant.config import DIAS_NA_HOME, JANELA_MAXIMA_DIAS
 from tenant.datas import (
@@ -231,7 +231,11 @@ def quadro_do_dia(barbearia_id: str, dia: str, barbeiro_id: str | None, agora: d
         if barbeiro_id:
             barbeiros_qs = barbeiros_qs.filter(id=barbeiro_id)
         barbeiros = list(
-            barbeiros_qs.order_by("ordem", "criado_em").values("id", "nome", "papel", "ativo")
+            # `papel` vem da IDENTIDADE desde a fatia 2 — o quadro do dia
+            # mostra quem e' dono para pintar a coluna, e o campo mudou de
+            # tabela, nao de significado.
+            barbeiros_qs.order_by("ordem", "criado_em")
+            .values("id", "nome", "ativo", papel=F("usuario__papel"))
         )
         if not barbeiros:
             return []

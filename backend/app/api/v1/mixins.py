@@ -88,6 +88,12 @@ class ExigeSessao(ExigeTenant):
 
     @property
     def barbeiro_id(self):
+        """O id do PERFIL, resolvido por `sessao.da_requisicao` — nao o `sub`,
+        que desde a fatia 3 e o id do usuario."""
+        return self.sessao["barbeiro_id"]
+
+    @property
+    def usuario_id(self):
         return self.sessao["sub"]
 
     @property
@@ -161,14 +167,17 @@ class ExigeAdmin:
     §4) — misturar as duas cadeias de heranca so' criaria um jeito de um
     cookie de barbeiro ser lido onde se espera um de admin, ou vice-versa.
 
-    A conferencia em si e' so' a assinatura (`admin_sessao.ler` devolve
-    bool, nao claims) — nao ha conta no banco pra' checar alem dela.
+    A conferencia em si continua sendo so' a assinatura. Desde a fatia 3 o
+    admin EXISTE como linha (`Usuario` com `barbearia_id` NULL), mas nao ha
+    `token_version` de admin a conferir a cada pedido — trocar
+    ADMIN_JWT_SECRET segue sendo o jeito de derrubar a sessao dele.
     """
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
         token = request.COOKIES.get(COOKIE_SESSAO_ADMIN)
-        if not ler_sessao_admin(token):
+        self.admin_id = ler_sessao_admin(token)
+        if self.admin_id is None:
             raise SessaoAdminInvalida()
 
     def finalize_response(self, request, response, *args, **kwargs):

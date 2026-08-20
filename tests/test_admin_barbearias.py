@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 
 from app.services.admin_sessao import COOKIE_SESSAO_ADMIN, emitir
+from fabricas import criar_admin, criar_barbeiro
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner", "admin"], transaction=True)
 
@@ -12,13 +13,15 @@ HOST = "admin.localhost"
 
 
 def _logar_admin(client):
-    client.cookies[COOKIE_SESSAO_ADMIN] = emitir()
+    # `emitir()` ganhou `sub` de verdade na fatia 3 — era o literal 'admin',
+    # porque a conta nao existia em lugar nenhum para ter id.
+    client.cookies[COOKIE_SESSAO_ADMIN] = emitir(criar_admin().id)
 
 
 def _barbeiro(barbearia_id, nome="Zeca", papel="BARBEIRO", ativo=True, **extra):
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
-    return Barbeiro.objects.using("owner").create(
+    return criar_barbeiro(
         id=str(uuid.uuid4()), barbearia_id=barbearia_id, nome=nome,
         whatsapp=f"1199{uuid.uuid4().int % 10**7:07d}", papel=papel, ativo=ativo,
         **extra,
@@ -64,13 +67,20 @@ def test_lista_barbearias_com_contagem(client, cenario):
 # ------------------------------------------------------------------------ POST
 
 
-def _corpo_valido(slug="nova-barbearia"):
+def _corpo_valido(slug="nova-barbearia", dono_email=None):
     return {
         "slug": slug,
         "nome": "Barbearia Nova",
         "endereco": "Rua das Flores, 10",
+        # O telefone PUBLICO da barbearia, e so' isso desde a fatia 3. Ate a
+        # fatia 2 ele era tambem o login do dono, e era esse acoplamento que
+        # fazia trocar o contato derrubar o acesso dele.
         "whatsappContato": "11988887777",
         "donoNome": "Fulano",
+        # O campo novo. Cada chamada precisa de um email PROPRIO porque
+        # `Usuario.login` e unico no sistema inteiro — duas barbearias com o
+        # mesmo email de dono nao podem coexistir.
+        "donoEmail": dono_email or f"dono-{slug}@exemplo.com",
     }
 
 
@@ -95,9 +105,15 @@ def test_post_cria_barbearia_e_dono_e_manda_convite(client):
     assert barbearia.horario_resumo is None
 
     dono = Barbeiro.objects.using("owner").get(barbearia_id=barbearia.id)
-    assert dono.papel == "DONO"
-    assert dono.senha_hash is None
-    assert dono.convite_token_hash is not None
+    # Credencial mora na IDENTIDADE desde a fatia 3; o perfil so' guarda quem a
+    # pessoa e na agenda.
+    assert dono.usuario.papel == "DONO"
+    assert dono.usuario.senha_hash is None
+    assert dono.usuario.convite_token_hash is not None
+    # O que prova a fatia: o login do dono e o EMAIL, e nao o telefone publico
+    # da barbearia.
+    assert dono.usuario.login == "dono-nova-barbearia@exemplo.com"
+    assert dono.whatsapp == "11988887777"
 
 
 def test_post_slug_invalido_da_422(client):
@@ -243,12 +259,12 @@ def test_convite_reseta_senha_e_deriva_o_token_version(client, cenario):
     mock_envia.assert_called_once()
     assert mock_envia.call_args.args[0] == dono.whatsapp
 
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
     atualizado = Barbeiro.objects.using("owner").get(id=dono.id)
-    assert atualizado.senha_hash is None
-    assert atualizado.token_version == dono.token_version + 1
-    assert atualizado.convite_token_hash is not None
+    assert atualizado.usuario.senha_hash is None
+    assert atualizado.usuario.token_version == dono.usuario.token_version + 1
+    assert atualizado.usuario.convite_token_hash is not None
 
 
 def test_convite_escolhe_o_dono_ativo_mais_antigo(client, cenario):
@@ -268,9 +284,9 @@ def test_convite_escolhe_o_dono_ativo_mais_antigo(client, cenario):
     assert r.status_code == 200
     assert mock_envia.call_args.args[0] == mais_antigo.whatsapp
 
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
-    assert Barbeiro.objects.using("owner").get(id=mais_novo.id).convite_token_hash is None
+    assert Barbeiro.objects.using("owner").get(id=mais_novo.id).usuario.convite_token_hash is None
 
 
 def test_convite_barbearia_inexistente_da_404(client):

@@ -2,6 +2,7 @@ import uuid
 from datetime import timedelta
 
 import pytest
+from fabricas import criar_barbeiro
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
@@ -9,15 +10,15 @@ SENHA = "senha-boa-123"
 CABECALHO = {"x-brutus-cliente": "web"}
 
 
-def _com_senha(barbearia_id, senha=SENHA, **extra):
+def _com_senha(barbearia_id, senha=SENHA, whatsapp="11988887777", **extra):
     from app.services.senha import gerar
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
-    return Barbeiro.objects.using("owner").create(
+    return criar_barbeiro(
         id=str(uuid.uuid4()),
         barbearia_id=barbearia_id,
         nome="Zeca",
-        whatsapp="11988887777",
+        whatsapp=whatsapp,
         ativo=True,
         senha_hash=gerar(senha),
         **extra,
@@ -139,9 +140,9 @@ def test_senha_errada_numero_inexistente_e_sem_senha_dao_a_MESMA_resposta(
     """
     b = cenario["brutus"].id
     _com_senha(b)
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
-    Barbeiro.objects.using("owner").create(
+    criar_barbeiro(
         id=str(uuid.uuid4()),
         barbearia_id=b,
         nome="Sem senha",
@@ -228,14 +229,16 @@ def test_acerto_antes_do_limite_zera_o_contador(client, cenario):
     """Quem errou quatro vezes e acertou na quinta nao pode continuar a um
     passo da trava no dia seguinte.
     """
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
     barbeiro = _com_senha(cenario["brutus"].id)
     for _ in range(4):
         _logar(client, senha="chute")
 
     assert _logar(client).status_code == 200
-    guardado = Barbeiro.objects.using("owner").get(id=barbeiro.id)
+    # A trava mora na IDENTIDADE desde a fatia 3: sao os campos que sairam de
+    # `Barbeiro` junto com senha e token.
+    guardado = Usuario.objects.using("owner").get(id=barbeiro.usuario_id)
     assert guardado.tentativas_login == 0
     assert guardado.bloqueado_ate is None
 
@@ -243,7 +246,7 @@ def test_acerto_antes_do_limite_zera_o_contador(client, cenario):
 def test_a_trava_vencida_deixa_entrar_de_novo(client, cenario):
     from django.utils import timezone
 
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
     barbeiro = _com_senha(
         cenario["brutus"].id,
@@ -251,7 +254,7 @@ def test_a_trava_vencida_deixa_entrar_de_novo(client, cenario):
         bloqueado_ate=timezone.now() - timedelta(minutes=1),
     )
     assert _logar(client).status_code == 200
-    assert Barbeiro.objects.using("owner").get(id=barbeiro.id).tentativas_login == 0
+    assert Usuario.objects.using("owner").get(id=barbeiro.usuario_id).tentativas_login == 0
 
 
 def test_a_trava_de_um_barbeiro_nao_trava_o_outro(client, cenario):
@@ -261,11 +264,11 @@ def test_a_trava_de_um_barbeiro_nao_trava_o_outro(client, cenario):
     """
     b = cenario["brutus"].id
     _com_senha(b)
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
     from app.services.senha import gerar
 
-    Barbeiro.objects.using("owner").create(
+    criar_barbeiro(
         id=str(uuid.uuid4()),
         barbearia_id=b,
         nome="Outro",
@@ -290,7 +293,15 @@ def test_cookie_valido_de_OUTRA_barbearia_nao_vale_neste_host(client, cenario):
     concorrente e entra no painel dela com o proprio cookie.
     """
     _com_senha(cenario["brutus"].id)
-    _com_senha(cenario["dontony"].id, senha="outra-senha-999")
+    # Whatsapp DIFERENTE, e isso e consequencia direta da fatia 2: o whatsapp
+    # do barbeiro virou o `login`, e `Usuario.login` e unico no sistema
+    # inteiro. Ate a fatia 1 este teste usava o mesmo numero nas duas
+    # barbearias (`Barbeiro` so' exige unicidade por tenant); agora as duas
+    # linhas nao podem coexistir.
+    #
+    # O que o teste prova continua igual: o cookie emitido num host nao vale no
+    # outro. Isso nunca dependeu de os dois numeros serem iguais.
+    _com_senha(cenario["dontony"].id, whatsapp="11977776666", senha="outra-senha-999")
 
     assert _logar(client).status_code == 200
     assert _eu(client, "brutus.localhost").status_code == 200
@@ -298,7 +309,7 @@ def test_cookie_valido_de_OUTRA_barbearia_nao_vale_neste_host(client, cenario):
 
 
 def test_desativar_o_barbeiro_derruba_a_sessao_na_hora(client, cenario):
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
     barbeiro = _com_senha(cenario["brutus"].id)
     _logar(client)
@@ -312,13 +323,13 @@ def test_bumpar_o_tokenVersion_derruba_a_sessao(client, cenario):
     """E o que torna "derrubar as sessoes" possivel sem existir lista de
     sessao nenhuma para varrer.
     """
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
     barbeiro = _com_senha(cenario["brutus"].id)
     _logar(client)
     assert _eu(client).status_code == 200
 
-    Barbeiro.objects.using("owner").filter(id=barbeiro.id).update(token_version=1)
+    Usuario.objects.using("owner").filter(id=barbeiro.usuario_id).update(token_version=1)
     assert _eu(client).status_code == 401
 
 
@@ -332,7 +343,7 @@ def test_o_401_apaga_o_cookie(client, cenario):
     """
     from app.services.sessao import COOKIE_SESSAO
 
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
     barbeiro = _com_senha(cenario["brutus"].id)
     _logar(client)
@@ -397,9 +408,9 @@ def _convidado(barbearia_id, token="token-de-teste", horas=48):
     from django.utils import timezone
 
     from app.services.senha import hash_de_convite
-    from tenant.models import Barbeiro
+    from tenant.models import Barbeiro, Usuario
 
-    return Barbeiro.objects.using("owner").create(
+    return criar_barbeiro(
         id=str(uuid.uuid4()),
         barbearia_id=barbearia_id,
         nome="Convidado",
@@ -476,3 +487,41 @@ def test_o_convite_de_uma_barbearia_nao_vale_no_host_da_outra(client, cenario):
     _convidado(cenario["brutus"].id)
     assert _aceitar(client, host="dontony.localhost").status_code == 404
     assert _aceitar(client, host="brutus.localhost").status_code == 200
+
+
+def test_trocar_o_whatsapp_da_barbearia_nao_derruba_o_login_do_dono(client, cenario):
+    """O teste que prova por que a fatia 3 existe.
+
+    Ate a fatia 2, `admin_barbearias.criar()` gravava `whatsapp=contato` no
+    dono: o telefone PUBLICO da barbearia e o LOGIN do dono eram a mesma
+    coluna. Trocar o contato — coisa banal, feita pela tela do painel — mudava
+    por tabela o identificador com que ele entrava, e ele descobria isso na
+    proxima vez que tentasse logar, sem nenhuma mensagem ligando uma coisa a
+    outra.
+
+    Agora sao duas colunas em duas tabelas: `Barbearia.whatsapp_contato` e
+    `Usuario.login`. Mexer numa nao alcanca a outra.
+    """
+    from app.services.senha import gerar
+    from tenant.models import Barbearia, PapelUsuario, Usuario
+
+    b = cenario["brutus"]
+    criar_barbeiro(
+        barbearia_id=b.id,
+        nome="Dona da Casa",
+        whatsapp=b.whatsapp_contato,  # o perfil dela usa o mesmo numero da casa
+        login="dona@brutus.com",      # mas o LOGIN e o email
+        papel=PapelUsuario.DONO,
+        senha_hash=gerar(SENHA),
+    )
+
+    assert _logar(client, whatsapp="dona@brutus.com").status_code == 200
+
+    # A troca banal que antes custava o acesso.
+    Barbearia.objects.using("owner").filter(id=b.id).update(
+        whatsapp_contato="11900001111",
+    )
+
+    assert _logar(client, whatsapp="dona@brutus.com").status_code == 200
+    # E o login continua sendo exatamente o mesmo valor de antes.
+    assert Usuario.objects.using("owner").get(login="dona@brutus.com").ativo is True

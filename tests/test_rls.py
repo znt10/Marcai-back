@@ -104,9 +104,13 @@ def test_o_runtime_nao_enxerga_o_admin_da_plataforma(cenario):
     _usuario("dono@brutus.com", PapelUsuario.DONO, cenario["brutus"].id)
 
     with com_barbearia(cenario["brutus"].id):
-        logins = list(Usuario.objects.values_list("login", flat=True))
+        logins = set(Usuario.objects.values_list("login", flat=True))
 
-    assert logins == ["dono@brutus.com"]
+    # O que importa e a AUSENCIA do admin, nao a lista exata: o `cenario` ja
+    # cria a propria identidade de barbeiro, e prender o teste ao conteudo
+    # inteiro faria ele quebrar toda vez que o cenario ganhasse alguem.
+    assert "admin" not in logins
+    assert "dono@brutus.com" in logins
 
 
 @_COM_ADMIN
@@ -121,7 +125,7 @@ def test_o_admin_da_plataforma_so_alcanca_a_propria_linha(cenario):
     _usuario("dono@brutus.com", PapelUsuario.DONO, cenario["brutus"].id)
 
     logins = list(Usuario.objects.using("admin").values_list("login", flat=True))
-    assert logins == ["admin"]
+    assert logins == ["admin"]  # exata de proposito: fora do wrapper e' SO' ele
 
 
 @_COM_ADMIN
@@ -139,6 +143,8 @@ def test_o_admin_dentro_do_wrapper_ve_o_tenant_e_a_si_mesmo(cenario):
     _usuario("dono@dontony.com", PapelUsuario.DONO, cenario["dontony"].id)
 
     with com_barbearia_admin(cenario["brutus"].id):
-        logins = sorted(Usuario.objects.using("admin").values_list("login", flat=True))
+        logins = set(Usuario.objects.using("admin").values_list("login", flat=True))
 
-    assert logins == ["admin", "dono@brutus.com"]
+    assert {"admin", "dono@brutus.com"} <= logins
+    # E' esta que prova o isolamento: o dono da OUTRA barbearia fica de fora.
+    assert "dono@dontony.com" not in logins

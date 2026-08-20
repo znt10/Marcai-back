@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 
 from app.api.v1.serializers.admin_autenticacao import INVALIDO
 from app.services.admin_sessao import COOKIE_SESSAO_ADMIN, emitir
-from app.services.admin_senha import conferir_senha
+from app.services.admin_conta import autenticar_admin
 from app.services.trava_ip import espera_de, falhas_de, ip_de, limpar_falhas, registrar_falha
 from tenant.config import ADMIN_SESSAO_HORAS, ADMIN_TRAVA_TENTATIVAS
 
@@ -48,7 +48,8 @@ class AdminLoginView(APIView):
         usuario = str(corpo.get("usuario") or "")
         senha = str(corpo.get("senha") or "")
 
-        if not conferir_senha(usuario, senha):
+        conta = autenticar_admin(usuario, senha)
+        if conta is None:
             registrar_falha(ip)
             return Response(INVALIDO, status=401)
 
@@ -56,7 +57,7 @@ class AdminLoginView(APIView):
         resposta = Response({"ok": True})
         resposta.set_cookie(
             COOKIE_SESSAO_ADMIN,
-            emitir(),
+            emitir(conta.id),
             max_age=ADMIN_SESSAO_HORAS * 3600,
             path="/",
             httponly=True,

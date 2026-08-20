@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
+from fabricas import criar_barbeiro
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
@@ -18,7 +19,7 @@ def _cabecalho(segredo="segredo-do-cron"):
 def _barbeiro(barbearia_id, nome="Zeca"):
     from tenant.models import Barbeiro
 
-    return Barbeiro.objects.using("owner").create(
+    return criar_barbeiro(
         id=str(uuid.uuid4()), barbearia_id=barbearia_id, nome=nome,
         whatsapp=f"1199{uuid.uuid4().int % 10**7:07d}", papel="BARBEIRO", ativo=True,
     )
