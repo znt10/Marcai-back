@@ -8,6 +8,7 @@ from app.api.v1.serializers.servicos import (
 )
 from app.services.autorizacao import alvo_do_barbeiro
 from app.services.barbeiro_servicos import definir_vinculo, listar_vinculos
+from tenant.identidade import como_uuid
 
 
 class BarbeiroServicosView(ExigeSessao, APIView):
@@ -40,8 +41,17 @@ class BarbeiroServicosView(ExigeSessao, APIView):
         if not barbeiro_id:
             return Response(NAO_ENCONTRADO, status=404)
 
+        # `servicoId` vem do CORPO, entao chega como texto de fonte externa. Sem
+        # a conversao, um id malformado nao vira o 404 que esta escrito logo
+        # abaixo: ele estoura ValidationError la dentro, no `filter()`, e a
+        # rota responde 500. `None` cai no mesmo "nao encontrado" de um id que
+        # simplesmente nao existe — os dois merecem a mesma resposta.
+        servico_id = como_uuid(d["servicoId"])
+        if servico_id is None:
+            return Response(NAO_ENCONTRADO, status=404)
+
         resultado = definir_vinculo(
-            self.barbearia_id, barbeiro_id, d["servicoId"], d["faz"], d.get("duracaoMin"),
+            self.barbearia_id, barbeiro_id, servico_id, d["faz"], d.get("duracaoMin"),
             d.get("precoCentavos"),
         )
         if resultado["tipo"] == "nao_encontrado":

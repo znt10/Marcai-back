@@ -5,6 +5,7 @@ from django.db.models import Count, Min, Q
 from tenant.config import DURACAO_MAXIMA_MIN, DURACAO_MINIMA_MIN
 from tenant.models import BarbeiroServico, Servico
 from tenant.rls import com_barbearia
+from tenant.identidade import como_uuid
 
 QUALQUER = "qualquer"
 
@@ -38,7 +39,18 @@ def listar_para_agendamento(barbearia_id: str, barbeiro_id: str = QUALQUER) -> l
             ativo=True, barbeiro__ativo=True, servico__ativo=True
         )
         if barbeiro_id != QUALQUER:
-            vinculos = vinculos.filter(barbeiro_id=barbeiro_id)
+            # `como_uuid` porque este id vem da QUERY de uma rota publica, onde
+            # qualquer um escreve o que quiser. Sem ele, `?barbeiroId=nao-existe`
+            # nao devolve vazio: o Django levanta ValidationError ao preparar o
+            # parametro e a rota responde 500.
+            #
+            # Um id impossivel sai por aqui como lista VAZIA, e nao como 404,
+            # pelo mesmo motivo que um id inexistente ja saia: 404 diria a quem
+            # chuta ids quais barbeiros existem naquela barbearia.
+            alvo = como_uuid(barbeiro_id)
+            if alvo is None:
+                return []
+            vinculos = vinculos.filter(barbeiro_id=alvo)
 
         return list(
             vinculos.values("servico_id", "servico__nome", "servico__ordem")
