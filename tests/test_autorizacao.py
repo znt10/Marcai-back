@@ -8,13 +8,24 @@ from app.services.autorizacao import alvo_do_barbeiro, filtro_do_barbeiro
 # com "d1" testaria uma sessao que o sistema nao consegue mais produzir — e
 # esconderia justamente o descasamento texto/uuid que estas funcoes tem de
 # atravessar, porque o `pedido` continua chegando da query como TEXTO.
-D1 = uuid.uuid4()      # o dono
-F1 = uuid.uuid4()      # o barbeiro comum
-OUTRO = uuid.uuid4()   # um terceiro qualquer
-COLEGA = uuid.uuid4()  # o barbeiro do lado
+# Desde a fatia 3 a sessao carrega DOIS ids, e eles sao diferentes de
+# proposito: `sub` e a IDENTIDADE (quem entrou) e `barbeiro_id` e o PERFIL
+# (de quem e a agenda). Os fixtures usam valores distintos justamente para
+# que trocar um pelo outro no codigo apareca como teste vermelho — se fossem
+# o mesmo uuid, a confusao passaria batida aqui e quebraria em producao.
+D1_CONTA, D1 = uuid.uuid4(), uuid.uuid4()  # o dono: identidade, perfil
+F1_CONTA, F1 = uuid.uuid4(), uuid.uuid4()  # o barbeiro comum
+OUTRO = uuid.uuid4()   # o perfil de um terceiro qualquer
+COLEGA = uuid.uuid4()  # o perfil do barbeiro do lado
 
-DONO = {"sub": D1, "bid": uuid.uuid4(), "papel": "DONO", "tv": 0}
-BARBEIRO = {"sub": F1, "bid": uuid.uuid4(), "papel": "BARBEIRO", "tv": 0}
+DONO = {
+    "sub": D1_CONTA, "bid": uuid.uuid4(), "papel": "DONO", "tv": 0,
+    "barbeiro_id": D1,
+}
+BARBEIRO = {
+    "sub": F1_CONTA, "bid": uuid.uuid4(), "papel": "BARBEIRO", "tv": 0,
+    "barbeiro_id": F1,
+}
 
 
 def test_filtro_do_dono_e_vazio():
@@ -22,8 +33,13 @@ def test_filtro_do_dono_e_vazio():
     assert filtro_do_barbeiro(DONO) == {}
 
 
-def test_filtro_do_barbeiro_e_o_proprio_id():
+def test_filtro_do_barbeiro_e_o_proprio_perfil_e_nao_a_identidade():
+    """O filtro tem de sair com o id do PERFIL. Agenda, bloqueio e conflito
+    referenciam `Barbeiro`; sair com o `sub` (a identidade) nao daria erro
+    nenhum — os dois sao uuid — e simplesmente nao casaria linha alguma: o
+    barbeiro veria a agenda vazia e concluiria que perdeu os agendamentos."""
     assert filtro_do_barbeiro(BARBEIRO) == {"barbeiro_id": F1}
+    assert filtro_do_barbeiro(BARBEIRO) != {"barbeiro_id": F1_CONTA}
 
 
 def test_alvo_do_dono_sem_pedido_e_ele_mesmo():

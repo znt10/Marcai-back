@@ -12,10 +12,17 @@ from tenant.identidade import como_uuid
 
 
 def filtro_do_barbeiro(sessao: dict) -> dict:
-    """`{}` para o dono (ve tudo), `{"barbeiro_id": sessao["sub"]}` para o
-    barbeiro (ve so o dele). O UNICO lugar onde esse filtro nasce — nenhuma
-    consulta do painel deve monta-lo por fora."""
-    return {} if sessao["papel"] == "DONO" else {"barbeiro_id": sessao["sub"]}
+    """`{}` para o dono (ve tudo), `{"barbeiro_id": ...}` para o barbeiro (ve
+    so o dele). O UNICO lugar onde esse filtro nasce — nenhuma consulta do
+    painel deve monta-lo por fora.
+
+    Le `sessao["barbeiro_id"]`, e nao `sessao["sub"]`, desde a fatia 3: o `sub`
+    passou a ser o id do USUARIO, e agenda/bloqueio/conflito referenciam o
+    PERFIL. Trocar um pelo outro nao daria erro nenhum — os dois sao uuid — e
+    o filtro simplesmente nao casaria com linha alguma: o barbeiro veria a
+    agenda vazia e concluiria que perdeu os agendamentos.
+    """
+    return {} if sessao["papel"] == "DONO" else {"barbeiro_id": sessao["barbeiro_id"]}
 
 
 def alvo_do_barbeiro(sessao: dict, pedido: str | None):
@@ -39,9 +46,10 @@ def alvo_do_barbeiro(sessao: dict, pedido: str | None):
     if pedido and alvo is None:
         return None
 
+    eu = sessao["barbeiro_id"]
     filtro = filtro_do_barbeiro(sessao)
     if "barbeiro_id" not in filtro:
-        return alvo or sessao["sub"]  # dono
-    if alvo and alvo != sessao["sub"]:
+        return alvo or eu  # dono
+    if alvo and alvo != eu:
         return None  # barbeiro pedindo o do colega
-    return sessao["sub"]
+    return eu

@@ -1,4 +1,5 @@
 import pytest
+from fabricas import criar_barbeiro
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
@@ -18,7 +19,7 @@ def test_conta_sob_o_rls_e_o_numero_muda_por_barbearia(client, cenario):
     # respostas seriam iguais e o teste passaria sem provar nada.
     import uuid
 
-    Barbeiro.objects.using("owner").create(
+    criar_barbeiro(
         id=str(uuid.uuid4()),
         barbearia_id=cenario["dontony"].id,
         nome="Segundo da Dom Tony",

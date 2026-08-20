@@ -1,6 +1,7 @@
-import base64
+import uuid
 
 import pytest
+from fabricas import criar_admin
 
 # O modulo inteiro ganha `django_db`, mesmo os testes unitarios que nao tocam
 # `Barbearia`/`Barbeiro` (a sessao do admin nao tem tenant nenhum por baixo —
@@ -8,7 +9,12 @@ import pytest
 # pelo `TenantMiddleware`, que consulta `Barbearia` MESMO quando o host e' o
 # do admin fora do caminho feliz (host errado, ex.: `brutus.localhost`), e a
 # marca precisa estar de pe ANTES desse caminho ser exercitado.
-pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
+# `admin` entra na lista porque o admin da plataforma so e alcancavel pela
+# conexao do `brutus_admin` — e a politica `admin_da_plataforma` que enxerga
+# `barbearia_id IS NULL`.
+pytestmark = pytest.mark.django_db(
+    databases=["default", "owner", "admin"], transaction=True,
+)
 
 
 # ------------------------------------------------------------ admin_sessao.py
@@ -17,21 +23,21 @@ pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=T
 def test_emitir_e_ler_roda_por_dentro():
     from app.services.admin_sessao import emitir, ler
 
-    token = emitir()
-    assert ler(token) is True
+    token = emitir(criar_admin(login='outro-admin').id)
+    assert ler(token) is not None
 
 
 def test_ler_recusa_none_ou_vazio():
     from app.services.admin_sessao import ler
 
-    assert ler(None) is False
-    assert ler("") is False
+    assert ler(None) is None
+    assert ler("") is None
 
 
 def test_ler_recusa_lixo():
     from app.services.admin_sessao import ler
 
-    assert ler("nao-e-um-jwt") is False
+    assert ler("nao-e-um-jwt") is None
 
 
 def test_ler_recusa_assinado_com_outro_segredo(monkeypatch):
@@ -40,7 +46,7 @@ def test_ler_recusa_assinado_com_outro_segredo(monkeypatch):
     from app.services.admin_sessao import ALGORITMO, ler
 
     token = pyjwt.encode({"sub": "admin"}, "segredo-errado", algorithm=ALGORITMO)
-    assert ler(token) is False
+    assert ler(token) is None
 
 
 def test_ler_recusa_sub_diferente_de_admin():
@@ -49,7 +55,7 @@ def test_ler_recusa_sub_diferente_de_admin():
     from app.services.admin_sessao import ALGORITMO, _segredo, ler
 
     token = pyjwt.encode({"sub": "outra-coisa"}, _segredo(), algorithm=ALGORITMO)
-    assert ler(token) is False
+    assert ler(token) is None
 
 
 def test_emitir_sem_segredo_no_ambiente_estoura(monkeypatch):
@@ -57,7 +63,7 @@ def test_emitir_sem_segredo_no_ambiente_estoura(monkeypatch):
     from app.services.admin_sessao import emitir
 
     with pytest.raises(RuntimeError):
-        emitir()
+        emitir(criar_admin(login='outro-admin').id)
 
 
 # --------------------------------------------------------------- trava_ip.py
@@ -137,48 +143,58 @@ def test_limpar_falhas_reseta_a_progressao():
     assert trava_ip.espera_de("7.7.7.7") == 0
 
 
-# ------------------------------------------------------------- admin_senha.py
+# ------------------------------------------------------------- admin_conta.py
+#
+# Os quatro testes que ficavam aqui exercitavam `admin_senha.conferir_senha`,
+# que comparava o usuario com `ADMIN_USUARIO` e a senha com
+# `ADMIN_SENHA_HASH_B64`. O modulo inteiro morreu na fatia 3 — junto com o
+# base64, que so' existia porque o `$` do argon2 era expandido pelo dotenv.
 
 
-def test_conferir_senha_aceita_usuario_e_senha_certos(monkeypatch):
-    from app.services.admin_senha import conferir_senha
+def test_autenticar_admin_aceita_usuario_e_senha_certos(db):
+    from app.services.admin_conta import autenticar_admin
+
+    criado = criar_admin(login="kadu2", senha="senha-do-dono-123")
+    assert autenticar_admin("kadu2", "senha-do-dono-123").id == criado.id
+
+
+def test_autenticar_admin_recusa_senha_errada(db):
+    from app.services.admin_conta import autenticar_admin
+
+    criar_admin(login="kadu3", senha="senha-do-dono-123")
+    assert autenticar_admin("kadu3", "senha-errada") is None
+
+
+def test_autenticar_admin_recusa_usuario_errado(db):
+    from app.services.admin_conta import autenticar_admin
+
+    criar_admin(login="kadu4", senha="senha-do-dono-123")
+    assert autenticar_admin("ninguem", "senha-do-dono-123") is None
+
+
+def test_autenticar_admin_com_login_que_nao_existe_recusa(db):
+    """O caso que antes era "sem env var". Continua rodando o `confere` contra
+    um hash descartavel para nao entregar pelo TEMPO que a conta nao existe."""
+    from app.services.admin_conta import autenticar_admin
+
+    assert autenticar_admin("ninguem-com-esse-login", "senha-do-dono-123") is None
+    assert autenticar_admin("", "") is None
+
+
+def test_o_dono_de_barbearia_nao_entra_pelo_login_do_admin(cenario):
+    """O filtro nao e' so' por login: um `Usuario(DONO)` tem senha e papel
+    validos, e sem o `papel=ADMIN`/`barbearia IS NULL` ele passaria pelo login
+    da PLATAFORMA — de onde se administra todas as barbearias."""
+    from app.services.admin_conta import autenticar_admin
     from app.services.senha import gerar
+    from tenant.models import PapelUsuario, Usuario
 
-    hash_b64 = base64.b64encode(gerar("senha-do-dono-123").encode()).decode()
-    monkeypatch.setenv("ADMIN_USUARIO", "kadu")
-    monkeypatch.setenv("ADMIN_SENHA_HASH_B64", hash_b64)
+    Usuario.objects.using("owner").create(
+        id=uuid.uuid4(), login="dono@x.com", papel=PapelUsuario.DONO,
+        barbearia_id=cenario["brutus"].id, senha_hash=gerar("senha-do-dono-123"),
+    )
+    assert autenticar_admin("dono@x.com", "senha-do-dono-123") is None
 
-    assert conferir_senha("kadu", "senha-do-dono-123") is True
-
-
-def test_conferir_senha_recusa_senha_errada(monkeypatch):
-    from app.services.admin_senha import conferir_senha
-    from app.services.senha import gerar
-
-    hash_b64 = base64.b64encode(gerar("senha-certa").encode()).decode()
-    monkeypatch.setenv("ADMIN_USUARIO", "kadu")
-    monkeypatch.setenv("ADMIN_SENHA_HASH_B64", hash_b64)
-
-    assert conferir_senha("kadu", "senha-errada") is False
-
-
-def test_conferir_senha_recusa_usuario_errado(monkeypatch):
-    from app.services.admin_senha import conferir_senha
-    from app.services.senha import gerar
-
-    hash_b64 = base64.b64encode(gerar("senha-certa").encode()).decode()
-    monkeypatch.setenv("ADMIN_USUARIO", "kadu")
-    monkeypatch.setenv("ADMIN_SENHA_HASH_B64", hash_b64)
-
-    assert conferir_senha("outro-usuario", "senha-certa") is False
-
-
-def test_conferir_senha_sem_env_recusa_tudo(monkeypatch):
-    monkeypatch.delenv("ADMIN_USUARIO", raising=False)
-    monkeypatch.delenv("ADMIN_SENHA_HASH_B64", raising=False)
-    from app.services.admin_senha import conferir_senha
-
-    assert conferir_senha("qualquer", "qualquer") is False
 
 
 # ---------------------------------------------------------------- ExigeAdmin
@@ -211,7 +227,7 @@ def test_exige_admin_deixa_passar_com_cookie_valido():
             return Response({"ok": True})
 
     req = RequestFactory().get("/")
-    req.COOKIES[COOKIE_SESSAO_ADMIN] = emitir()
+    req.COOKIES[COOKIE_SESSAO_ADMIN] = emitir(criar_admin(login='outro-admin').id)
     resposta = _View.as_view()(req)
     assert resposta.status_code == 200
 
@@ -229,12 +245,11 @@ def _login(client, usuario="kadu", senha="senha-do-dono-123", host="admin.localh
 
 
 @pytest.fixture(autouse=True)
-def _admin_de_teste(monkeypatch):
-    from app.services.senha import gerar
-
-    hash_b64 = base64.b64encode(gerar("senha-do-dono-123").encode()).decode()
-    monkeypatch.setenv("ADMIN_USUARIO", "kadu")
-    monkeypatch.setenv("ADMIN_SENHA_HASH_B64", hash_b64)
+def _admin_de_teste(db):
+    """Cria a LINHA do admin. Antes da fatia 3 esta fixture fazia
+    `monkeypatch.setenv("ADMIN_USUARIO", ...)` — o admin nao existia em lugar
+    nenhum, e "criar o admin" era mexer no ambiente do processo."""
+    return criar_admin(login="kadu", senha="senha-do-dono-123")
 
 
 def test_login_admin_certo_planta_cookie(client):
@@ -243,7 +258,7 @@ def test_login_admin_certo_planta_cookie(client):
     r = _login(client)
     assert r.status_code == 200
     assert r.json() == {"ok": True}
-    assert ler(r.cookies[COOKIE_SESSAO_ADMIN].value) is True
+    assert ler(r.cookies[COOKIE_SESSAO_ADMIN].value) is not None
 
 
 def test_login_admin_fora_do_host_admin_da_404(client):
