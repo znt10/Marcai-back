@@ -46,6 +46,21 @@ services:
       # a tela mostrava como "Nao deu certo. Tenta de novo?" — indistinguivel
       # de senha errada. So' apareceu na travessia da fatia 5.
       ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:?defina ADMIN_JWT_SECRET no .env}
+      # A semente de desenvolvimento, e ela existe SO aqui de proposito: o
+      # ENTRYPOINT esta no Dockerfile, entao worker e beat rodam o mesmo
+      # script — sem esta variavel escopando o `api`, os tres semeariam no
+      # mesmo boot.
+      SEMEAR_DEV: "1"
+      # Vazias no `.env` = os padroes do comando (`admin` / `dev12345`).
+      # Estao aqui para dar onde trocar sem editar codigo, e porque a senha em
+      # variavel e melhor que a senha escrita num arquivo versionado.
+      #
+      # Nada disso vale fora de DEBUG: `semear_dev` recusa rodar, e em
+      # producao o admin nasce por `manage.py criar_admin`, que pede a senha
+      # sem eco e nao deixa rastro em `docker compose config` nem no historico
+      # do shell.
+      SEMENTE_ADMIN_LOGIN: ${SEMENTE_ADMIN_LOGIN:-}
+      SEMENTE_ADMIN_SENHA: ${SEMENTE_ADMIN_SENHA:-}
       # Nome de servico, resolvivel so DENTRO da rede do compose — igual ao
       # `app` do front. As rotas do painel (fatia 4) mandam WhatsApp
       # fire-and-forget (confirmacao, cancelamento, convite); sem isto o envio

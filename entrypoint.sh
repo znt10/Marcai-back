@@ -34,4 +34,22 @@ done
 echo "[entrypoint] aplicando migrations..."
 python manage.py migrate --noinput --database=owner
 
+# A semente de DESENVOLVIMENTO. Duas guardas, e cada uma resolve um problema
+# diferente:
+#
+# `SEMEAR_DEV` existe SO no servico `api` do compose. O ENTRYPOINT esta no
+# Dockerfile, entao `api`, `worker` e `beat` rodam este mesmo script — sem a
+# variavel escopando, os tres tentariam semear ao mesmo tempo no boot.
+#
+# E o proprio comando recusa fora de DJANGO_DEBUG=1. Sem isso, a senha padrao
+# de dev viraria credencial conhecida no primeiro ambiente exposto que subisse
+# este compose, sem nada quebrar para avisar.
+#
+# `|| true`: semente e conveniencia. Se ela falhar, o contêiner tem de subir
+# assim mesmo e deixar o erro no log — derrubar a api porque o cenario de
+# demonstracao nao coube seria trocar um incomodo por uma parede.
+if [ -n "$SEMEAR_DEV" ]; then
+  python manage.py semear_dev || true
+fi
+
 exec "$@"
