@@ -36,6 +36,13 @@ services:
       # lado e lido pelo outro durante a travessia: segredos diferentes
       # deslogam todo mundo a cada rota que atravessa.
       SESSAO_JWT_SECRET: ${SESSAO_JWT_SECRET:?defina SESSAO_JWT_SECRET no .env}
+      # O MESMO valor do .env do front, como o SESSAO_JWT_SECRET acima: o
+      # Django emite o cookie do admin e o proxy.ts do front o le.
+      ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:?defina ADMIN_JWT_SECRET no .env}
+      # SEM `:?`, ao contrario da de cima: sem estas duas o login apenas nega,
+      # e subir o back sem admin configurado e um estado valido.
+      ADMIN_USUARIO: ${ADMIN_USUARIO}
+      ADMIN_SENHA_HASH_B64: ${ADMIN_SENHA_HASH_B64}
       # Nome de servico, resolvivel so DENTRO da rede do compose — igual ao
       # `app` do front. As rotas do painel (fatia 4) mandam WhatsApp
       # fire-and-forget (confirmacao, cancelamento, convite); sem isto o envio
