@@ -15,6 +15,7 @@ from .views.agendamentos import (
 )
 from .views.agendamentos_painel import AgendamentoCancelarView, AgendamentosPainelView
 from .views.autenticacao import ConviteView, EuView, LoginView, LogoutView
+from .views.barbearia import BarbeariaView
 from .views.barbearia_painel import BarbeariaPainelView
 from .views.barbeiro_servicos import BarbeiroServicosView
 from .views.barbeiros import BarbeirosView
@@ -53,6 +54,10 @@ register_converter(IdConverter, "id")
 
 urlpatterns = [
     path("barbeiros", BarbeirosView.as_view(), name="barbeiros"),
+    # Fatia 8 — a vitrine do tenant, que era `barbeariaAtual()` no Prisma do
+    # front. Publica: as tres paginas que a consomem (home, convite,
+    # agendamento por codigo) sao alcancadas sem sessao.
+    path("barbearia", BarbeariaView.as_view(), name="barbearia"),
     path("servicos", ServicosView.as_view(), name="servicos"),
     path("horarios", HorariosView.as_view(), name="horarios"),
     path("dias-com-vaga", DiasComVagaView.as_view(), name="dias-com-vaga"),
