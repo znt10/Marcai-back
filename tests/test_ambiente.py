@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -63,3 +64,66 @@ def test_a_sessao_da_evolution_mora_num_volume_nomeado():
     """
     compose = _ler("docker-compose.yml")
     assert "evolution_instances:/evolution/instances" in compose
+
+
+import ast
+
+# `DJANGO_SETTINGS_MODULE` e' posta pelo `manage.py` e pelo `pytest.ini`, nunca
+# por nos. Documenta-la no .env.example seria mentir sobre quem a define — a
+# mesma isencao que `DO_RUNTIME` faz com `NODE_ENV` do lado do front.
+DO_RUNTIME = {"DJANGO_SETTINGS_MODULE"}
+
+
+def _eh_environ(no):
+    return isinstance(no, ast.Attribute) and no.attr == "environ"
+
+
+def _nomes_lidos_em(caminho):
+    """Nomes LITERAIS passados a `os.environ[...]` ou `os.environ.get(...)`.
+
+    Por AST e nao por regex, seguindo `test_varredura.py`: `settings.py` monta
+    um nome por f-string (`PGPASSWORD_{usuario}`), e uma regex o capturaria
+    truncado e exigiria uma declaracao que nao existe. Um `JoinedStr` nao e
+    `Constant`, entao ele simplesmente nao entra — o preco e que senha por
+    papel fica fora da varredura, e esse e o preco certo: o nome dela so
+    existe em tempo de execucao.
+    """
+    nomes = set()
+    for no in ast.walk(ast.parse(caminho.read_text(encoding="utf-8"))):
+        if isinstance(no, ast.Subscript) and _eh_environ(no.value):
+            if isinstance(no.slice, ast.Constant) and isinstance(no.slice.value, str):
+                nomes.add(no.slice.value)
+        if (
+            isinstance(no, ast.Call)
+            and isinstance(no.func, ast.Attribute)
+            and no.func.attr == "get"
+            and _eh_environ(no.func.value)
+            and no.args
+            and isinstance(no.args[0], ast.Constant)
+            and isinstance(no.args[0].value, str)
+        ):
+            nomes.add(no.args[0].value)
+    return nomes
+
+
+def test_toda_variavel_lida_em_backend_esta_declarada():
+    """O gemeo do `front/tests/ambiente.test.ts`, e a prova que faltava.
+
+    O modo de falha e o §2 da spec: `admin_sessao.py` le `ADMIN_JWT_SECRET` e
+    ESTOURA sem ela, mas o `pytest.ini` define `D:ADMIN_JWT_SECRET`, entao a
+    suite inteira roda num mundo onde a variavel existe. So um teste que olha
+    ARQUIVO — e nunca o ambiente do processo — enxerga o buraco.
+    """
+    lidas = set()
+    for arquivo in (RAIZ / "backend").rglob("*.py"):
+        lidas |= _nomes_lidos_em(arquivo)
+
+    exemplo = _ler(".env.example")
+    compose = _ler("docker-compose.yml")
+
+    def declarada(nome):
+        padrao = re.compile(rf"^\s*{re.escape(nome)}\s*[:=]", re.M)
+        return bool(padrao.search(exemplo) or padrao.search(compose))
+
+    nao_declaradas = sorted(n for n in lidas - DO_RUNTIME if not declarada(n))
+    assert nao_declaradas == []
