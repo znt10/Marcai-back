@@ -1,9 +1,12 @@
 import base64
+from datetime import timedelta
 from io import StringIO
 
 from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.utils import timezone
 
-from app.services.senha import confere
+from app.services.senha import confere, gerar
 
 
 def test_admin_hash_imprime_a_linha_do_env_pronta():
@@ -141,3 +144,78 @@ def test_semear_da_expediente_de_seg_a_sab_ao_teo_e_ter_a_sab_ao_rael():
 
     assert dias("Téo") == {1, 2, 3, 4, 5, 6}
     assert dias("Rael") == {2, 3, 4, 5, 6}
+
+
+# ------------------------------------------------------- barbeiro_senha
+
+
+def _barbearia_com_barbeiro(whatsapp="11911112222", **campos_barbeiro):
+    """Monta uma barbearia com UM barbeiro, direto pela conexao `owner` —
+    o comando testado tambem so' enxerga o banco por ela, entao a fixture
+    tem que escrever pelo mesmo caminho que ele le."""
+    barbearia = Barbearia.objects.using("owner").create(
+        slug="brutus", nome="BRUTUS", endereco="Rua Aurora, 88",
+        whatsapp_contato="11988887777",
+    )
+    padrao = dict(
+        barbearia=barbearia, nome="Téo", whatsapp=whatsapp,
+        papel="DONO", senha_hash=gerar("senha-velha"),
+    )
+    padrao.update(campos_barbeiro)
+    barbeiro = Barbeiro.objects.using("owner").create(**padrao)
+    return barbearia, barbeiro
+
+
+@pytest.mark.django_db(databases=["default", "owner"], transaction=True)
+def test_barbeiro_senha_troca_a_senha_e_derruba_a_sessao():
+    """A prova que importa, como a do admin_hash: o que o comando grava tem
+    que ser o que `confere` aceita depois — e a senha ANTIGA tem que parar
+    de servir, senao a troca nao trocou nada."""
+    _, barbeiro = _barbearia_com_barbeiro(
+        convite_token_hash="alguma-coisa", convite_expira_em=timezone.now(),
+    )
+
+    call_command("barbeiro_senha", "11911112222", "uma senha bem longa", verbosity=0)
+
+    barbeiro.refresh_from_db(using="owner")
+    assert confere(barbeiro.senha_hash, "uma senha bem longa")
+    assert not confere(barbeiro.senha_hash, "senha-velha")
+    # Reemitir convite e' o que apaga senha (produto); trocar senha tem que
+    # fechar esse convite tambem, senao o link velho ainda destrancaria a
+    # conta por outro caminho.
+    assert barbeiro.convite_token_hash is None
+    assert barbeiro.convite_expira_em is None
+    # A sessao antiga tem que morrer: e' o ponto de emergencia do comando —
+    # se a senha esta sendo trocada por perda de acesso, quem ficou logado
+    # com o token velho precisa sair.
+    assert barbeiro.token_version == 1
+
+
+@pytest.mark.django_db(databases=["default", "owner"], transaction=True)
+def test_barbeiro_senha_destravar_zera_bloqueio_sem_mexer_no_hash():
+    """`--destravar` e' o modo mais estreito: zera SO' a trava, nada mais.
+    Um destravar que tambem trocasse a senha surpreenderia quem so' queria
+    devolver o acesso a uma conta que ja tinha senha boa."""
+    hash_original = gerar("senha-que-fica")
+    _, barbeiro = _barbearia_com_barbeiro(
+        senha_hash=hash_original, tentativas_login=5,
+        bloqueado_ate=timezone.now() + timedelta(minutes=15),
+    )
+
+    call_command("barbeiro_senha", "11911112222", "--destravar", verbosity=0)
+
+    barbeiro.refresh_from_db(using="owner")
+    assert barbeiro.senha_hash == hash_original
+    assert barbeiro.tentativas_login == 0
+    assert barbeiro.bloqueado_ate is None
+    # Sem troca de senha, nao ha sessao para derrubar.
+    assert barbeiro.token_version == 0
+
+
+@pytest.mark.django_db(databases=["default", "owner"], transaction=True)
+def test_barbeiro_senha_numero_desconhecido_falha_alto():
+    """Sem barbeiro nenhum no banco, o comando tem que dizer isso alto — a
+    saida de emergencia falhando em silencio (ou criando algo) seria pior do
+    que nao existir."""
+    with pytest.raises(CommandError, match="Nenhum barbeiro"):
+        call_command("barbeiro_senha", "11900000000", "uma senha bem longa", verbosity=0)
