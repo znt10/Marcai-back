@@ -60,7 +60,30 @@ services:
     volumes: [".:/app"]
     depends_on:
       db: { condition: service_healthy }
-    networks: [brutus]
+    # Fatia 8: `barbeariaAtual()` e a pagina de agendamento do front agora
+    # rodam server-side, DENTRO do contêiner `Marcai-front-app`, e montam a
+    # origem do Django a partir do Host da propria requisicao — o mesmo
+    # `brutus.localhost`/`dontony.localhost` que o navegador usa. Sem estes
+    # apelidos, esse nome so resolveria no NAVEGADOR (via /etc/hosts ou DNS
+    # de *.localhost), nunca de dentro de outro contêiner — e forjar o header
+    # Host no fetch não funciona: o fetch do Node ignora um Host forjado, e
+    # ainda que não ignorasse, `ALLOWED_HOSTS` do Django (`tenant/
+    # middleware.py`) so aceita o Host que a CONEXAO TCP realmente usou.
+    # O que isto compra: o nome do tenant resolve para ESTE contêiner de
+    # dentro da rede do compose, então a URL que o front monta (Host =
+    # tenant) chega aqui sem precisar mentir em lugar nenhum — Django
+    # resolve o tenant normalmente, do jeito que já fazia para o navegador.
+    # O custo: isto é SÓ DE DEV. Em produção esses nomes são DNS público de
+    # verdade, apontando pra fora, não um apelido de rede Docker. E custa
+    # MANUTENÇÃO: é uma linha por tenant — uma barbearia criada pelo painel
+    # do admin em dev não ganha apelido sozinha, e as páginas dela falham
+    # (fetch sem ninguém escutando) até alguém acrescentar a linha aqui à
+    # mão e subir o compose de novo.
+    networks:
+      brutus:
+        aliases:
+          - brutus.localhost
+          - dontony.localhost
 
   # O telefone do produto. Confirmação, cancelamento, lembrete e convite de
   # barbeiro saem por aqui — sem este serviço, tudo isso cai no console.info do
