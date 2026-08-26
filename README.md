@@ -3,8 +3,10 @@
 O backend Django deste projeto: API que atende `<slug>.<DOMINIO_BASE>` (uma
 barbearia por subdominio), tarefas assíncronas (Celery `worker`/`beat`) e o
 webhook/serviço do WhatsApp (Evolution API). Roda em processo separado do
-`front` (Next.js) e fala com o mesmo Postgres, mas **não é dono do schema**
-desse banco — ver a regra no fim deste documento antes de tudo o mais.
+`front` (Next.js) e fala com o mesmo Postgres — e **é quem cria e migra o
+schema** desse banco, desde a fatia 1. Ver "Quem migra este banco", perto do
+fim deste documento, antes de propor `makemigrations` ou um app novo em
+`INSTALLED_APPS`.
 
 Esta é a raiz que a spec (§5) exige que suba, teste e vá para produção
 **sozinha**, sem o `front` ao lado. As instruções abaixo foram testadas
@@ -65,6 +67,54 @@ Se um `docker compose run` ou `up` **travar em silêncio** em vez de dar erro,
 o sintoma de sempre é o `db` tendo saído sozinho antes — confira
 `docker compose ps` primeiro; se `db` não estiver `healthy`, é por aí.
 
+## Popular o banco (dev)
+
+Com `api` de pé (`entrypoint.sh` já migrou), os dois tenants de
+desenvolvimento nascem com:
+
+```
+docker compose run --rm api python manage.py semear
+```
+
+Recria do zero — **apaga** o que estiver nas oito tabelas de tenant antes de
+inserir de novo (`TRUNCATE ... RESTART IDENTITY CASCADE`, pela conexão
+`owner`). Só roda com `DJANGO_DEBUG=1` (o padrão do `api` neste compose): a
+senha que ele planta em toda conta de barbeiro é a conhecida `123456`, e a
+trava existe para um `semear` distraído não fazer isso em produção. Ao final:
+Téo (`11911112222`), Rael (`11933334444`) e Tony (`11977778888`, na Dom Tony)
+entram com `123456`; Duda (`11955556666`) nasce **sem** senha de propósito —
+é o convite pendente.
+
+Duas saídas de emergência, portadas de scripts que o front tinha antes da
+fatia 8 e que hoje só existem aqui:
+
+- **Credencial do admin da plataforma.** Sem `ADMIN_USUARIO`/
+  `ADMIN_SENHA_HASH_B64` no `.env`, o login do admin apenas nega. Gerar o
+  hash:
+
+  ```
+  docker compose run --rm api python manage.py admin_hash "uma senha longa"
+  ```
+
+  Colar a saída (já em `ADMIN_SENHA_HASH_B64="..."`) no `.env`, ao lado de um
+  `ADMIN_USUARIO` escolhido à mão.
+
+- **Senha ou trava de um barbeiro, direto pelo banco.** Reemitir convite
+  apaga a senha (`senha_hash` volta a nulo — é o reset de senha do produto), e
+  o token do convite só existe em hash: link perdido não tem volta pela tela.
+  Se isso acontecer com o último dono ativo, a barbearia fica sem ninguém que
+  entre — daí este comando não passar por sessão nem por tela:
+
+  ```
+  docker compose run --rm api python manage.py barbeiro_senha 11911112222 "uma senha longa"
+  docker compose run --rm api python manage.py barbeiro_senha 11911112222 --destravar
+  ```
+
+  A primeira forma troca a senha (mínimo de `SENHA_MINIMA` caracteres) e
+  derruba as sessões antigas daquela pessoa; a segunda só zera tentativas e
+  bloqueio, sem tocar na senha. As duas aceitam o WhatsApp com ou sem
+  formatação.
+
 ## Rodar os testes
 
 Duas formas.
@@ -90,38 +140,48 @@ absoluto do `.venv`.) Neste modo `pytest.ini` aponta para
 `localhost:5433` (a porta publicada do `db` do compose) por padrão — não é
 preciso exportar nada a mais além de já ter feito `docker compose up`.
 
-### Pré-requisito dos dois modos: `brutus_test` migrado pelo Prisma
+### Sem pré-requisito: `brutus_test` migra sozinho
 
-Este repositório **não cria tabela nenhuma** em `brutus_test` (mesma regra
-do próximo parágrafo, aplicada ao banco de teste). Quem migra `brutus_test`
-é o Prisma, do lado do `front`. Antes da primeira vez que rodar os testes
-aqui, rode — **no repositório `front`**, com o `back` já de pé (é de lá que
-`localhost:5433` responde):
+`docker/init-db.sql` já cria `brutus_test` junto com `brutus`, de propriedade
+de `brutus_owner`, no mesmo volume. A fixture de sessão `django_db_setup`
+(`tests/conftest.py`) chama `manage.py migrate --database=owner` antes do
+primeiro teste que toca banco — a mesma migração que `entrypoint.sh` roda ao
+subir o `api`, só que contra `brutus_test`. A primeira corrida já cria as
+tabelas; não há passo manual, e não há nada a rodar no `front`.
 
-```
-DATABASE_URL="postgresql://brutus_owner:owner@localhost:5433/brutus_test" npx prisma migrate deploy
-```
+`migrate` é idempotente — numa segunda corrida ele lê `django_migrations`, não
+acha nada a aplicar e sai. O que ele **não** faz é reconciliar um schema que
+mudou: depois de alterar um model, o banco de teste precisa ser derrubado e
+recriado (`docker compose down -v` na raiz deste repo) para a migration
+recomeçar do zero.
 
-Sem isso, `pytest` falha com `relation "Barbearia" does not exist` num banco
-que existe e está de pé — a tabela é que não foi criada ainda. Isto não é um
-passo deste repositório escondido em outro lugar por acidente: é a fronteira
-da spec (§8) sendo respeitada — ver a regra abaixo.
+## Quem migra este banco
 
-## Regra que vale mais que todas as outras deste documento
+**Este repositório é quem cria e migra tabela em `brutus` e em `brutus_test`.**
+Foi o Prisma, do lado do `front`, até a fatia 1 — a inversão de dono é mais
+antiga que a saída do Prisma do front (fatia 8), que só apagou o que já tinha
+ficado redundante do lado de lá. Isso está refletido em três lugares que não
+devem divergir entre si:
 
-**Este repositório nunca roda DDL em `brutus` nem em `brutus_test`.** Quem
-cria e migra tabela nesses dois bancos é o Prisma, do lado do `front`. Isso
-está refletido em três lugares que não devem divergir entre si:
+- `entrypoint.sh` roda `manage.py migrate --noinput --database=owner` antes de
+  subir o `api` — `--database=owner`, e não a conexão default, porque é
+  `brutus_owner` quem tem DDL (`brutus_app`, o papel do runtime, não tem, e
+  nem deve ter).
+- `backend/tenant/migrations/` tem a migração de cada mudança de schema (hoje
+  quatro: `0001_inicial`, a criação das tabelas; `0002_rls`, a política de RLS;
+  `0003_restricoes`, os `EXCLUDE`; `0004_admin_grants`, os `GRANT` do papel
+  `brutus_admin`). `tenant/models.py` não é mais `managed = False` — os models
+  são a fonte da verdade do schema agora, não um espelho de outra ferramenta.
+- `pytest.ini` roda **sem** `--no-migrations` de propósito: são as migrations
+  que criam o schema, o RLS, o `EXCLUDE` e os `GRANT`s, e pular todas testaria
+  um banco que nenhum ambiente real tem — sem política de RLS, `test_rls.py`
+  provaria isolamento que não existe.
 
-- `INSTALLED_APPS` (`backend/backend/settings.py`) é deliberadamente mínimo —
-  sem `contrib.admin`, `contrib.auth`, `contrib.contenttypes` nem `sessions`,
-  porque cada um deles criaria tabela própria num banco que não é seu dono.
-- `pytest.ini` roda com `--no-migrations`.
-- `entrypoint.sh` espera o banco responder e para por aí — não chama
-  `manage.py migrate`.
-
-Se alguém propuser rodar `manage.py migrate` ou `manage.py makemigrations`
-contra `brutus`/`brutus_test`, ou adicionar um app do Django que crie tabela
-própria, a resposta é não — mesmo que a razão pareça boa (e normalmente
-parece: cada um dos apps acima existe por um motivo legítimo em outro
-contexto). Migração legítima deste schema vem do Prisma, no `front`.
+`INSTALLED_APPS` (`backend/backend/settings.py`) continua deliberadamente
+mínimo — sem `contrib.admin`, `contrib.auth`, `contrib.contenttypes`,
+`sessions` nem `django_celery_beat` — mas não porque outra ferramenta seja
+dona do schema: é porque nenhum dos cinco tem uso aqui, e cada um criaria
+tabela própria (`django_content_type`, `django_session`, a agenda em tabela do
+beat, ...) sem consumidor nenhum do lado da API. `makemigrations` contra um
+model novo de `tenant` é o caminho normal agora — o que continua sem lugar
+aqui é um app do Django trazendo schema que este projeto não pediu.

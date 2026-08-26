@@ -49,13 +49,11 @@ CORS_ALLOW_ALL_ORIGINS = False
 # e a escrita falhando com um erro de CORS que nao menciona CSRF nenhum.
 CORS_ALLOW_HEADERS = [*default_headers, "x-brutus-cliente"]
 
-# Sem contrib.admin, contrib.auth, contrib.contenttypes nem sessions: todos os
-# quatro criariam tabela num banco de que o Prisma e dono (spec §8) —
-# contenttypes criaria django_content_type (e django_migrations junto, so de
-# existir uma migration para rodar) do mesmo jeito que os outros tres criariam
-# a deles. Sem django_celery_beat pela mesma razao — o beat usa o agendador de
-# arquivo, e a agenda em tabela so entra na fatia 8, quando o Django virar
-# dono do DDL.
+# Sem contrib.admin, contrib.auth, contrib.contenttypes nem sessions: nenhum
+# dos quatro tem uso aqui, e cada um criaria tabela propria sem consumidor
+# (contenttypes criaria django_content_type, auth criaria as suas, etc). Sem
+# django_celery_beat pela mesma razao — o beat usa o agendador de arquivo
+# (CELERY_BEAT_SCHEDULE, abaixo), nao a agenda em tabela que aquele app traria.
 INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
