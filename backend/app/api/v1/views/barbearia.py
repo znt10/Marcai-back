@@ -1,3 +1,4 @@
+from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -23,6 +24,13 @@ class BarbeariaView(ExigeTenant, APIView):
 
     def get(self, request):
         dados = ler(self.barbearia_id)
+        # `ler()` e' um `.first()` — pode devolver None se a linha sumir entre
+        # o `TenantMiddleware` resolvê-la e este `get` rodar. Inalcancavel na
+        # pratica (a resolucao aconteceu microssegundos antes), mas o guard e
+        # o mesmo 404 que `ExigeTenant.initial` levanta para tenant ausente,
+        # nao um 500 de `TypeError` num dict que nao existe.
+        if dados is None:
+            raise NotFound()
         return Response(
             {
                 "nome": dados["nome"],
