@@ -30,6 +30,7 @@ from .views.equipe import (
     EquipeReativarView,
     EquipeView,
 )
+from .views.foto import FotoView
 from .views.expediente import ExpedienteView
 from .views.horarios import DiasComVagaView, HorariosView
 from .views.servicos import ServicosView
@@ -123,6 +124,7 @@ urlpatterns = [
     ),
     # Fatia 4, bloco 2 — expediente e bloqueios.
     path("painel/expediente", ExpedienteView.as_view(), name="painel-expediente"),
+    path("painel/foto", FotoView.as_view(), name="painel-foto"),
     path("painel/bloqueios", BloqueiosView.as_view(), name="painel-bloqueios"),
     path(
         "painel/bloqueios/<id:id>",
