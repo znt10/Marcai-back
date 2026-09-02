@@ -105,7 +105,12 @@ def test_marca_sem_sessao_e_manda_confirmacao(client, cenario):
         )
     assert r.status_code == 201
     assert "codigo" in r.json()
-    mock_envia.assert_called_once()
+    # Dois envios desde que o barbeiro passou a ser avisado
+    # (`test_marcar_avisa_o_barbeiro_alem_do_cliente`). O que ESTE teste
+    # garante e' que o do cliente continua saindo.
+    assert mock_envia.call_count == 2
+    confirmacao = next(c.args[1] for c in mock_envia.call_args_list if c.args[0] == "11977778888")
+    assert confirmacao.startswith("Fechou,")
 
     from tenant.models import Agendamento
 
@@ -371,7 +376,12 @@ def test_cancelar_dentro_do_prazo_ok_e_avisa(client, cenario):
         )
     assert r.status_code == 200
     assert r.json() == {"ok": True}
-    mock_envia.assert_called_once()
+    # Idem: o cliente e o barbeiro. Aqui interessa o aviso do CLIENTE.
+    assert mock_envia.call_count == 2
+    do_cliente = next(
+        c.args[1] for c in mock_envia.call_args_list if c.args[0] != barbeiro.whatsapp
+    )
+    assert "foi cancelado" in do_cliente
 
     from tenant.models import Agendamento
 
@@ -417,3 +427,58 @@ def test_cancelar_codigo_inexistente_e_404(client, cenario):
         "/api/agendamentos/naoexisteai/cancelar", headers={"host": HOST, **CABECALHO},
     )
     assert r.status_code == 404
+
+
+# ------------------------------------------------- o barbeiro tambem e' avisado
+#
+# Ate aqui o WhatsApp so falava com o CLIENTE. Alguem marcava as 22h de domingo
+# e o barbeiro so descobria abrindo o painel na segunda.
+
+
+def test_marcar_avisa_o_barbeiro_alem_do_cliente(client, cenario):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    servico = _servico_vinculado(b.id, barbeiro)
+    inicio = _proximo_slot_livre(barbeiro, servico)
+
+    with patch("app.api.v1.views.agendamentos.enviar_texto") as mock_envia:
+        r = client.post(
+            "/api/agendamentos",
+            {
+                "barbeiroId": barbeiro.id, "servicoId": servico.id,
+                "inicio": inicio.isoformat(), "nome": "José Neto",
+                "whatsapp": "11977778888",
+            },
+            content_type="application/json", headers={"host": HOST, **CABECALHO},
+        )
+    assert r.status_code == 201
+
+    destinos = [c.args[0] for c in mock_envia.call_args_list]
+    assert "11977778888" in destinos, "o cliente continua recebendo a confirmacao"
+    assert barbeiro.whatsapp in destinos, "o barbeiro precisa saber que entrou horario"
+
+    aviso = next(c.args[1] for c in mock_envia.call_args_list if c.args[0] == barbeiro.whatsapp)
+    assert aviso.startswith("Novo horário")
+    assert "José Neto" in aviso
+    # Endereco e' coisa do cliente: o barbeiro trabalha la.
+    assert b.endereco not in aviso
+
+
+def test_cliente_cancelando_avisa_o_barbeiro(client, cenario):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    servico = _servico_vinculado(b.id, barbeiro)
+    inicio = _proximo_slot_livre(barbeiro, servico, daqui_a_min=180)
+    a = _agendamento(b.id, barbeiro, inicio)  # noqa: F841 — o codigo dele e' o alvo
+
+    with patch("app.api.v1.views.agendamentos.enviar_texto") as mock_envia:
+        r = client.post(
+            f"/api/agendamentos/{a.codigo}/cancelar",
+            content_type="application/json", headers={"host": HOST, **CABECALHO},
+        )
+    assert r.status_code == 200
+
+    destinos = [c.args[0] for c in mock_envia.call_args_list]
+    assert barbeiro.whatsapp in destinos, "a vaga abriu e o barbeiro nao ficou sabendo"
+    aviso = next(c.args[1] for c in mock_envia.call_args_list if c.args[0] == barbeiro.whatsapp)
+    assert aviso.startswith("Cancelou")

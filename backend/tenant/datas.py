@@ -112,6 +112,23 @@ def formatar_dia_longo(quando: datetime) -> str:
     return f"{_DIAS[dia_semana_de(local.strftime('%Y-%m-%d'))]} {local.day} {_MESES[local.month - 1]}"
 
 
+def formatar_dia_relativo(quando: datetime, agora: datetime) -> str:
+    """"hoje" / "amanhã" / "dom 6 set" — para quem lê no meio do expediente.
+
+    `formatar_dia_longo` sozinho obriga o barbeiro a conferir que dia é hoje
+    antes de entender o aviso. A comparação é feita no fuso da BARBEARIA, e não
+    em UTC: às 23h30 UTC ainda é o mesmo dia em São Paulo, e comparar as datas
+    cruas diria "amanhã" para um horário desta noite.
+    """
+    dia = utc_para_local(quando)[0]
+    hoje = utc_para_local(agora)[0]
+    if dia == hoje:
+        return "hoje"
+    if dia == somar_dias(hoje, 1):
+        return "amanhã"
+    return formatar_dia_longo(quando)
+
+
 def dia_de_hoje(agora: datetime) -> str:
     return utc_para_local(agora)[0]
 

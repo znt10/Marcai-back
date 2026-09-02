@@ -16,7 +16,12 @@ from app.services.agendamentos import (
     eh_sobreposicao,
     marcar,
 )
-from app.services.mensagens import msg_cancelamento, msg_confirmacao
+from app.services.mensagens import (
+    msg_barbeiro_cancelado,
+    msg_barbeiro_novo,
+    msg_cancelamento,
+    msg_confirmacao,
+)
 from app.services.trava_ip import ip_de
 from app.services.whatsapp import enviar_texto, numero_existe
 from tenant.telefone import formatar, normalizar
@@ -75,6 +80,16 @@ class AgendamentosView(ExigeTenant, APIView):
                 endereco=request.barbearia.endereco, link=link,
             ),
         )
+        # E o barbeiro. Segundo envio, e nao um destinatario a mais no mesmo:
+        # sao textos diferentes — o do cliente confirma e da o link de
+        # cancelar; o do barbeiro so' avisa que entrou horario.
+        enviar_texto(
+            criado["barbeiro_whatsapp"],
+            msg_barbeiro_novo(
+                cliente_nome=d["nome"], servico_nome=criado["servico_nome"],
+                inicio=criado["inicio"], agora=datetime.now(timezone.utc),
+            ),
+        )
         return Response({"codigo": criado["codigo"]}, status=201)
 
 
@@ -113,6 +128,17 @@ class AgendamentoCancelarPublicoView(ExigeTenant, APIView):
                 resultado["cliente_whatsapp"],
                 msg_cancelamento(
                     barbeiro_nome=resultado["barbeiro_nome"], inicio=resultado["inicio"],
+                ),
+            )
+            # A vaga abriu: quem ia cortar precisa saber sem abrir o painel.
+            # So' no `tipo == "ok"` — o `ja_cancelado` cai fora deste bloco de
+            # proposito, senao dois toques no botao mandariam dois avisos.
+            enviar_texto(
+                resultado["barbeiro_whatsapp"],
+                msg_barbeiro_cancelado(
+                    cliente_nome=resultado["cliente_nome"],
+                    servico_nome=resultado["servico_nome"],
+                    inicio=resultado["inicio"], agora=datetime.now(timezone.utc),
                 ),
             )
         # "ja_cancelado" cai aqui tambem, de proposito: quem apertou o botao
