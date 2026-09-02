@@ -176,9 +176,73 @@ def test_conferir_senha_recusa_usuario_errado(monkeypatch):
 def test_conferir_senha_sem_env_recusa_tudo(monkeypatch):
     monkeypatch.delenv("ADMIN_USUARIO", raising=False)
     monkeypatch.delenv("ADMIN_SENHA_HASH_B64", raising=False)
+    monkeypatch.delenv("ADMIN_SENHA", raising=False)
     from app.services.admin_senha import conferir_senha
 
     assert conferir_senha("qualquer", "qualquer") is False
+
+
+# ------------------------------------------- ADMIN_SENHA (a senha em claro)
+
+
+def test_conferir_senha_aceita_admin_senha_em_claro(monkeypatch):
+    """O atalho de desenvolvimento: senha legivel no .env, sem gerar hash."""
+    from app.services.admin_senha import conferir_senha
+
+    monkeypatch.delenv("ADMIN_SENHA_HASH_B64", raising=False)
+    monkeypatch.setenv("ADMIN_USUARIO", "kadu")
+    monkeypatch.setenv("ADMIN_SENHA", "senha-legivel")
+
+    assert conferir_senha("kadu", "senha-legivel") is True
+
+
+def test_conferir_senha_em_claro_recusa_senha_errada(monkeypatch):
+    from app.services.admin_senha import conferir_senha
+
+    monkeypatch.delenv("ADMIN_SENHA_HASH_B64", raising=False)
+    monkeypatch.setenv("ADMIN_USUARIO", "kadu")
+    monkeypatch.setenv("ADMIN_SENHA", "senha-legivel")
+
+    assert conferir_senha("kadu", "outra-coisa") is False
+
+
+def test_conferir_senha_em_claro_recusa_usuario_errado(monkeypatch):
+    from app.services.admin_senha import conferir_senha
+
+    monkeypatch.delenv("ADMIN_SENHA_HASH_B64", raising=False)
+    monkeypatch.setenv("ADMIN_USUARIO", "kadu")
+    monkeypatch.setenv("ADMIN_SENHA", "senha-legivel")
+
+    assert conferir_senha("outro", "senha-legivel") is False
+
+
+def test_hash_tem_precedencia_sobre_a_senha_em_claro(monkeypatch):
+    """Producao poe as duas por engano: vale o hash, nunca o texto puro."""
+    from app.services.admin_senha import conferir_senha
+    from app.services.senha import gerar
+
+    hash_b64 = base64.b64encode(gerar("a-do-hash").encode()).decode()
+    monkeypatch.setenv("ADMIN_USUARIO", "kadu")
+    monkeypatch.setenv("ADMIN_SENHA_HASH_B64", hash_b64)
+    monkeypatch.setenv("ADMIN_SENHA", "a-em-claro")
+
+    assert conferir_senha("kadu", "a-do-hash") is True
+    assert conferir_senha("kadu", "a-em-claro") is False
+
+
+def test_trocar_a_senha_em_claro_passa_a_valer_na_hora(monkeypatch):
+    """O hash da senha em claro e cacheado; o cache nao pode segurar o valor
+    velho depois de editar o .env."""
+    from app.services.admin_senha import conferir_senha
+
+    monkeypatch.delenv("ADMIN_SENHA_HASH_B64", raising=False)
+    monkeypatch.setenv("ADMIN_USUARIO", "kadu")
+    monkeypatch.setenv("ADMIN_SENHA", "primeira")
+    assert conferir_senha("kadu", "primeira") is True
+
+    monkeypatch.setenv("ADMIN_SENHA", "segunda")
+    assert conferir_senha("kadu", "segunda") is True
+    assert conferir_senha("kadu", "primeira") is False
 
 
 # ---------------------------------------------------------------- ExigeAdmin
