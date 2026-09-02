@@ -173,9 +173,14 @@ def origem_e_permitida(origem: str, host: str, dominio_base: str) -> bool:
 #
 # O teto e' apertado de PROPOSITO: a vitrine e' renderizada no servidor, entao
 # cada foto entra embutida no HTML da primeira tela que o cliente abre na
-# calcada. 128x128 em WebP costuma dar 4-8 KB; 20 KB ja' e' folga generosa, e
-# cinco barbeiros somam o peso de uma foto so'.
-FOTO_LADO_PX = 128
+# calcada.
+#
+# 192 e nao 128: a vitrine desenha o circulo com 72px, e num aparelho retina
+# (2x) isso pede 144 pixels de verdade — 128 seria ampliado, e foto de rosto
+# ampliada e' o tipo de borrao que se ve. 192 cobre ate' 96px de tela com
+# folga. Em WebP da' 8-14 KB, ainda dentro do teto, e a queda de qualidade
+# por degraus de `lib/foto.ts` cuida da foto que insistir em passar.
+FOTO_LADO_PX = 192
 FOTO_TAMANHO_MAXIMO_BYTES = 20 * 1024
 # SVG fica de fora: e' imagem que carrega script.
 FOTO_MIMES = ("image/webp", "image/jpeg", "image/png")
