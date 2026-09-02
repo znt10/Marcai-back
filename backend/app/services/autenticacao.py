@@ -100,12 +100,16 @@ def aceitar_convite(barbearia_id: str, token: str, senha: str) -> bool:
 
 
 def quem_e(barbearia_id: str, barbeiro_id: str) -> dict | None:
-    """Os tres campos que a tela do painel mostra. Nada mais sai daqui: `eu` e
-    uma rota de identidade, nao um dump do proprio cadastro.
+    """Os campos que a tela do painel mostra. Nada mais sai daqui: `eu` e
+    uma rota de identidade, nao um dump do proprio cadastro — a lista e'
+    branca e cresce so' quando uma tela precisa.
+
+    `foto_url` entrou porque o cabecalho do painel desenha a foto e deixa
+    troca-la; sem ela, quem acabou de mandar a foto so' a veria recarregando.
     """
     with com_barbearia(barbearia_id):
         return (
             Barbeiro.objects.filter(id=barbeiro_id)
-            .values("id", "nome", "papel")
+            .values("id", "nome", "papel", "foto_url")
             .first()
         )

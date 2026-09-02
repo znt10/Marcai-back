@@ -38,12 +38,16 @@ class ConviteSerializer(serializers.Serializer):
 
 
 class EuSerializer(serializers.Serializer):
-    """Os tres campos que o painel le, e so eles. Lista branca pelo mesmo
-    motivo do BarbeiroPublicoSerializer: `Barbeiro` carrega senhaHash,
-    tokenVersion e conviteTokenHash, e um ModelSerializer publicaria cada
-    coluna nova por padrao.
+    """Os campos que o painel le, e so eles. Lista branca pelo mesmo motivo do
+    BarbeiroPublicoSerializer: `Barbeiro` carrega senhaHash, tokenVersion e
+    conviteTokenHash, e um ModelSerializer publicaria cada coluna nova por
+    padrao.
     """
 
     id = serializers.CharField()
     nome = serializers.CharField()
     papel = serializers.CharField()
+    # A foto entra aqui porque e' o cabecalho do painel que a mostra e deixa
+    # trocar. Nao ha rota de "meu perfil" — a foto do proprio barbeiro chega
+    # junto de quem ele e'.
+    fotoUrl = serializers.CharField(source="foto_url", allow_null=True)

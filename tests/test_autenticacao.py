@@ -127,7 +127,9 @@ def test_o_cookie_do_login_abre_o_eu(client, cenario):
 
     r = _eu(client)
     assert r.status_code == 200
-    assert r.json() == {"id": barbeiro.id, "nome": "Zeca", "papel": "BARBEIRO"}
+    assert r.json() == {
+        "id": barbeiro.id, "nome": "Zeca", "papel": "BARBEIRO", "fotoUrl": None,
+    }
 
 
 def test_senha_errada_numero_inexistente_e_sem_senha_dao_a_MESMA_resposta(
