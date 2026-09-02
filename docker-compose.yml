@@ -42,7 +42,11 @@ services:
       # SEM `:?`, ao contrario da de cima: sem estas duas o login apenas nega,
       # e subir o back sem admin configurado e um estado valido.
       ADMIN_USUARIO: ${ADMIN_USUARIO}
-      ADMIN_SENHA_HASH_B64: ${ADMIN_SENHA_HASH_B64}
+      # As DUAS formas de configurar a senha; o hash tem precedencia. Sem `:?`
+      # como as de cima: subir sem admin configurado e um estado valido (o
+      # login apenas nega). Ver app/services/admin_senha.py.
+      ADMIN_SENHA_HASH_B64: ${ADMIN_SENHA_HASH_B64:-}
+      ADMIN_SENHA: ${ADMIN_SENHA:-}
       # Nome de servico, resolvivel so DENTRO da rede do compose — igual ao
       # `app` do front. As rotas do painel (fatia 4) mandam WhatsApp
       # fire-and-forget (confirmacao, cancelamento, convite); sem isto o envio
@@ -84,6 +88,8 @@ services:
         aliases:
           - brutus.localhost
           - dontony.localhost
+          # Criada pelo admin em 02/09; a linha e' o preco descrito acima.
+          - znt.localhost
 
   # O telefone do produto. Confirmação, cancelamento, lembrete e convite de
   # barbeiro saem por aqui — sem este serviço, tudo isso cai no console.info do
