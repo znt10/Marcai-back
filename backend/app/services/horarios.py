@@ -1,6 +1,8 @@
 import uuid
 
 from tenant.models import Barbeiro, Bloqueio, HorarioTrabalho
+from django.utils import timezone
+
 from tenant.rls import com_barbearia
 
 MINUTOS_DIA = 24 * 60
@@ -58,7 +60,7 @@ def bloqueio_valido(
     return None
 
 
-def listar_expediente(barbearia_id: str, barbeiro_id: str) -> dict:
+def listar_expediente(barbearia_id: str, barbeiro_id: str, agora=None) -> dict:
     """Os SETE dias sempre, com minutos nulos onde esta fechado — a tela
     precisa desenhar a semana inteira, e 'nao veio na lista' e' ambiguo com
     'nao carregou'."""
@@ -68,8 +70,17 @@ def listar_expediente(barbearia_id: str, barbeiro_id: str) -> dict:
                 "dia_semana", "minutos_inicio", "minutos_fim"
             )
         )
+        # A folga de UMA VEZ que ja terminou sai da lista: ela era um evento,
+        # e depois de passar nao diz mais nada sobre a agenda — so' empurra
+        # para baixo as que ainda valem. A semanal nao entra nesse filtro
+        # porque ela se repete: `fim` nem existe nela.
+        #
+        # Filtro de LEITURA, nao apagamento: o registro continua no banco, que
+        # e' o que mantem o historico honesto quando alguem for entender por
+        # que a agenda estava fechada naquela terca.
         bloqueios = list(
             Bloqueio.objects.filter(barbeiro_id=barbeiro_id)
+            .exclude(repete_semanalmente=False, fim__lte=agora or timezone.now())
             .order_by("-repete_semanalmente", "criado_em")
             .values(
                 "id", "motivo", "observacao", "repete_semanalmente", "dia_semana",
