@@ -96,3 +96,43 @@ def test_data_sem_fuso_e_lida_como_utc_e_nao_como_hora_da_maquina():
     com = datetime(2026, 8, 12, 12, 0, tzinfo=timezone.utc)
     assert como_utc(com) is com
     assert como_utc(None) is None
+
+
+# ------------------------------------------------- formatar_dia_relativo
+
+
+def test_dia_relativo_diz_hoje_e_amanha_em_vez_da_data():
+    """O barbeiro lê o aviso no meio do expediente: "hoje 13:00" é o que ele
+    precisa, e "qui 3 set 13:00" o obriga a conferir que dia é hoje."""
+    from datetime import datetime, timezone
+
+    from tenant.datas import formatar_dia_relativo
+
+    agora = datetime(2026, 9, 2, 12, 0, tzinfo=timezone.utc)  # 09:00 em SP
+    hoje_mais_tarde = datetime(2026, 9, 2, 20, 0, tzinfo=timezone.utc)  # 17:00 em SP
+    amanha = datetime(2026, 9, 3, 20, 0, tzinfo=timezone.utc)
+
+    assert formatar_dia_relativo(hoje_mais_tarde, agora) == "hoje"
+    assert formatar_dia_relativo(amanha, agora) == "amanhã"
+
+
+def test_dia_relativo_volta_para_a_data_depois_de_amanha():
+    from datetime import datetime, timezone
+
+    from tenant.datas import formatar_dia_relativo
+
+    agora = datetime(2026, 9, 2, 12, 0, tzinfo=timezone.utc)
+    depois = datetime(2026, 9, 6, 20, 0, tzinfo=timezone.utc)
+    assert formatar_dia_relativo(depois, agora) == "dom 6 set"
+
+
+def test_dia_relativo_usa_o_fuso_da_barbearia_e_nao_o_do_servidor():
+    """23:00 UTC de 2/9 ainda é dia 2 em São Paulo (20:00). Comparar em UTC
+    diria "amanhã" para um horário que é de hoje à noite."""
+    from datetime import datetime, timezone
+
+    from tenant.datas import formatar_dia_relativo
+
+    agora = datetime(2026, 9, 2, 23, 0, tzinfo=timezone.utc)
+    mais_tarde = datetime(2026, 9, 2, 23, 30, tzinfo=timezone.utc)
+    assert formatar_dia_relativo(mais_tarde, agora) == "hoje"

@@ -127,6 +127,9 @@ def marcar(
     return {
         "codigo": codigo,
         "barbeiro_nome": vinculo.barbeiro.nome,
+        # O numero do barbeiro sobe junto porque quem marca e' o CLIENTE, e o
+        # barbeiro so' descobriria abrindo o painel.
+        "barbeiro_whatsapp": vinculo.barbeiro.whatsapp,
         "servico_nome": vinculo.servico.nome,
         "inicio": inicio,
     }
@@ -230,6 +233,9 @@ def cancelar_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict:
             "cliente_nome": a.cliente.nome,
             "cliente_whatsapp": a.cliente.whatsapp,
             "barbeiro_nome": a.barbeiro.nome,
+            # Idem `criar()`: a vaga abriu e quem precisa saber e' quem ia
+            # cortar. O `select_related` acima ja trouxe o barbeiro.
+            "barbeiro_whatsapp": a.barbeiro.whatsapp,
             "servico_nome": a.servico_nome,
             "inicio": a.inicio,
         }
