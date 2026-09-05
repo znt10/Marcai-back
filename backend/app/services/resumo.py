@@ -128,8 +128,9 @@ def cortes_por_barbeiro(barbearia_id, de: str, ate: str, agora: datetime) -> dic
             }
             for b in barbeiros
         ],
-        # `aggregate` devolve None (nao 0) quando nao ha linha nenhuma para
-        # agregar em algumas combinacoes; o `or 0` e' o que impede um `null`
-        # de chegar na tela e virar "NaN" no lugar do numero.
+        # Isto e' `Count`, que devolve 0 (nao None) em queryset vazio — o
+        # `or 0` aqui e' rede morta, nao correcao de um `null` de verdade.
+        # Fica como defesa caso a agregacao ganhe um `Sum`/`Avg` um dia: esses,
+        # sim, devolvem None sem linha nenhuma para agregar.
         "totais": {"cortes": totais["cortes"] or 0, "clientes": totais["clientes"] or 0},
     }
