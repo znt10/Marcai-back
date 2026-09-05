@@ -268,9 +268,10 @@ def test_periodo_recusa_invertido():
 
 
 def test_periodo_recusa_janela_absurda():
-    """Sem teto, um `?de=1900-01-01` nao derruba nada (a agregacao e' uma
-    consulta so'), mas devolve um numero que ninguem pediu e esconde o
-    engano. O teto torna o engano visivel: volta para o mes."""
+    """Sem teto, um `?de=1900-01-01` nao derruba nada (sao tres consultas, e
+    custam praticamente o mesmo em qualquer janela), mas devolve um numero
+    que ninguem pediu e esconde o engano. O teto torna o engano visivel:
+    volta para o mes."""
     assert periodo_pedido("1900-01-01", "2026-09-05", "2026-09-05") == (
         "2026-09-01", "2026-09-05",
     )
