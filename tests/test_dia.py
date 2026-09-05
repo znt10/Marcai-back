@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -7,7 +7,35 @@ from app.services.sessao import COOKIE_SESSAO, emitir
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
-DIA = "2026-08-20"  # quinta-feira
+def _proxima_quinta() -> str:
+    """A quinta que ainda VEM, nunca uma que ja' passou.
+
+    `DIA` era `"2026-08-20"` escrito a mao, e este arquivo apodreceu sozinho
+    no dia em que aquela quinta virou passado: `slots_livres` descarta
+    horario anterior a `agora`, entao `proximoLivre` passou a ser None e o
+    `test_proximo_livre_usa_o_servico_mais_curto` quebrou sem ninguem tocar
+    em codigo nenhum. Um vermelho que nao acusa defeito e' pior que teste
+    nenhum — ele treina quem roda a suite a ignorar vermelho.
+
+    Empurrar a data para 2027 seria a MESMA bomba, com pavio mais longo.
+    Derivar do relogio e' o que `tests/test_resumo.py` ja faz (ele recebe
+    `agora` por parametro) e e' o que impede o pavio de ser reaceso.
+
+    Quinta, e nao um dia qualquer, porque `_expediente` e o bloqueio semanal
+    deste arquivo fixam `dia_semana=4` — e 4 e' a convencao do BANCO (dom=0),
+    nao a do Python, cujo `weekday()` conta de segunda=0 e chama quinta de 3.
+    As duas convencoes convivem aqui de proposito; trocar uma pela outra
+    desloca a semana inteira em um dia, em silencio.
+
+    O `or 7` faz a data ser ESTRITAMENTE futura: se hoje for quinta, o
+    expediente das 9h as 18h ja pode estar metade no passado, e a maioria dos
+    testes daqui depende de a jornada inteira estar a frente.
+    """
+    hoje = date.today()
+    return (hoje + timedelta(days=(3 - hoje.weekday()) % 7 or 7)).isoformat()
+
+
+DIA = _proxima_quinta()
 
 
 def _barbeiro(barbearia_id, nome="Zeca", papel="BARBEIRO", ordem=0, ativo=True):
@@ -34,7 +62,7 @@ def _logar(client, barbeiro, barbearia_id, host="brutus.localhost"):
 def _expediente(barbearia_id, barbeiro, minutos_inicio=540, minutos_fim=1080):
     from tenant.models import HorarioTrabalho
 
-    # 2026-08-20 e' quinta (dia_semana 4, dom=0).
+    # `DIA` e' sempre uma quinta (ver `_proxima_quinta`): dia_semana 4, dom=0.
     return HorarioTrabalho.objects.using("owner").create(
         id=str(uuid.uuid4()), barbearia_id=barbearia_id, barbeiro_id=barbeiro.id,
         dia_semana=4, minutos_inicio=minutos_inicio, minutos_fim=minutos_fim,
@@ -101,7 +129,10 @@ def test_itens_misturam_agendamento_e_bloqueio_ordenados(client, cenario):
         minutos_inicio=720, minutos_fim=780,
     )
     servico = _servico_vinculado(b.id, dono)
-    inicio = datetime(2026, 8, 20, 10, 0, tzinfo=timezone.utc)
+    # Derivado de `DIA`, e nao escrito a mao: era a SEGUNDA data fixa deste
+    # arquivo, e ela apodrecia junto com a primeira — com `DIA` andando e
+    # esta parada, o agendamento cai fora do dia consultado e some do quadro.
+    inicio = datetime.fromisoformat(f"{DIA}T10:00:00+00:00")
     Agendamento.objects.using("owner").create(
         id=str(uuid.uuid4()), barbearia_id=b.id, codigo=str(uuid.uuid4())[:10],
         barbeiro_id=dono.id, cliente_id=cliente.id, servico_id=servico.id,
@@ -113,7 +144,7 @@ def test_itens_misturam_agendamento_e_bloqueio_ordenados(client, cenario):
     itens = _coluna_de(r.json(), dono.id)["itens"]
     tipos = [i["tipo"] for i in itens]
     assert "AGENDAMENTO" in tipos and "BLOQUEIO" in tipos
-    # ordenados por inicio: o agendamento (10h locais) vem antes do almoco (12h).
+    # ordenados por inicio: o agendamento (10h UTC, 7h locais) vem antes do almoco (12h locais).
     assert tipos.index("AGENDAMENTO") < tipos.index("BLOQUEIO")
 
 
