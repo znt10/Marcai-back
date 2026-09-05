@@ -184,3 +184,16 @@ FOTO_LADO_PX = 192
 FOTO_TAMANHO_MAXIMO_BYTES = 20 * 1024
 # SVG fica de fora: e' imagem que carrega script.
 FOTO_MIMES = ("image/webp", "image/jpeg", "image/png")
+
+# ---- Resumo de cortes por barbeiro (painel do dono) ----
+#
+# Teto da janela que `/api/painel/resumo` aceita. Nao existe para proteger o
+# banco — a agregacao e' uma consulta so', e um ano ou um seculo custam
+# praticamente o mesmo. Existe para que um `?de=1900-01-01` (digitado errado,
+# ou herdado de um link velho) apareca como periodo recusado em vez de
+# devolver um numero que ninguem pediu e parece certo.
+#
+# 366 e nao 365: um intervalo de "um ano inteiro" que cruze ano bissexto tem
+# 366 dias, e recusar exatamente esse caso seria a regra falhando na unica
+# vez em que ela nao deveria.
+RESUMO_JANELA_MAXIMA_DIAS = 366
