@@ -33,6 +33,7 @@ from .views.equipe import (
 from .views.foto import FotoView
 from .views.expediente import ExpedienteView
 from .views.horarios import DiasComVagaView, HorariosView
+from .views.resumo import ResumoView
 from .views.servicos import ServicosView
 from .views.servicos_painel import ServicoPainelDetalheView, ServicosPainelView
 
@@ -163,6 +164,11 @@ urlpatterns = [
         name="painel-agendamentos-cancelar",
     ),
     path("painel/barbearia", BarbeariaPainelView.as_view(), name="painel-barbearia"),
+    # O resumo do dono — quantos cortes cada barbeiro fez no periodo. Le so'
+    # o que ja' aconteceu (`fim <= agora`), entao nunca conflita com a agenda
+    # que as rotas vizinhas mostram: aquelas respondem "o que vem", esta
+    # responde "o que foi".
+    path("painel/resumo", ResumoView.as_view(), name="painel-resumo"),
     # Fecha a travessia, bloco A — sessao do admin da plataforma. So estas
     # duas rotas chegam aqui de qualquer host que nao seja o do admin
     # tambem por posicao: a `BarreiraAdminMiddleware` da 404 antes.
