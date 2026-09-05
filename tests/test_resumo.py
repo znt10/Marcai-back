@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.services.resumo import cortes_por_barbeiro, periodo_pedido
+from app.services.sessao import COOKIE_SESSAO, emitir
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
@@ -273,3 +274,83 @@ def test_periodo_recusa_janela_absurda():
     assert periodo_pedido("1900-01-01", "2026-09-05", "2026-09-05") == (
         "2026-09-01", "2026-09-05",
     )
+
+
+# ---------------------------------------------------------------- a rota
+#
+# `from app.services.sessao import COOKIE_SESSAO, emitir` vai junto dos
+# imports NO TOPO do arquivo, e nao aqui: import no meio do modulo e' erro de
+# lint (E402) e esconde de quem le' o cabecalho que este arquivo fala HTTP.
+
+
+def _logar(client, barbeiro, barbearia_id, host="brutus.localhost"):
+    client.cookies[COOKIE_SESSAO] = emitir(
+        sub=barbeiro.id, bid=barbearia_id, papel=barbeiro.papel, tv=0,
+    )
+    return host
+
+
+def test_rota_responde_o_resumo(client, cenario):
+    b = cenario["brutus"]
+    dono = _barbeiro(b.id, "Dono", papel="DONO")
+    host = _logar(client, dono, b.id)
+    _agendamento(b.id, dono, _cliente(b.id), _servico(b.id),
+                 datetime(2026, 9, 5, 12, 0, tzinfo=timezone.utc))
+
+    r = client.get("/api/painel/resumo", {"de": DIA, "ate": DIA}, headers={"host": host})
+    assert r.status_code == 200
+    corpo = r.json()
+    assert corpo["de"] == DIA and corpo["ate"] == DIA
+    linha = next(l for l in corpo["linhas"] if l["barbeiroId"] == str(dono.id))
+    assert linha["cortes"] == 1
+    assert linha["clientes"] == 1
+
+
+def test_rota_recusa_barbeiro_comum(client, cenario):
+    """403 e nao 404: quem chega aqui ja' tem sessao valida e ja' sabe que nao
+    e' dono — a mensagem nao conta nada novo. O 404 do painel existe para nao
+    revelar REGISTRO alheio, e aqui nao ha registro nenhum em jogo."""
+    b = cenario["brutus"]
+    zeca = _barbeiro(b.id, "Zeca")
+    host = _logar(client, zeca, b.id)
+
+    r = client.get("/api/painel/resumo", headers={"host": host})
+    assert r.status_code == 403
+    assert r.json()["erro"] == "Só o dono vê o resumo."
+
+
+def test_rota_recusa_sem_sessao(client, cenario):
+    r = client.get("/api/painel/resumo", headers={"host": "brutus.localhost"})
+    assert r.status_code == 401
+
+
+def test_rota_sem_periodo_devolve_o_mes_corrente(client, cenario):
+    """A tela abre sem parametro nenhum; o padrao tem que ser util, e util
+    aqui e' o mes que esta' correndo."""
+    b = cenario["brutus"]
+    dono = _barbeiro(b.id, "Dono", papel="DONO")
+    host = _logar(client, dono, b.id)
+
+    r = client.get("/api/painel/resumo", headers={"host": host})
+    assert r.status_code == 200
+    corpo = r.json()
+    # Sem recalcular "que mes e' hoje" aqui: o teste conferiria a rota contra
+    # a MESMA conta que a rota faz, e os dois errariam juntos. O que da' para
+    # afirmar de fora e' a FORMA do padrao — comeca no dia 1, e as duas pontas
+    # caem no mesmo mes.
+    assert corpo["de"].endswith("-01")
+    assert corpo["de"][:7] == corpo["ate"][:7]
+    assert corpo["ate"] >= corpo["de"]
+
+
+def test_rota_com_periodo_torto_nao_estoura(client, cenario):
+    """A query string vem de link, nao de formulario: `?de=2026-13-45` tem que
+    virar o padrao, nunca 500."""
+    b = cenario["brutus"]
+    dono = _barbeiro(b.id, "Dono", papel="DONO")
+    host = _logar(client, dono, b.id)
+
+    r = client.get("/api/painel/resumo", {"de": "2026-13-45", "ate": "amanha"},
+                   headers={"host": host})
+    assert r.status_code == 200
+    assert r.json()["de"].endswith("-01")
