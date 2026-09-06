@@ -34,4 +34,16 @@ done
 echo "[entrypoint] aplicando migrations..."
 python manage.py migrate --noinput --database=owner
 
+# O superusuario do admin do Django, na conexao default de proposito: e' por
+# ela que o login vai autenticar depois, entao criar por outra so' adiaria a
+# descoberta de um problema de permissao para a tela.
+#
+# So' faz alguma coisa com DJANGO_DEBUG=1, e nunca troca senha de conta que ja'
+# existe — as duas travas moram DENTRO do comando, onde ha teste sobre elas, e
+# nao aqui numa condicao de shell que ninguem exercita.
+#
+# Roda a cada boot porque `docker compose down -v` leva o auth_user junto: sem
+# isto o admin voltava inalcancavel, pedindo um login que nao existia mais.
+python manage.py criar_admin_django
+
 exec "$@"
