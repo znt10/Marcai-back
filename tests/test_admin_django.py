@@ -2,6 +2,7 @@ import re
 import uuid
 
 import pytest
+from django.contrib.auth.models import User
 from django.test import Client
 
 from app.services.admin_sessao import COOKIE_SESSAO_ADMIN, emitir
@@ -374,3 +375,71 @@ def test_barbearia_inativa_aparece_marcada(client, cenario):
     corpo = r.content.decode()
     assert "zumbi" in corpo
     assert "(inativa)" in corpo
+
+
+# ------------------------------------------------------ os ModelAdmin (task 4)
+
+
+def _logar_django(client):
+    """Superusuario com nome unico por teste: o `limpar_banco` do conftest
+    trunca so' as tabelas de tenant, entao `auth_user` sobrevive entre casos e
+    um nome fixo colidiria na segunda vez."""
+    nome = f"admin-{uuid.uuid4().hex[:8]}"
+    User.objects.create_superuser(username=nome, email="", password="senha-de-teste")
+    client.login(username=nome, password="senha-de-teste")
+
+
+def _cliente(barbearia_id, nome):
+    from tenant.models import Cliente
+
+    return Cliente.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=barbearia_id, nome=nome,
+        whatsapp=f"1198{uuid.uuid4().int % 10**7:07d}",
+    )
+
+
+def test_o_admin_nao_ve_dado_de_outra_barbearia(client, cenario):
+    """O TESTE DESTA ETAPA. Se ele nao existir, o resto nao vale nada: o
+    admin do Django e' uma tela que lista qualquer tabela, e a unica coisa
+    entre ela e o dado de outra barbearia e' a politica do Postgres."""
+    b, d = cenario["brutus"], cenario["dontony"]
+    _cliente(b.id, "Cliente do Brutus")
+    _cliente(d.id, "Cliente do Dom Tony")
+
+    _logar_admin(client)
+    _logar_django(client)
+    client.post(
+        "/admin/django/escolher-barbearia",
+        {"barbearia_id": str(b.id)},
+        headers={"host": HOST_ADMIN},
+    )
+
+    r = client.get("/admin/django/tenant/cliente/", headers={"host": HOST_ADMIN})
+    assert r.status_code == 200
+    corpo = r.content.decode()
+    assert "Cliente do Brutus" in corpo
+    assert "Cliente do Dom Tony" not in corpo
+
+
+def test_sem_escolher_barbearia_o_admin_nao_mostra_dado(client, cenario):
+    """Lista vazia e' o comportamento CERTO, nao um defeito: sem barbearia
+    escolhida o middleware nao define a variavel, e a politica de RLS nao casa
+    com linha nenhuma. Na primeira vez que se abre, parece quebrado — e nao
+    esta."""
+    _cliente(cenario["brutus"].id, "Cliente do Brutus")
+    _logar_admin(client)
+    _logar_django(client)
+
+    r = client.get("/admin/django/tenant/cliente/", headers={"host": HOST_ADMIN})
+    assert r.status_code == 200
+    assert "Cliente do Brutus" not in r.content.decode()
+
+
+def test_barbearia_e_somente_leitura(client, cenario):
+    """Criar barbearia continua no painel custom, onde a transacao cria
+    barbearia + dono + convite junto. Pelo admin do Django sairia uma
+    barbearia ORFA, em que ninguem consegue entrar."""
+    _logar_admin(client)
+    _logar_django(client)
+    r = client.get("/admin/django/tenant/barbearia/add/", headers={"host": HOST_ADMIN})
+    assert r.status_code == 403
