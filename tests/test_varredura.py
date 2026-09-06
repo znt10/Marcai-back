@@ -15,7 +15,12 @@ MODELS_DE_TENANT = {"Barbeiro", "Servico", "BarbeiroServico", "HorarioTrabalho",
 #                 para ganhar uma consulta e nao deveria comecar a ter
 ISENTOS = {"rls.py", "models.py", "__init__.py"}
 
-RAIZ = pathlib.Path(__file__).resolve().parent.parent / "backend" / "tenant"
+# `backend/tenant/` e o pacote dos models e do RLS. `backend/app/admin.py`
+# entrou na etapa do admin do Django: ele nao estava coberto, e deixar de fora
+# a UNICA tela capaz de listar qualquer tabela seria a regra parando de valer
+# exatamente onde mais importa.
+RAIZ = pathlib.Path(__file__).resolve().parent.parent / "backend"
+ALVOS = [RAIZ / "tenant", RAIZ / "app" / "admin.py"]
 
 
 def _nome_do_model(no: ast.AST) -> str | None:
@@ -106,7 +111,8 @@ def test_nenhuma_consulta_de_tenant_fora_do_wrapper():
         invisivel para as duas formas acima porque nao passa por model
         nenhum)
 
-    Varre backend/tenant/ inteiro, subpastas inclusive (rglob, nao glob).
+    Varre backend/tenant/ inteiro, subpastas inclusive (rglob, nao glob), MAIS
+    backend/app/admin.py, que entrou na etapa do admin do Django.
 
     O que ela NAO pega, de proposito — indecidivel sem seguir o fluxo de
     dados, e uma tentativa de fechar viraria heuristica fragil, entao fica
@@ -117,18 +123,25 @@ def test_nenhuma_consulta_de_tenant_fora_do_wrapper():
       - `apps.get_model('tenant', 'Barbeiro').objects` (o `.value` de
         `.objects` aqui e uma Call, nao um Name/Attribute — a arvore nao
         guarda mais o nome do model depois disso)
-      - qualquer uso de um model de tenant fora de backend/tenant/ — a
-        varredura nunca olha para outro app Django
+      - qualquer uso de um model de tenant fora dos ALVOS — a varredura nao
+        varre `app/` inteiro, so o admin.py de la
 
     Se ela falhar num arquivo novo e legitimo, a resposta certa quase nunca e
     acrescentar o arquivo a ISENTOS — e envolver a consulta no wrapper.
     """
     fora = []
-    for arquivo in RAIZ.rglob("*.py"):
-        if arquivo.name in ISENTOS:
-            continue
-        fora.extend(_consultas_de_tenant(arquivo))
-        fora.extend(_sql_cru(arquivo))
+    for alvo in ALVOS:
+        # `ALVOS` mistura diretorio e arquivo solto de proposito: varrer `app/`
+        # inteiro pegaria services e views que USAM os models por fora do
+        # wrapper legitimamente (eles chamam `com_barbearia` de dentro das
+        # funcoes, e a varredura nao segue chamada). O admin e o caso em que o
+        # arquivo declara a superficie e nao a consulta.
+        arquivos = alvo.rglob("*.py") if alvo.is_dir() else [alvo]
+        for arquivo in arquivos:
+            if arquivo.name in ISENTOS:
+                continue
+            fora.extend(_consultas_de_tenant(arquivo))
+            fora.extend(_sql_cru(arquivo))
 
     assert fora == [], (
         "consulta a model de tenant fora do com_barbearia():\n  "
