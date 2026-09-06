@@ -68,4 +68,123 @@ def test_post_do_admin_nao_leva_403_por_falta_de_header(client, cenario):
         headers={"host": HOST_ADMIN},
     )
     assert r.status_code == 404
-    assert r.status_code != 403
+    # `!= 403` nao afirma nada aqui — ja' sabemos que e' 404 pela linha
+    # acima, entao `!= 403` nunca poderia falhar. A afirmacao de verdade e'
+    # que o corpo nao e' o do `ClienteMiddleware`: se a isencao sumisse, o
+    # 403 dele viria com este texto (`JsonResponse({"erro": "pedido sem
+    # cliente"}, ...)`), e esta linha pegaria isso mesmo se, por acidente,
+    # outro codigo tambem devolvesse 404.
+    assert b"pedido sem cliente" not in r.content
+
+
+# --------------------------------------------------------- o escopo (RLS)
+
+
+def _requisicao_admin(sessao_dados=None):
+    """Monta uma requisicao GET sob o prefixo do admin, com o cookie da
+    plataforma e (opcionalmente) `barbearia_escolhida` na sessao — o minimo
+    que `AdminDjangoMiddleware` precisa pra decidir alguma coisa, sem passar
+    pela pilha inteira de middlewares (por isso RequestFactory, e nao
+    `client`)."""
+    from django.contrib.sessions.backends.db import SessionStore
+    from django.test import RequestFactory
+
+    sessao = SessionStore()
+    if sessao_dados:
+        for chave, valor in sessao_dados.items():
+            sessao[chave] = valor
+        sessao.save()
+
+    req = RequestFactory().get("/admin/django/")
+    req.COOKIES = {COOKIE_SESSAO_ADMIN: emitir()}
+    req.session = sessao
+    return req
+
+
+def _current_setting():
+    """Le `app.barbearia_id` na conexao `default` — a MESMA que o middleware
+    usa. Fora de qualquer `with com_barbearia_por_requisicao(...)`, e' o
+    valor que o RLS de verdade enxergaria."""
+    from django.db import connection
+
+    with connection.cursor() as cur:
+        cur.execute("SELECT current_setting('app.barbearia_id', true)")
+        return cur.fetchone()[0]
+
+
+def test_o_escopo_define_app_barbearia_id_durante_a_requisicao(client, cenario):
+    """A metade 'escopo' da task, sem a qual `com_barbearia_por_requisicao'
+    e' codigo morto do ponto de vista da suite: nenhum outro teste chama o
+    middleware com uma `barbearia_escolhida` na sessao e confere o que o RLS
+    veria. Apagar as seis linhas de escopo em `AdminDjangoMiddleware.__call__`
+    (deixando so' `return self.get_response(request)`) faz esta afirmacao
+    falhar na hora — `lido["valor"]` viria vazio, nao o id da Brutus."""
+    from tenant.middleware import AdminDjangoMiddleware
+
+    lido = {}
+
+    def get_response(request):
+        lido["valor"] = _current_setting()
+        return None
+
+    req = _requisicao_admin({AdminDjangoMiddleware.CHAVE_SESSAO: str(cenario["brutus"].id)})
+    AdminDjangoMiddleware(get_response)(req)
+
+    assert lido["valor"] == str(cenario["brutus"].id)
+
+
+def test_a_variavel_de_rls_morre_com_a_transacao(client, cenario):
+    """Defende o `is_local=true` do `set_config` em
+    `com_barbearia_por_requisicao`: trocar para `false` faria a variavel
+    viver na SESSAO do Postgres em vez da transacao — e como a conexao volta
+    para a pool, o PROXIMO pedido herdaria o tenant deste. Vazamento cruzado
+    entre barbearias, intermitente, sem erro nenhum, e nenhum teste que olhe
+    uma requisicao so' pegaria isso.
+
+    A primeira asserção e' so' sanidade (confirma que o bloco rodou, para a
+    segunda nao passar por acidente com a variavel nunca tendo sido
+    definida); a segunda e' a que importa: DEPOIS que o `with` sai, a mesma
+    conexao nao pode mais devolver o id."""
+    from tenant.middleware import AdminDjangoMiddleware
+
+    lido = {}
+
+    def get_response(request):
+        lido["durante"] = _current_setting()
+        return None
+
+    req = _requisicao_admin({AdminDjangoMiddleware.CHAVE_SESSAO: str(cenario["brutus"].id)})
+    AdminDjangoMiddleware(get_response)(req)
+
+    assert lido["durante"] == str(cenario["brutus"].id)
+    assert _current_setting() in (None, "")
+
+
+def test_requisicao_seguinte_sem_escolha_nao_herda_a_anterior(client, cenario):
+    """A consequencia pratica do teste acima: nao basta a variavel morrer em
+    teoria, o PROXIMO pedido tem que de fato nao ver o id do anterior. Sem
+    `barbearia_escolhida` na segunda sessao, o middleware nem entra no bloco
+    `com_barbearia_por_requisicao` — a leitura tem que vir vazia, e nao o id
+    da Brutus deixado pela primeira requisicao."""
+    from tenant.middleware import AdminDjangoMiddleware
+
+    lido_primeira = {}
+
+    def leitor_primeira(request):
+        lido_primeira["valor"] = _current_setting()
+        return None
+
+    primeira = _requisicao_admin({AdminDjangoMiddleware.CHAVE_SESSAO: str(cenario["brutus"].id)})
+    AdminDjangoMiddleware(leitor_primeira)(primeira)
+    assert lido_primeira["valor"] == str(cenario["brutus"].id)
+
+    lido_segunda = {}
+
+    def leitor_segunda(request):
+        lido_segunda["valor"] = _current_setting()
+        return None
+
+    segunda = _requisicao_admin()  # sem barbearia_escolhida
+    AdminDjangoMiddleware(leitor_segunda)(segunda)
+
+    assert lido_segunda["valor"] in (None, "")
