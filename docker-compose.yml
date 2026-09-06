@@ -28,6 +28,9 @@ services:
       PGPORT: "5432"
       DOMINIO_BASE: localhost
       DJANGO_DEBUG: "1"
+      # Vazia = desligado. Ver .env.example — e' a saida para testar pelo
+      # celular sem DNS curinga, e so' vale porque DJANGO_DEBUG e' "1" aqui.
+      TENANT_PADRAO: ${TENANT_PADRAO:-}
       REDIS_URL: redis://redis:6379/1
       # Do .env do host. Sem esta linha, settings.py:8 cai no padrão
       # "inseguro-so-em-dev" e nada quebra — que é justamente o perigo.

@@ -3,6 +3,8 @@ from pathlib import Path
 
 from corsheaders.defaults import default_headers
 
+from tenant.config import tenant_padrao
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "inseguro-so-em-dev")
@@ -21,9 +23,25 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
 # forma canonica e a que o slug.ts ja usa.
 DOMINIO_BASE = os.environ.get("DOMINIO_BASE", "localhost")
 
+# ---- Barbearia padrao: testar pelo celular sem DNS (tenant/config.py) ----
+#
+# O gate esta DENTRO de `tenant_padrao`, que devolve "" quando DEBUG e' falso.
+# Ou seja: por mais que a variavel exista no ambiente de producao, ela nao liga
+# nada. E' proposital que o gate seja uma funcao pura — assim ha teste sobre a
+# trava (tests/test_tenant_padrao.py), e nao so' sobre o efeito dela.
+TENANT_PADRAO = tenant_padrao(os.environ.get("TENANT_PADRAO", ""), DEBUG)
+
 # O ponto e o curinga: `.localhost` cobre brutus.localhost, dontony.localhost
 # e admin.localhost de uma vez.
-ALLOWED_HOSTS = [f".{DOMINIO_BASE}", DOMINIO_BASE]
+#
+# No modo barbearia-padrao o host e' o IP da maquina na rede, que muda a cada
+# DHCP e ninguem sabe na hora de escrever isto — dai o curinga. So' se alcanca
+# esta linha sob DEBUG (ver acima), e a protecao que importa (o par
+# origem/host do CORS) nao passa por ALLOWED_HOSTS.
+if TENANT_PADRAO:
+    ALLOWED_HOSTS = ["*"]
+else:
+    ALLOWED_HOSTS = [f".{DOMINIO_BASE}", DOMINIO_BASE]
 
 # DESLIGADO de proposito. O tenant sai do Host real; confiar em cabecalho de
 # upstream faria o back precisar do front na frente para funcionar, e ele

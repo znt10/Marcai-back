@@ -3,7 +3,7 @@ import time
 from django.conf import settings
 from django.http import Http404, JsonResponse
 
-from .config import SESSAO_BARBEIRO_COOKIE, TTL_CACHE_TENANT_S
+from .config import SESSAO_BARBEIRO_COOKIE, TTL_CACHE_TENANT_S, sem_subdominio
 from .models import Barbearia
 from .slug import eh_host_admin, extrair_slug
 
@@ -75,6 +75,18 @@ class TenantMiddleware:
 
         if not request.eh_admin:
             slug = extrair_slug(host, base)
+            # A saida de dev para testar no celular: um host SEM subdominio
+            # (IP nu na rede, ou o dominio nu) cai na barbearia de
+            # TENANT_PADRAO. Fica FORA de `extrair_slug` de proposito — aquela
+            # e' a funcao pura espelhada no front, e o contrato dela e' "este
+            # host nomeia esta barbearia", sem excecao. A conveniencia mora
+            # aqui, no chamador, onde da' para ver que ela depende de settings.
+            #
+            # `settings.TENANT_PADRAO` ja' nasce "" fora de DEBUG (settings.py
+            # o passa por `tenant_padrao`), entao em producao esta linha e'
+            # inerte.
+            if slug is None and settings.TENANT_PADRAO and sem_subdominio(host, base):
+                slug = settings.TENANT_PADRAO
             if slug is None:
                 raise Http404("host sem barbearia")
             barbearia = _buscar_por_slug(slug)
