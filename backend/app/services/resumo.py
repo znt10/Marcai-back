@@ -12,10 +12,9 @@ import re
 from datetime import date, datetime
 
 from django.db.models import Count, Q
-from django.db.models.functions import TruncDate
 
 from tenant.config import RESUMO_JANELA_MAXIMA_DIAS
-from tenant.datas import FUSO, local_para_utc, somar_dias
+from tenant.datas import local_para_utc, somar_dias
 from tenant.models import Agendamento, Barbeiro
 from tenant.rls import com_barbearia
 
@@ -135,42 +134,3 @@ def cortes_por_barbeiro(barbearia_id, de: str, ate: str, agora: datetime) -> dic
         # sim, devolvem None sem linha nenhuma para agregar.
         "totais": {"cortes": totais["cortes"] or 0, "clientes": totais["clientes"] or 0},
     }
-
-
-def serie_por_dia(barbearia_id, de: str, ate: str, agora: datetime, barbeiro_id=None) -> list[dict]:
-    """Cortes por DIA no periodo — a barbearia inteira, ou um barbeiro so'.
-
-    Existe para a pergunta que a divisao entre barbeiros nao responde: "como
-    esta indo", ao longo do tempo. A pizza diz que fatia e' de quem; isto diz
-    se a semana passada foi melhor que a retrasada. E funciona onde a pizza se
-    apaga — numa barbearia de um barbeiro so', que e' a maioria delas.
-
-    `TruncDate` COM `tzinfo=FUSO`, e essa e' a linha inteira do bug que ela
-    evita: sem o fuso o Postgres agrupa por dia UTC, e America/Sao_Paulo esta'
-    3h atras. Todo corte a partir das 21h cairia no dia SEGUINTE — o sabado a
-    noite, que e' o horario mais cheio de barbearia, apareceria no domingo. O
-    numero fecharia no total e estaria errado em cada barra.
-
-    Devolve so' os dias que TEM corte. Preencher os vazios e' da tela, que ja'
-    sabe somar dias (`lib/datas.ts`) e e' quem decide se um dia sem movimento
-    vira barra zero ou buraco.
-    """
-    abre = local_para_utc(de, 0)
-    fecha = local_para_utc(somar_dias(ate, 1), 0)
-
-    filtro = dict(status="CONFIRMADO", inicio__gte=abre, inicio__lt=fecha, fim__lte=agora)
-    if barbeiro_id:
-        filtro["barbeiro_id"] = barbeiro_id
-
-    with com_barbearia(barbearia_id):
-        linhas = (
-            Agendamento.objects.filter(**filtro)
-            .annotate(dia=TruncDate("inicio", tzinfo=FUSO))
-            .values("dia")
-            .annotate(cortes=Count("id"), clientes=Count("cliente_id", distinct=True))
-            .order_by("dia")
-        )
-        return [
-            {"dia": r["dia"].isoformat(), "cortes": r["cortes"], "clientes": r["clientes"]}
-            for r in linhas
-        ]

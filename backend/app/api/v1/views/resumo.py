@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from app.api.v1.mixins import ExigeDono
-from app.services.resumo import cortes_por_barbeiro, periodo_pedido, serie_por_dia
+from app.services.resumo import cortes_por_barbeiro, periodo_pedido
 from tenant.datas import dia_de_hoje
 
 
@@ -32,15 +32,4 @@ class ResumoView(ExigeDono, APIView):
             request.query_params.get("ate"),
             dia_de_hoje(agora),
         )
-        dados = cortes_por_barbeiro(self.barbearia_id, de, ate, agora)
-
-        # `barbeiroId` escolhe DE QUEM e' a serie por dia; sem ele, e' a
-        # barbearia inteira. Um id que nao existe (ou de outra barbearia) nao
-        # precisa de validacao: o RLS ja' garante que a consulta so' enxerga
-        # esta barbearia, entao o pior caso e' uma serie vazia — que e' a
-        # resposta certa para "os cortes de quem nao trabalha aqui".
-        dados["serie"] = serie_por_dia(
-            self.barbearia_id, de, ate, agora,
-            barbeiro_id=request.query_params.get("barbeiroId") or None,
-        )
-        return Response(dados)
+        return Response(cortes_por_barbeiro(self.barbearia_id, de, ate, agora))
