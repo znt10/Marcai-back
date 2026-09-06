@@ -9,15 +9,59 @@ from app.services.mensagens import (
 INICIO = datetime(2026, 8, 13, 11, 0, tzinfo=timezone.utc)
 
 
-def test_msg_confirmacao_leva_o_primeiro_nome_o_link_e_o_endereco():
+def test_msg_confirmacao_leva_o_primeiro_nome_o_dia_a_hora_e_o_link():
     texto = msg_confirmacao(
         cliente_nome="Maria Silva", barbeiro_nome="Zeca", servico_nome="Corte",
         inicio=INICIO, endereco="Rua Aurora, 88", link="http://x/y",
     )
     assert texto.startswith("Fechou, Maria!")
-    assert "corte" in texto  # minusculo — nao grita o nome do servico
-    assert "Rua Aurora, 88" in texto
+    # O que a mensagem existe para dizer. Encurtar nao pode custar isto.
+    # "13/08", e nao "qui 13 ago": numero se le' de relance na previa da
+    # notificacao, dia da semana obriga a traduzir para data antes de decidir.
+    assert "13/08" in texto
+    assert "08:00" in texto
+    assert "Zeca" in texto
     assert texto.endswith("http://x/y")
+
+
+def test_msg_confirmacao_e_curta_e_sem_endereco():
+    """Encurtada a pedido do dono (02/09). O modo de falha que ela ataca: no
+    celular, uma mensagem de tres paragrafos chega com um "Ler mais" em cima
+    justamente do dia e da hora.
+
+    O endereco saiu — quem marcou acabou de estar na vitrine, que o mostra — e
+    passou a viver so' no lembrete, que chega quando a pessoa esta saindo.
+    """
+    texto = msg_confirmacao(
+        cliente_nome="Maria Silva", barbeiro_nome="Zeca", servico_nome="Corte",
+        inicio=INICIO, endereco="Rua Aurora, 88", link="http://x/y",
+    )
+    assert "Rua Aurora, 88" not in texto
+    # Uma linha, uma linha em branco e o link: nada de tres paragrafos.
+    assert len(texto.splitlines()) == 3
+
+
+def test_msg_confirmacao_nunca_perde_o_link_de_cancelar():
+    """A linha que NAO se corta por mais que se encurte: sem ela, quem desistiu
+    liga pro barbeiro no meio de um corte — ou nao avisa, e o horario fica
+    ocupado a toa.
+    """
+    texto = msg_confirmacao(
+        cliente_nome="Maria Silva", barbeiro_nome="Zeca", servico_nome="Corte",
+        inicio=INICIO, endereco="Rua Aurora, 88", link="http://x/y",
+    )
+    assert "Cancelar" in texto and "http://x/y" in texto
+
+
+def test_msg_confirmacao_abre_o_servico_com_maiuscula_sem_rebaixar_o_resto():
+    """O nome do servico agora ABRE frase. `.capitalize()` do Python nao serve:
+    ele rebaixa o resto, e o nome e' do barbeiro, nao nosso.
+    """
+    texto = msg_confirmacao(
+        cliente_nome="Maria Silva", barbeiro_nome="Zeca", servico_nome="corte de Cabelo",
+        inicio=INICIO, endereco="Rua Aurora, 88", link="http://x/y",
+    )
+    assert "Corte de Cabelo" in texto
 
 
 def test_msg_cancelamento_pela_barbearia_nao_confunde_com_cancelamento_do_cliente():
@@ -28,7 +72,14 @@ def test_msg_cancelamento_pela_barbearia_nao_confunde_com_cancelamento_do_client
         inicio=INICIO, endereco="Rua Aurora, 88",
     )
     assert texto.startswith("Oi, Maria.")
-    assert "Precisamos cancelar" in texto
+    # "Cancelamos", na primeira pessoa: quem desmarcou foi a barbearia, e a
+    # mensagem tem que assumir isso. A do cliente (`msg_cancelamento`) nao diz
+    # quem cancelou justamente porque quem le foi quem cancelou.
+    assert "Cancelamos" in texto
+    # O pedido de desculpa e o convite a remarcar FICAM, por mais curta que a
+    # mensagem seja: e' a diferenca entre um cliente que volta e um que nao.
+    assert "Desculpa" in texto
+    assert "remarcar" in texto
 
 
 def test_msg_convite_leva_o_link_uma_vez_e_o_prazo():

@@ -109,6 +109,56 @@ ADMIN_TRAVA_BLOQUEIO_MS = 10 * 60_000
 ZELADOR_DIAS_DE_HISTORICO = 7
 
 
+# ---- Barbearia padrao: so' para testar pelo celular, so' em dev ----
+#
+# O endereco E a barbearia neste produto: `brutus.localhost` quer dizer "a
+# barbearia brutus", e o subdominio e' o UNICO canal que carrega isso (nao ha
+# `?barbearia=`, nem cabecalho — este middleware le do Host real de proposito).
+#
+# Isso cobra um preco em dev: `localhost` no celular e' o proprio celular, e um
+# IP nu (`10.0.0.7`) nao tem onde por subdominio. Sem uma saida, testar no
+# aparelho exige DNS curinga (nip.io) e, com ele, internet.
+#
+# A saida e' esta: com TENANT_PADRAO setado, um host SEM subdominio cai numa
+# barbearia escolhida. Ai `http://10.0.0.7:3000` funciona no celular como
+# qualquer app de um tenant so'.
+#
+# O gate e' `debug`, e nao um "se estiver em producao": variavel que ninguem
+# leu nao pode ligar isto. Em producao DJANGO_DEBUG nao e' "1", entao a funcao
+# devolve "" por mais que a variavel exista no ambiente — e' o que impede um
+# `TENANT_PADRAO` esquecido num .env de servir a MESMA barbearia para todo
+# host que nao casar com nenhuma.
+def tenant_padrao(bruto: str, debug: bool) -> str:
+    """O slug da barbearia padrao — ou "" quando o modo nao vale.
+
+    Funcao pura para que a trava seja TESTAVEL: a alternativa era um `if` solto
+    dentro do settings.py, que so' se verifica recarregando modulo.
+    """
+    if not debug:
+        return ""
+    return bruto.strip().lower()
+
+
+def sem_subdominio(host: str, dominio_base: str) -> bool:
+    """True quando o host nao carrega subdominio nenhum sob o dominio base.
+
+    E' a UNICA porta por onde `tenant_padrao` entra, e o recorte importa: sao
+    os dois casos em que nao ha subdominio para ler — o dominio nu
+    (`localhost`) e um host de fora dele (`10.0.0.7`, o celular na rede).
+
+    Fica de fora, de proposito, todo host que TEM subdominio e mesmo assim nao
+    vira barbearia: `www.localhost` (reservado), `a.b.localhost` (subdominio de
+    subdominio), `naoexiste.localhost` (slug sem dono). Esses continuam 404 ate'
+    em dev — se caissem no padrao, um erro de digitacao no subdominio abriria
+    silenciosamente a barbearia errada, que e' exatamente o acidente que o
+    multi-tenant existe para tornar impossivel.
+
+    Espelha `semSubdominio` do front/src/lib/config.ts.
+    """
+    sem_porta = host.split(":")[0].lower()
+    return sem_porta == dominio_base or not sem_porta.endswith(f".{dominio_base}")
+
+
 def regex_de_origem(dominio_base: str) -> str:
     """Regex de origem para o django-cors-headers.
 
@@ -137,7 +187,9 @@ def regex_de_origem(dominio_base: str) -> str:
     return rf"^https?://(?!(?:{proibidos})\.)[a-z0-9-]+\.{base}(:\d+)?\Z"
 
 
-def origem_e_permitida(origem: str, host: str, dominio_base: str) -> bool:
+def origem_e_permitida(
+    origem: str, host: str, dominio_base: str, padrao: str = ""
+) -> bool:
     """Decide se uma Origin pode ler a resposta desta requisicao — a checagem
     completa que o django-cors-headers usa via `check_request_enabled`
     (backend/tenant/cors.py conecta o receiver; leia o comentario de la antes
@@ -161,10 +213,19 @@ def origem_e_permitida(origem: str, host: str, dominio_base: str) -> bool:
        excecao extra aqui: seu hostname so bate com o hostname do proprio
        host do admin, entao a mesma regra de igualdade ja cobre o caso.
     """
-    if not re.match(regex_de_origem(dominio_base), origem):
-        return False
     origem_host = (urlsplit(origem).hostname or "").lower()
     host_sem_porta = host.split(":")[0].lower()
+
+    # Modo barbearia-padrao (dev): o host e' um IP nu, entao o filtro de FORMA
+    # recusaria tudo — ele so' sabe reconhecer subdominio de `dominio_base`. O
+    # filtro de PAR continua valendo e e' o que segue protegendo: a origem tem
+    # que ser o MESMO host que atendeu o pedido. Sem ele, qualquer pagina da
+    # rede leria a API. Vale so' sob `debug` (ver `tenant_padrao`).
+    if padrao and sem_subdominio(host, dominio_base):
+        return origem_host == host_sem_porta
+
+    if not re.match(regex_de_origem(dominio_base), origem):
+        return False
     return origem_host == host_sem_porta
 
 
