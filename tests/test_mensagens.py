@@ -16,10 +16,15 @@ def test_msg_confirmacao_leva_o_primeiro_nome_o_dia_a_hora_e_o_link():
     )
     assert texto.startswith("Fechou, Maria!")
     # O que a mensagem existe para dizer. Encurtar nao pode custar isto.
-    # "13/08", e nao "qui 13 ago": numero se le' de relance na previa da
-    # notificacao, dia da semana obriga a traduzir para data antes de decidir.
-    assert "13/08" in texto
-    assert "08:00" in texto
+    #
+    # "quinta 13/08 as 8:00" (pedido do dono, 06/09), e nao so' "13/08": os
+    # dois respondem perguntas diferentes e as duas importam — o numero diz
+    # QUANDO e' (da' para conferir no calendario), o nome do dia diz se DA'
+    # para ir. A hora vai sem zero a esquerda porque aqui ela esta numa FRASE,
+    # nao numa coluna: ninguem escreve "as 08:00".
+    assert "quinta 13/08" in texto
+    assert "às 8:00" in texto
+    assert "08:00" not in texto
     assert "Zeca" in texto
     assert texto.endswith("http://x/y")
 

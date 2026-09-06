@@ -15,6 +15,16 @@ MINUTOS_DIA = 24 * 60
 # que o date-fns devolve (nao "sáb", como se esperaria). Depender do locale do
 # sistema poria o rotulo da tela a merce de qual imagem base o contêiner usa.
 _DIAS = ("dom", "seg", "ter", "qua", "qui", "sex", "sab")
+# Por extenso, e COM acento, ao contrario dos curtos acima — aqueles espelham
+# `lib/datas.ts` caractere a caractere e nao podem divergir; estes so' aparecem
+# em mensagem de WhatsApp, que e' prosa e nao tabela.
+#
+# "quinta", e nao "quinta-feira": o "-feira" nao acrescenta informacao nenhuma
+# e come um terco da previa da notificacao, que e' onde a mensagem precisa
+# caber inteira.
+_DIAS_LONGOS = (
+    "domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado",
+)
 _MESES = (
     "jan", "fev", "mar", "abr", "mai", "jun",
     "jul", "ago", "set", "out", "nov", "dez",
@@ -95,6 +105,36 @@ def formatar_instante_iso(quando: datetime) -> str:
     """
     quando = como_utc(quando)
     return f"{quando.strftime('%Y-%m-%dT%H:%M:%S')}.{quando.microsecond // 1000:03d}Z"
+
+
+def formatar_dia_com_semana(quando: datetime) -> str:
+    """"quinta 10/09" — o dia da semana por extenso, e a data em numero.
+
+    Os dois juntos, e nao um ou outro, porque cada um responde uma pergunta
+    diferente e as duas importam para quem vai ao barbeiro: o numero diz QUANDO
+    e' (da' para conferir no calendario), o nome do dia diz se DA' para ir sem
+    precisar traduzir a data antes.
+
+    Isto substitui o `formatar_dia_curto` sozinho nas mensagens do cliente. A
+    decisao anterior (so' o numero, 02/09) tinha o argumento de que o nome do
+    dia obrigava a traduzir para uma data — o dono pediu os DOIS depois de usar,
+    e usar ganha do argumento.
+    """
+    local = _no_fuso(quando)
+    dia_da_semana = _DIAS_LONGOS[dia_semana_de(local.strftime("%Y-%m-%d"))]
+    return f"{dia_da_semana} {local.strftime('%d/%m')}"
+
+
+def formatar_hora_falada(quando: datetime) -> str:
+    """"9:00" — sem o zero a esquerda, ao contrario de `formatar_hora`.
+
+    Duas funcoes e nao uma porque os dois usos querem coisas opostas: no painel
+    a hora vive numa COLUNA, e o zero a esquerda e' o que alinha "09:00" com
+    "14:00"; na mensagem ela vive numa FRASE, e "as 09:00" nao e' como ninguem
+    escreve.
+    """
+    local = _no_fuso(quando)
+    return f"{local.hour}:{local.minute:02d}"
 
 
 def formatar_dia_curto(quando: datetime) -> str:

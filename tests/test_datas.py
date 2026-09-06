@@ -136,3 +136,41 @@ def test_dia_relativo_usa_o_fuso_da_barbearia_e_nao_o_do_servidor():
     agora = datetime(2026, 9, 2, 23, 0, tzinfo=timezone.utc)
     mais_tarde = datetime(2026, 9, 2, 23, 30, tzinfo=timezone.utc)
     assert formatar_dia_relativo(mais_tarde, agora) == "hoje"
+
+
+def test_formatar_dia_com_semana_traz_o_dia_por_extenso_e_a_data():
+    """Os dois juntos, e nao um ou outro: o numero diz QUANDO e' (da' para
+    conferir no calendario) e o nome do dia diz se DA' para ir sem traduzir a
+    data antes. Foi pedido depois de usar, revertendo a decisao de 02/09 que
+    tinha deixado so' o numero."""
+    from tenant.datas import formatar_dia_com_semana, local_para_utc
+
+    # 2026-09-10 e' uma quinta; 2026-09-06, um domingo.
+    assert formatar_dia_com_semana(local_para_utc("2026-09-10", 9 * 60)) == "quinta 10/09"
+    assert formatar_dia_com_semana(local_para_utc("2026-09-06", 9 * 60)) == "domingo 06/09"
+    # Com acento, ao contrario dos dias curtos que espelham o lib/datas.ts.
+    assert formatar_dia_com_semana(local_para_utc("2026-09-08", 9 * 60)) == "terça 08/09"
+    assert formatar_dia_com_semana(local_para_utc("2026-09-12", 9 * 60)) == "sábado 12/09"
+
+
+def test_formatar_dia_com_semana_usa_o_fuso_da_barbearia():
+    """As 21h de Sao Paulo ja' e' o dia seguinte em UTC. Formatar pelo fuso do
+    servidor apontaria a sexta numa mensagem sobre a quinta."""
+    from tenant.datas import formatar_dia_com_semana, local_para_utc
+
+    assert formatar_dia_com_semana(local_para_utc("2026-09-10", 21 * 60)) == "quinta 10/09"
+
+
+def test_formatar_hora_falada_nao_leva_zero_a_esquerda():
+    """Na mensagem a hora vive numa FRASE ("às 9:00"); no painel ela vive numa
+    COLUNA, e la' o zero e' o que alinha 09:00 com 14:00. Por isso sao duas
+    funcoes, e nao uma."""
+    from tenant.datas import formatar_hora, formatar_hora_falada, local_para_utc
+
+    nove = local_para_utc("2026-09-10", 9 * 60)
+    assert formatar_hora_falada(nove) == "9:00"
+    assert formatar_hora(nove) == "09:00"
+
+    meia = local_para_utc("2026-09-10", 9 * 60 + 30)
+    assert formatar_hora_falada(meia) == "9:30"
+    assert formatar_hora_falada(local_para_utc("2026-09-10", 14 * 60)) == "14:00"

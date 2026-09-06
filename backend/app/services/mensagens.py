@@ -1,4 +1,9 @@
-from tenant.datas import formatar_dia_curto, formatar_dia_relativo, formatar_hora
+from tenant.datas import (
+    formatar_dia_com_semana,
+    formatar_dia_relativo,
+    formatar_hora,
+    formatar_hora_falada,
+)
 
 # Todo texto que sai pelo WhatsApp mora aqui — espalhar template pelas rotas e
 # como duas mensagens do mesmo evento acabam divergindo.
@@ -14,11 +19,17 @@ from tenant.datas import formatar_dia_curto, formatar_dia_relativo, formatar_hor
 # importa (o dia e a hora). Uma linha cabe inteira na previa da notificacao —
 # o cliente entende sem abrir.
 #
-# A data vai em "02/09", e nao "qua 2 set" (pedido do dono, 02/09). Numero e'
-# o que se le' de relance na previa da notificacao; o dia da semana obriga a
-# traduzir para uma data antes de saber se da' pra ir. Quem PRECISA do dia da
-# semana e' o barbeiro, e as mensagens dele (mais abaixo) usam outra regra:
-# "hoje"/"amanha", que e' melhor ainda para quem le no meio do expediente.
+# A data vai em "quinta 10/09 as 9:00" — o dia da semana por extenso, a data em
+# numero, e a hora sem zero a esquerda (pedido do dono, 06/09).
+#
+# Isto REVERTE a decisao de 02/09, que tinha tirado o dia da semana com o
+# argumento de que ele obriga a traduzir para uma data. O argumento nao estava
+# errado; estava incompleto. Os dois respondem perguntas diferentes: o numero
+# diz quando e' (da' para conferir no calendario), o nome do dia diz se DA' para
+# ir. Quem usou pediu os dois de volta, e usar ganha do argumento.
+#
+# As mensagens do BARBEIRO (mais abaixo) continuam com outra regra —
+# "hoje"/"amanha" — que e' melhor ainda para quem le no meio do expediente.
 #
 # O que NAO se corta e o link de cancelar: sem ele, todo cliente que desistiu
 # vira uma ligacao pro barbeiro no meio de um corte, e um horario que fica
@@ -48,7 +59,7 @@ def msg_confirmacao(
     # esta de fato saindo de casa) ainda e o lugar certo para ele.
     return (
         f"Fechou, {primeiro_nome}! {_capitalizar(servico_nome)} "
-        f"{formatar_dia_curto(inicio)}, {formatar_hora(inicio)}, "
+        f"{formatar_dia_com_semana(inicio)} às {formatar_hora_falada(inicio)}, "
         f"com {barbeiro_nome}.\n\nCancelar: {link}"
     )
 
@@ -63,7 +74,7 @@ def msg_cancelamento_pela_barbearia(
     # nao volta. O convite a remarcar tambem fica, pela mesma razao.
     return (
         f"Oi, {primeiro_nome}. Cancelamos seu {servico_nome.lower()} de "
-        f"{formatar_dia_curto(inicio)}, {formatar_hora(inicio)}. "
+        f"{formatar_dia_com_semana(inicio)} às {formatar_hora_falada(inicio)}. "
         f"Desculpa! Chama a gente pra remarcar."
     )
 
@@ -76,7 +87,7 @@ def msg_cancelamento(*, barbeiro_nome: str, inicio) -> str:
     `clienteNome`/`servicoNome`/`endereco` apesar de aceita-los no tipo.
     """
     return (
-        f"Horário de {formatar_dia_curto(inicio)}, {formatar_hora(inicio)}, "
+        f"Horário de {formatar_dia_com_semana(inicio)} às {formatar_hora_falada(inicio)}, "
         f"com {barbeiro_nome} cancelado. Até a próxima!"
     )
 
@@ -86,7 +97,7 @@ def msg_lembrete(*, servico_nome: str, barbeiro_nome: str, inicio, endereco: str
     # esta saindo de casa — e' o unico momento em que ele e' util, e por isso
     # ele saiu da confirmacao e nao daqui.
     return (
-        f"Lembrete: {servico_nome.lower()} hoje, {formatar_hora(inicio)}, "
+        f"Lembrete: {servico_nome.lower()} hoje às {formatar_hora_falada(inicio)}, "
         f"com {barbeiro_nome}. {endereco}"
     )
 
