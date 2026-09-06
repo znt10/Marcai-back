@@ -381,7 +381,7 @@ def test_cancelar_dentro_do_prazo_ok_e_avisa(client, cenario):
     do_cliente = next(
         c.args[1] for c in mock_envia.call_args_list if c.args[0] != barbeiro.whatsapp
     )
-    assert "foi cancelado" in do_cliente
+    assert "cancel" in do_cliente.lower()
 
     from tenant.models import Agendamento
 

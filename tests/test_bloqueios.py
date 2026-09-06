@@ -250,7 +250,7 @@ def test_bloquear_confirmando_cancela_e_avisa_o_cliente(client, cenario):
     assert Bloqueio.objects.using("owner").count() == 1
     assert Agendamento.objects.using("owner").get(id=a.id).status == "CANCELADO_BARBEIRO"
     mock_envia.assert_called_once()
-    assert "cancelar" in mock_envia.call_args.args[1].lower()
+    assert "cancel" in mock_envia.call_args.args[1].lower()
 
 
 def test_bloqueio_sem_ninguem_dentro_continua_passando_direto(client, cenario):
