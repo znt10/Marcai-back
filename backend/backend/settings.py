@@ -67,12 +67,18 @@ CORS_ALLOW_ALL_ORIGINS = False
 # e a escrita falhando com um erro de CORS que nao menciona CSRF nenhum.
 CORS_ALLOW_HEADERS = [*default_headers, "x-brutus-cliente"]
 
-# Sem contrib.admin, contrib.auth, contrib.contenttypes nem sessions: nenhum
-# dos quatro tem uso aqui, e cada um criaria tabela propria sem consumidor
-# (contenttypes criaria django_content_type, auth criaria as suas, etc). Sem
-# django_celery_beat pela mesma razao — o beat usa o agendador de arquivo
-# (CELERY_BEAT_SCHEDULE, abaixo), nao a agenda em tabela que aquele app traria.
+# Os cinco de baixo entraram na etapa do admin do Django (spec de
+# 06/09/2026). O comentario logo acima desta lista dizia que eles foram
+# excluidos "por nao ter uso aqui" — estava certo ate' o admin existir, e
+# agora eles TEM consumidor. `admin` puxa os outros quatro: ele nao sobe
+# sem auth (usuario e permissao), contenttypes (o alvo generico das
+# permissoes), sessions (o login) e messages (o "salvo com sucesso").
 INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
     "django.contrib.staticfiles",
     "corsheaders",
     "rest_framework",
@@ -86,11 +92,22 @@ MIDDLEWARE = [
     # Primeiro de todos: ele responde o preflight OPTIONS e sai, sem passar
     # pela resolucao de tenant. Preflight nao carrega Host de barbearia.
     "corsheaders.middleware.CorsMiddleware",
+    # Antes de tudo que le sessao do Django: `request.session` so existe
+    # depois dele. O admin do Django e o unico consumidor.
+    "django.contrib.sessions.middleware.SessionMiddleware",
     # Antes do TenantMiddleware de proposito: um POST sem o header e recusado
     # sem nem consultar o banco. Recusa barata vem antes de trabalho caro.
     "tenant.middleware.ClienteMiddleware",
     "tenant.middleware.TenantMiddleware",
     "tenant.middleware.BarreiraAdminMiddleware",
+    # CSRF entrou com o admin do Django, e e' a protecao CERTA para ele: o
+    # formulario e' servido pela MESMA origem que o recebe. A API nao muda de
+    # comportamento — `APIView.as_view()` do DRF ja embrulha toda view em
+    # `csrf_exempt`, e sem classe de autenticacao configurada nada reativa a
+    # checagem por dentro. Os 475 testes sao a prova disso, nao este comentario.
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
     # Por ultimo: os dois crivos acima recusam por HOST (admin ou nao), e este
     # recusa por CAMINHO. Deixando-o no fim, um pedido que ja morreu por host
     # nao passa por aqui — os prefixos dos dois nao se cruzam hoje, entao a
@@ -98,6 +115,29 @@ MIDDLEWARE = [
     # caminho depois" e o que faz a lista continuar previsivel quando alguem
     # acrescentar o proximo prefixo.
     "tenant.middleware.CrivoPainelMiddleware",
+]
+
+# O admin do Django e' o unico consumidor de template neste projeto: a API
+# devolve JSON e o front e' outro processo. Por isso `DIRS` fica vazia — nao
+# ha template nosso, so' os que vem dentro dos apps contrib.
+#
+# Os quatro context processors nao sao decoracao: o admin quebra sem `request`
+# (ele monta URL a partir dele), sem `auth` (o "logado como fulano" e o menu de
+# permissao) e sem `messages` (o "salvo com sucesso" depois de gravar).
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
 ]
 
 ROOT_URLCONF = "backend.urls"
