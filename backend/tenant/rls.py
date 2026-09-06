@@ -94,6 +94,20 @@ def com_barbearia_por_requisicao(barbearia_id):
 
     O que NAO muda, e e' o que importa: `is_local=true` no `set_config`. A
     variavel morre com a transacao, e a conexao volta para a pool limpa.
+
+    **O que este `atomic()` garante, e o que NAO garante:** ele garante UMA
+    CONEXAO SO' e UMA VARIAVEL DE RLS por requisicao — nao atomicidade da
+    requisicao inteira. `convert_exception_to_response` do Django embrulha
+    CADA middleware: uma excecao levantada dentro da VIEW vira uma resposta
+    500 ainda DENTRO do `get_response` que este `with` chama, entao o bloco
+    sai pela porta normal (sem excecao) e COMMITA o que a view ja tiver
+    escrito ate ali. Ao contrario de `ATOMIC_REQUESTS` (que embrulha a view
+    por fora, e por isso PEGA a excecao dela), este wrapper nunca ve essa
+    excecao — nao ha `set_rollback(True)` nem inspecao de status aqui, e
+    acrescentar isso seria desenho novo, fora do que esta funcao promete.
+    Uma view custom sob `/admin/django` que escreva em tabela de tenant e
+    precise desfazer em erro precisa do proprio `atomic()` — este wrapper
+    resolve RLS, nao transacionalidade de negocio.
     """
     if not barbearia_id:
         raise ValueError("com_barbearia_por_requisicao precisa de um barbearia_id")

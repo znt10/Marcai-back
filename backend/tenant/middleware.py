@@ -229,8 +229,28 @@ class AdminDjangoMiddleware:
     Sem barbearia escolhida a variavel nao e' definida, e o admin mostra listas
     vazias. E' o comportamento certo e legivel: "voce nao disse de quem esta
     falando".
+
+    **Limite deste `with`, que nao e' obvio:** ele garante UMA CONEXAO e UMA
+    VARIAVEL DE RLS por requisicao, nao atomicidade da requisicao inteira.
+    Uma excecao levantada dentro da VIEW vira resposta 500 ainda DENTRO do
+    `get_response` (o `convert_exception_to_response` do Django embrulha cada
+    middleware), entao este `with` sai sem excecao e COMMITA o que a view ja
+    tiver escrito — ao contrario de `ATOMIC_REQUESTS`, que embrulha a view por
+    FORA e por isso pega a excecao dela. Uma view custom sob este prefixo que
+    escreva em tabela de tenant e precise desfazer em erro precisa do proprio
+    `atomic()`; ver o docstring de `com_barbearia_por_requisicao` em `rls.py`.
     """
 
+    # SEM barra final de proposito: `startswith` tambem casaria vizinhos como
+    # `/admin/djangox/` ou `/admin/django-relatorios/`, mas isso NAO e' um
+    # buraco hoje porque `ClienteMiddleware` isenta o mesmo header usando
+    # ESTA MESMA constante — os dois conjuntos (quem passa a porta, quem fica
+    # isento do header) casam exatamente, entao uma rota futura sob
+    # `/admin/django-algo/` nasceria isenta do header MAS tambem atras da
+    # porta. Trocar para `"/admin/django/"` pareceria mais preciso e seria
+    # PIOR: desalinharia os dois conjuntos e abriria o buraco que este
+    # comentario descreve. A garantia vem de as duas classes lerem a MESMA
+    # constante, nao da forma dela.
     PREFIXO = "/admin/django"
     CHAVE_SESSAO = "barbearia_escolhida"
 
