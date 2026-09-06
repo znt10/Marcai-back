@@ -66,6 +66,13 @@ class Barbearia(models.Model):
     ativo = models.BooleanField(default=True)
     criado_em = models.DateTimeField(default=timezone.now)
 
+    def __str__(self):
+        # Sem isto o Django escreve "Barbearia object (uuid)" em TODO lugar que
+        # mostra o objeto: cabecalho de formulario, <select> de chave
+        # estrangeira, log de acao do admin. O uuid nao identifica nada para
+        # quem esta olhando — o nome, sim.
+        return self.nome
+
 
 class Barbeiro(models.Model):
     """Quem atende. Tambem e a tabela de tenant que o teste de RLS conta para
@@ -130,6 +137,9 @@ class Barbeiro(models.Model):
             ),
         ]
 
+    def __str__(self):
+        return self.nome
+
 
 class Servico(models.Model):
     """O catalogo da barbearia.
@@ -157,6 +167,9 @@ class Servico(models.Model):
                 fields=["barbearia", "id"], name="servico_id_por_tenant",
             ),
         ]
+
+    def __str__(self):
+        return self.nome
 
 
 class BarbeiroServico(models.Model):
@@ -224,6 +237,9 @@ class HorarioTrabalho(models.Model):
             ),
         ]
 
+    def __str__(self):
+        return f"{self.barbeiro_id} dia {self.dia_semana}"
+
 
 class Bloqueio(models.Model):
     """Duas formas na MESMA tabela, e o motor le uma OU a outra:
@@ -256,6 +272,9 @@ class Bloqueio(models.Model):
     observacao = models.TextField(null=True)
     criado_em = models.DateTimeField(default=timezone.now)
 
+    def __str__(self):
+        return f"{self.motivo} {self.barbeiro_id}"
+
 
 class Cliente(models.Model):
     """Sem cadastro e sem senha: o cliente e identificado pelo WhatsApp dentro
@@ -279,6 +298,12 @@ class Cliente(models.Model):
                 fields=["barbearia", "id"], name="cliente_id_por_tenant",
             ),
         ]
+
+    def __str__(self):
+        # Nome MAIS whatsapp: dois clientes com o mesmo primeiro nome sao o
+        # caso comum numa barbearia, e o <select> de agendamento precisa
+        # distinguir os dois.
+        return f"{self.nome} ({self.whatsapp})"
 
 
 class Agendamento(models.Model):
@@ -322,6 +347,11 @@ class Agendamento(models.Model):
     # `agora` aqui na criacao (a confirmacao JA e' o lembrete), e o cron
     # nunca ve esse agendamento.
     lembrete_enviado_em = models.DateTimeField(null=True)
+
+    def __str__(self):
+        # Quem e', quando, e o que — nessa ordem, porque e' assim que se procura
+        # um agendamento ("o corte do Joao de terca").
+        return f"{self.servico_nome} {self.inicio:%d/%m %H:%M}"
 
     class Meta:
         indexes = [

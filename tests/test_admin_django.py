@@ -83,12 +83,17 @@ def test_post_do_admin_nao_leva_403_por_falta_de_header(client, cenario):
 # --------------------------------------------------------- o escopo (RLS)
 
 
-def _requisicao_admin(sessao_dados=None):
+def _requisicao_admin(sessao_dados=None, caminho="/admin/django/"):
     """Monta uma requisicao GET sob o prefixo do admin, com o cookie da
     plataforma e (opcionalmente) `barbearia_escolhida` na sessao — o minimo
     que `AdminDjangoMiddleware` precisa pra decidir alguma coisa, sem passar
     pela pilha inteira de middlewares (por isso RequestFactory, e nao
-    `client`)."""
+    `client`).
+
+    `caminho` importa desde que o middleware passou a REDIRECIONAR para o
+    seletor quando nao ha barbearia escolhida: para exercitar o caminho em que
+    ele segue em frente sem definir a variavel, a requisicao precisa apontar
+    para um dos caminhos de `SEM_ESCOLHA`."""
     from django.contrib.sessions.backends.db import SessionStore
     from django.test import RequestFactory
 
@@ -98,7 +103,7 @@ def _requisicao_admin(sessao_dados=None):
             sessao[chave] = valor
         sessao.save()
 
-    req = RequestFactory().get("/admin/django/")
+    req = RequestFactory().get(caminho)
     req.COOKIES = {COOKIE_SESSAO_ADMIN: emitir()}
     req.session = sessao
     return req
@@ -187,7 +192,10 @@ def test_requisicao_seguinte_sem_escolha_nao_herda_a_anterior(client, cenario):
         lido_segunda["valor"] = _current_setting()
         return None
 
-    segunda = _requisicao_admin()  # sem barbearia_escolhida
+    # O seletor: um dos caminhos que funcionam SEM barbearia escolhida. Sem
+    # isto o middleware redirecionaria e `leitor_segunda` nunca rodaria — o
+    # teste passaria a nao afirmar nada sobre vazamento, que e' o ponto dele.
+    segunda = _requisicao_admin(caminho=AdminDjangoMiddleware.CAMINHO_DO_SELETOR)
     AdminDjangoMiddleware(leitor_segunda)(segunda)
 
     assert lido_segunda["valor"] in (None, "")
@@ -421,25 +429,76 @@ def test_o_admin_nao_ve_dado_de_outra_barbearia(client, cenario):
     assert "Cliente do Dom Tony" not in corpo
 
 
-def test_sem_escolher_barbearia_o_admin_nao_mostra_dado(client, cenario):
-    """Lista vazia e' o comportamento CERTO, nao um defeito: sem barbearia
-    escolhida o middleware nao define a variavel, e a politica de RLS nao casa
-    com linha nenhuma. Na primeira vez que se abre, parece quebrado — e nao
-    esta."""
+def test_sem_escolher_barbearia_o_admin_manda_escolher(client, cenario):
+    """Antes esta tela vinha VAZIA — sete secoes com zero linha e nada
+    explicando por que (a politica de RLS nao casa com linha nenhuma sem a
+    variavel definida). Foi o primeiro tropeco de quem usou o admin de
+    verdade: "nao tem barbeiro aqui". Havia tres; faltava dizer de qual
+    barbearia.
+
+    Agora o middleware manda para o seletor. Nao da' para se perder numa tela
+    que so' tem um caminho."""
     _cliente(cenario["brutus"].id, "Cliente do Brutus")
     _logar_admin(client)
     _logar_django(client)
 
     r = client.get("/admin/django/tenant/cliente/", headers={"host": HOST_ADMIN})
-    assert r.status_code == 200
-    assert "Cliente do Brutus" not in r.content.decode()
+    assert r.status_code == 302
+    assert r["Location"] == "/admin/django/escolher-barbearia"
 
 
-def test_barbearia_e_somente_leitura(client, cenario):
-    """Criar barbearia continua no painel custom, onde a transacao cria
-    barbearia + dono + convite junto. Pelo admin do Django sairia uma
-    barbearia ORFA, em que ninguem consegue entrar."""
+def test_o_seletor_e_o_login_escapam_do_redirecionamento(client, cenario):
+    """Sem esta isencao os tres se apontariam em circulo: o seletor mandaria
+    para si mesmo, e o login (que tambem roda sem barbearia escolhida) mandaria
+    para o seletor, que mandaria para o login por falta de sessao do Django.
+    Tres telas, nenhuma alcancavel."""
+    _logar_admin(client)
+    for caminho in ("/admin/django/escolher-barbearia", "/admin/django/login/"):
+        r = client.get(caminho, headers={"host": HOST_ADMIN})
+        assert r.status_code == 200, caminho
+
+
+def test_barbearia_e_editavel_e_apagar_esta_ligado(client, cenario):
+    """O dono da plataforma pediu o admin com TUDO ativo, e a decisao e' dele:
+    e' a ferramenta dele, e um admin que esconde metade dos botoes obriga a
+    sair dele para trabalhar.
+
+    O que este teste NAO promete, e esta escrito no docstring de
+    `BarbeariaAdmin`: criar barbearia por aqui produz uma barbearia ORFA (sem
+    dono e sem convite), porque o "adicionar" do Django faz um INSERT e mais
+    nada. Criar continua sendo pelo painel da plataforma."""
     _logar_admin(client)
     _logar_django(client)
-    r = client.get("/admin/django/tenant/barbearia/add/", headers={"host": HOST_ADMIN})
-    assert r.status_code == 403
+    escolher = client.post(
+        "/admin/django/escolher-barbearia",
+        {"barbearia_id": str(cenario["brutus"].id)},
+        headers={"host": HOST_ADMIN},
+    )
+    assert escolher.status_code == 302
+
+    assert client.get(
+        "/admin/django/tenant/barbearia/add/", headers={"host": HOST_ADMIN}
+    ).status_code == 200
+
+    # E apagar deixou de ser recusado nos models de tenant. Instanciado de
+    # verdade (o ModelAdmin precisa do model e do site) — chamar o metodo na
+    # classe passaria a propria classe como `self` e estouraria em `opts`.
+    from django.contrib import admin as admin_do_django
+
+    from app.admin import BarbeiroAdmin
+    from tenant.models import Barbeiro
+
+    pedido = client.get("/admin/django/tenant/barbeiro/", headers={"host": HOST_ADMIN}).wsgi_request
+    assert BarbeiroAdmin(Barbeiro, admin_do_django.site).has_delete_permission(pedido) is True
+
+
+def test_a_barbearia_aparece_pelo_nome_e_nao_pelo_uuid(client, cenario):
+    """`Barbearia object (uuid)` era o que a tela mostrava em todo <select> de
+    chave estrangeira e em todo cabecalho de formulario — um uuid nao
+    identifica nada para quem esta olhando."""
+    assert str(cenario["brutus"]) == "Brutus"
+
+    from tenant.models import Barbeiro
+
+    barbeiro = Barbeiro.objects.using("owner").filter(barbearia_id=cenario["brutus"].id).first()
+    assert str(barbeiro) == barbeiro.nome

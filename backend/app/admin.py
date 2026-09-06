@@ -59,51 +59,47 @@ from tenant.models import (
 )
 
 
-class SemApagar(admin.ModelAdmin):
-    """Apagar fica DESLIGADO por padrao.
+class Base(admin.ModelAdmin):
+    """Base comum dos ModelAdmin de tenant.
 
-    O admin do Django poe "excluir" a um clique, sem confirmacao de negocio.
-    Apagar um cliente com historico, ou um agendamento que ja aconteceu, e'
-    destrutivo e silencioso — e este admin existe para OLHAR e corrigir, nao
-    para limpar. Ligar caso a caso, quando houver razao escrita.
+    Antes ela se chamava `SemApagar` e desligava `has_delete_permission`. O
+    dono da plataforma pediu o admin com TUDO ativo, e a decisao e' dele: e' a
+    ferramenta dele, e um admin que esconde metade dos botoes obriga a sair
+    dele para fazer o trabalho — que era exatamente o problema que ele veio
+    resolver.
+
+    O que continua valendo, e nao depende de botao: apagar aqui e' apagar de
+    verdade, sem confirmacao de negocio. Apagar um cliente leva junto o
+    historico dele (as chaves estrangeiras sao ON DELETE CASCADE), e nao ha
+    desfazer. O aviso mora aqui porque a tela nao o da'.
     """
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
 
 @admin.register(Barbearia)
 class BarbeariaAdmin(admin.ModelAdmin):
-    """Somente leitura, e nao por excesso de zelo.
+    """Editavel, a pedido do dono da plataforma — com uma ressalva que a tela
+    nao consegue dar.
 
-    Criar barbearia pelo painel custom e' UMA transacao que cria a barbearia,
-    define `app.barbearia_id` dentro dela e cria o barbeiro DONO com token de
-    convite. O "adicionar" do Django faria um INSERT numa tabela e mais nada:
-    o resultado seria uma barbearia ORFA, sem dono e sem convite, em que
-    ninguem consegue entrar.
+    **Criar barbearia por aqui produz uma barbearia ORFA.** No painel custom,
+    criar e' UMA transacao que faz tres coisas: a barbearia, o barbeiro DONO
+    dela, e o token de convite que permite esse dono entrar. O "adicionar" do
+    Django faz o primeiro INSERT e mais nada — sobra uma barbearia sem dono e
+    sem convite, em que ninguem consegue entrar, e o conserto e' pelo banco.
 
-    Ela aparece aqui porque e' preciso VE-LA para ter contexto do que se esta
-    olhando. `Barbearia` tambem e' a unica das oito tabelas de tenant fora do
-    RLS (e' lida antes de existir tenant, no `TenantMiddleware`), entao esta
-    lista mostra TODAS as barbearias, nao so' a escolhida — mais um motivo
-    para nao deixar editar por aqui.
+    Para CRIAR, use o painel da plataforma. Para olhar, corrigir um nome, um
+    endereco ou desligar o `ativo`, aqui serve e e' mais direto.
+
+    `Barbearia` e' a unica das oito tabelas de tenant fora do RLS (e' lida
+    antes de existir tenant, no `TenantMiddleware`), entao esta lista mostra
+    TODAS as barbearias, nao so' a escolhida.
     """
 
     list_display = ("slug", "nome", "ativo", "criado_em")
     search_fields = ("slug", "nome")
 
-    def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
-
 
 @admin.register(Barbeiro)
-class BarbeiroAdmin(SemApagar):
+class BarbeiroAdmin(Base):
     list_display = ("nome", "whatsapp", "papel", "ativo", "ordem")
     list_filter = ("papel", "ativo")
     search_fields = ("nome", "whatsapp")
@@ -114,13 +110,13 @@ class BarbeiroAdmin(SemApagar):
 
 
 @admin.register(Cliente)
-class ClienteAdmin(SemApagar):
+class ClienteAdmin(Base):
     list_display = ("nome", "whatsapp", "criado_em")
     search_fields = ("nome", "whatsapp")
 
 
 @admin.register(Agendamento)
-class AgendamentoAdmin(SemApagar):
+class AgendamentoAdmin(Base):
     list_display = ("inicio", "fim", "servico_nome", "status", "barbeiro", "cliente")
     list_filter = ("status",)
     # `codigo` e' o token de URL publica: trocar a mao invalidaria o link que o
@@ -129,17 +125,17 @@ class AgendamentoAdmin(SemApagar):
 
 
 @admin.register(Servico)
-class ServicoAdmin(SemApagar):
+class ServicoAdmin(Base):
     list_display = ("nome", "duracao_minima_min", "duracao_sugerida_min", "ativo", "ordem")
     list_filter = ("ativo",)
 
 
 @admin.register(HorarioTrabalho)
-class HorarioTrabalhoAdmin(SemApagar):
+class HorarioTrabalhoAdmin(Base):
     list_display = ("barbeiro", "dia_semana", "minutos_inicio", "minutos_fim")
 
 
 @admin.register(Bloqueio)
-class BloqueioAdmin(SemApagar):
+class BloqueioAdmin(Base):
     list_display = ("barbeiro", "motivo", "repete_semanalmente", "inicio", "fim")
     list_filter = ("motivo", "repete_semanalmente")
