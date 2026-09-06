@@ -67,12 +67,12 @@ CORS_ALLOW_ALL_ORIGINS = False
 # e a escrita falhando com um erro de CORS que nao menciona CSRF nenhum.
 CORS_ALLOW_HEADERS = [*default_headers, "x-brutus-cliente"]
 
-# Os cinco de baixo entraram na etapa do admin do Django (spec de
-# 06/09/2026). O comentario logo acima desta lista dizia que eles foram
-# excluidos "por nao ter uso aqui" — estava certo ate' o admin existir, e
-# agora eles TEM consumidor. `admin` puxa os outros quatro: ele nao sobe
-# sem auth (usuario e permissao), contenttypes (o alvo generico das
-# permissoes), sessions (o login) e messages (o "salvo com sucesso").
+# Os cinco de baixo entraram na etapa do admin do Django (spec de 06/09/2026):
+# `admin` puxa os outros quatro, porque ele nao sobe sem auth (usuario e
+# permissao), contenttypes (o alvo generico das permissoes), sessions (o
+# login) e messages (o "salvo com sucesso"). `django_celery_beat` continua de
+# fora pelo motivo original — o beat usa o agendador de arquivo
+# (CELERY_BEAT_SCHEDULE, abaixo), nao a agenda em tabela que aquele app traria.
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -188,13 +188,14 @@ DATABASES = {
 # DRF sem autenticacao nem permissao por padrao: a sessao e a fatia 3, e um
 # default que ninguem leu e como uma porta que ninguem sabe se esta trancada.
 #
-# UNAUTHENTICATED_USER: None e obrigatorio aqui, e nao e o default do DRF. O
-# default e "django.contrib.auth.models.AnonymousUser", e so o import desse
-# modulo (mesmo sem nenhuma classe de autenticacao ativa) forca o registro de
-# django.contrib.auth.models.Permission, que quebra com "doesn't declare an
-# explicit app_label and isn't in an application in INSTALLED_APPS" — porque
-# contrib.auth foi excluido de proposito (comentario acima). None evita o
-# import inteiro.
+# UNAUTHENTICATED_USER: None e obrigatorio aqui, e nao e o default do DRF —
+# mesmo agora que `contrib.auth` esta instalado (a etapa do admin acrescentou
+# ele em INSTALLED_APPS). O default e "django.contrib.auth.models.AnonymousUser",
+# e pendurar ele em toda requisicao da API afirmaria um esquema de
+# autenticacao que a API nao usa: o "logado" dela e a sessao propria da fatia
+# 3 (tenant.middleware), nao a sessao do Django que o admin consome. `None`
+# deixa `request.user` vazio, entao quem for ler esse campo numa view da API
+# esta olhando o lugar errado — e' um sinal, nao um acidente de import.
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [],
     "DEFAULT_PERMISSION_CLASSES": [],
