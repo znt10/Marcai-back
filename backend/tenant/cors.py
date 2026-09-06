@@ -37,7 +37,9 @@ def permitir_por_par_origem_host(sender, request, **kwargs):
     origem = request.headers.get("origin")
     if not origem:
         return False
-    return origem_e_permitida(origem, request.get_host(), settings.DOMINIO_BASE)
+    return origem_e_permitida(
+        origem, request.get_host(), settings.DOMINIO_BASE, settings.TENANT_PADRAO
+    )
 
 
 check_request_enabled.connect(permitir_por_par_origem_host)
