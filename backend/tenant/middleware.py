@@ -2,6 +2,7 @@ import time
 
 from django.conf import settings
 from django.http import Http404, JsonResponse
+from django.shortcuts import redirect
 
 from .config import SESSAO_BARBEIRO_COOKIE, TTL_CACHE_TENANT_S, sem_subdominio
 from .models import Barbearia
@@ -254,6 +255,21 @@ class AdminDjangoMiddleware:
     PREFIXO = "/admin/django"
     CHAVE_SESSAO = "barbearia_escolhida"
 
+    CAMINHO_DO_SELETOR = "/admin/django/escolher-barbearia"
+    # Os caminhos que funcionam SEM barbearia escolhida, e que por isso nao
+    # podem ser redirecionados para o seletor. Comparados sem a barra final.
+    #
+    # O proprio seletor, obviamente — redireciona-lo para si mesmo seria um
+    # laco. E o login e o logout do Django: sem eles, quem ainda nao entrou
+    # seria mandado ao seletor, o seletor mandaria ao login por falta de
+    # sessao do Django, e o login voltaria ao seletor. Tres telas, nenhuma
+    # alcancavel.
+    SEM_ESCOLHA = frozenset({
+        CAMINHO_DO_SELETOR,
+        "/admin/django/login",
+        "/admin/django/logout",
+    })
+
     def __init__(self, get_response):
         self.get_response = get_response
 
@@ -269,6 +285,21 @@ class AdminDjangoMiddleware:
 
         escolhida = request.session.get(self.CHAVE_SESSAO)
         if not escolhida:
+            # Sem barbearia escolhida, TODA lista de tenant vem vazia — a
+            # politica de RLS nao casa com linha nenhuma quando a variavel nao
+            # existe. Isso e' o comportamento certo do banco e a pior tela
+            # possivel para quem esta olhando: sete secoes, todas com zero, e
+            # nada explicando por que.
+            #
+            # Foi exatamente o que aconteceu na primeira vez que o admin foi
+            # usado de verdade — "nao tem barbeiro aqui". Havia tres; faltava
+            # dizer de qual barbearia. A pagina de escolha existia e nao tinha
+            # link de lugar nenhum, entao so' chegava nela quem sabia a URL.
+            #
+            # Mandar para la' e' melhor que explicar: nao da' para se perder
+            # numa tela que so' tem um caminho.
+            if request.path.rstrip("/") not in self.SEM_ESCOLHA:
+                return redirect(self.CAMINHO_DO_SELETOR)
             return self.get_response(request)
 
         with com_barbearia_por_requisicao(escolhida):
