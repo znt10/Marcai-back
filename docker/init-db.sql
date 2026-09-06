@@ -48,16 +48,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE brutus_owner IN SCHEMA public
 GRANT USAGE ON SCHEMA public TO brutus_admin;
 ALTER DEFAULT PRIVILEGES FOR ROLE brutus_owner IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO brutus_admin;
--- SEQUENCES e' categoria separada de TABLES pro Postgres — os dois GRANTs
--- acima nao cobrem o `nextval()` que todo `id serial`/`bigserial` (as
--- tabelas do admin do Django: auth_user, django_admin_log, etc) precisa a
--- cada INSERT. Sem isto, `brutus_app`/`brutus_admin` gravam a tabela mas
--- levam "permission denied for sequence" (backend/tenant/migrations/
--- 0005_grants_sequencias.py tem a mesma dupla concessao e explica o porque
--- dela repetir aqui: uma maquina nova precisa nascer certa sem depender de
--- rodar migration nenhuma primeiro).
-ALTER DEFAULT PRIVILEGES FOR ROLE brutus_owner IN SCHEMA public
-  GRANT USAGE, SELECT ON SEQUENCES TO brutus_app, brutus_admin;
 
 \connect brutus_test
 GRANT USAGE ON SCHEMA public TO brutus_app;
@@ -66,5 +56,3 @@ ALTER DEFAULT PRIVILEGES FOR ROLE brutus_owner IN SCHEMA public
 GRANT USAGE ON SCHEMA public TO brutus_admin;
 ALTER DEFAULT PRIVILEGES FOR ROLE brutus_owner IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO brutus_admin;
-ALTER DEFAULT PRIVILEGES FOR ROLE brutus_owner IN SCHEMA public
-  GRANT USAGE, SELECT ON SEQUENCES TO brutus_app, brutus_admin;
