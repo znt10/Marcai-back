@@ -36,3 +36,44 @@ def test_msg_convite_leva_o_link_uma_vez_e_o_prazo():
     assert texto.startswith("Oi, João!")
     assert texto.count("http://x/y") == 1
     assert "48 horas" in texto
+
+
+# ------------------------------------------------- avisos para o BARBEIRO
+#
+# Ate aqui o WhatsApp so falava com o CLIENTE: o barbeiro nunca soube que
+# alguem marcou com ele sem abrir o painel. Estas duas sao curtas de
+# proposito, e sem endereco — ele trabalha la.
+
+AGORA = datetime(2026, 8, 13, 9, 0, tzinfo=timezone.utc)
+
+
+def test_msg_barbeiro_novo_e_curta_e_nao_leva_endereco():
+    from app.services.mensagens import msg_barbeiro_novo
+
+    texto = msg_barbeiro_novo(
+        cliente_nome="José Neto", servico_nome="Corte de cabelo",
+        inicio=INICIO, agora=AGORA,
+    )
+    assert texto == "Novo horário\nJosé Neto · hoje 08:00 · Corte de cabelo"
+
+
+def test_msg_barbeiro_cancelado_diz_que_sumiu_e_nao_que_entrou():
+    from app.services.mensagens import msg_barbeiro_cancelado
+
+    texto = msg_barbeiro_cancelado(
+        cliente_nome="José Neto", servico_nome="Corte de cabelo",
+        inicio=INICIO, agora=AGORA,
+    )
+    assert texto.startswith("Cancelou")
+    assert "José Neto · hoje 08:00 · Corte de cabelo" in texto
+
+
+def test_msg_do_barbeiro_leva_o_nome_INTEIRO_do_cliente():
+    """Ao contrário das mensagens PARA o cliente, que cortam no primeiro nome
+    para soar pessoal: o barbeiro precisa distinguir dois Josés da agenda."""
+    from app.services.mensagens import msg_barbeiro_novo
+
+    texto = msg_barbeiro_novo(
+        cliente_nome="José Neto", servico_nome="Corte", inicio=INICIO, agora=AGORA,
+    )
+    assert "José Neto" in texto

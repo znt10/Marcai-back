@@ -1,4 +1,4 @@
-from tenant.datas import formatar_dia_longo, formatar_hora
+from tenant.datas import formatar_dia_longo, formatar_dia_relativo, formatar_hora
 
 # Todo texto que sai pelo WhatsApp mora aqui. Porte fiel de
 # marcai-front/src/lib/mensagens.ts — espalhar template pelas rotas e como
@@ -57,4 +57,34 @@ def msg_convite(*, nome: str, barbearia_nome: str, link: str) -> str:
         f"Oi, {primeiro_nome}! Você entrou na equipe da {barbearia_nome}. "
         f"Cria sua senha por aqui pra ver sua agenda:\n\n{link}\n\n"
         f"O link vale por 48 horas."
+    )
+
+
+# --- Avisos para o BARBEIRO ---------------------------------------------
+#
+# Ate aqui o WhatsApp so falava com o CLIENTE, e o barbeiro so descobria uma
+# marcacao nova abrindo o painel. Estas duas sao deliberadamente CURTAS: ele
+# le de pe, entre um corte e outro.
+#
+# Sem endereco, ao contrario das mensagens do cliente — ele trabalha la. E com
+# o nome INTEIRO, ao contrario delas tambem: "Fechou, Jose!" soa pessoal para
+# quem marcou, mas o barbeiro precisa separar dois Joses da agenda do dia.
+
+
+def _linha_do_horario(*, cliente_nome: str, servico_nome: str, inicio, agora) -> str:
+    return (
+        f"{cliente_nome} · {formatar_dia_relativo(inicio, agora)} "
+        f"{formatar_hora(inicio)} · {servico_nome}"
+    )
+
+
+def msg_barbeiro_novo(*, cliente_nome: str, servico_nome: str, inicio, agora) -> str:
+    return "Novo horário\n" + _linha_do_horario(
+        cliente_nome=cliente_nome, servico_nome=servico_nome, inicio=inicio, agora=agora,
+    )
+
+
+def msg_barbeiro_cancelado(*, cliente_nome: str, servico_nome: str, inicio, agora) -> str:
+    return "Cancelou\n" + _linha_do_horario(
+        cliente_nome=cliente_nome, servico_nome=servico_nome, inicio=inicio, agora=agora,
     )

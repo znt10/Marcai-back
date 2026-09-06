@@ -78,3 +78,56 @@ def listar_conflitos(barbearia_id: str, barbeiro_id: str, agora: datetime) -> li
                 }
             )
     return saida
+
+
+class _BloqueioProposto:
+    """O bloqueio que a pessoa ACABOU de desenhar na tela e ainda nao existe no
+    banco. Serve so' para `_dentro_de_algum_bloqueio` poder ser reusado inteiro
+    — ele le atributos, nao um modelo."""
+
+    def __init__(self, campos: dict):
+        self.repete_semanalmente = campos["repete_semanalmente"]
+        self.dia_semana = campos.get("dia_semana")
+        self.minutos_inicio = campos.get("minutos_inicio")
+        self.minutos_fim = campos.get("minutos_fim")
+        self.inicio = campos.get("inicio")
+        self.fim = campos.get("fim")
+
+
+def agendamentos_no_bloqueio(
+    barbearia_id: str, barbeiro_id: str, campos: dict, agora: datetime
+) -> list[dict]:
+    """Quem seria derrubado se ESTE bloqueio fosse criado agora.
+
+    Diferente de `listar_conflitos`, que olha o estrago ja feito por tudo que
+    esta gravado: aqui a pergunta e' feita ANTES, com o bloqueio ainda na mao
+    de quem esta preenchendo a tela.
+
+    `inicio__gt=agora` nao e' detalhe: cancelar o que ja passou nao muda agenda
+    nenhuma e mandaria "seu horario foi cancelado" para quem ja cortou o
+    cabelo ontem.
+    """
+    proposto = _BloqueioProposto(campos)
+    with com_barbearia(barbearia_id):
+        agendamentos = list(
+            Agendamento.objects.filter(
+                barbeiro_id=barbeiro_id, status="CONFIRMADO", inicio__gt=agora,
+            )
+            .select_related("cliente")
+            .order_by("inicio")
+        )
+
+    saida = []
+    for a in agendamentos:
+        inicio, fim = como_utc(a.inicio), como_utc(a.fim)
+        dia, _ = utc_para_local(inicio)
+        if _dentro_de_algum_bloqueio(inicio, fim, [proposto], dia, dia_semana_de(dia)):
+            saida.append(
+                {
+                    "id": str(a.id),
+                    "inicio": formatar_instante_iso(inicio),
+                    "servicoNome": a.servico_nome,
+                    "clienteNome": a.cliente.nome,
+                }
+            )
+    return saida

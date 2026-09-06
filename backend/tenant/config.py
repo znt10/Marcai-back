@@ -166,3 +166,21 @@ def origem_e_permitida(origem: str, host: str, dominio_base: str) -> bool:
     origem_host = (urlsplit(origem).hostname or "").lower()
     host_sem_porta = host.split(":")[0].lower()
     return origem_host == host_sem_porta
+
+
+# Foto do barbeiro. Ela mora na coluna `foto_url` como data URL, sem storage
+# de arquivo — ver app/services/foto.py.
+#
+# O teto e' apertado de PROPOSITO: a vitrine e' renderizada no servidor, entao
+# cada foto entra embutida no HTML da primeira tela que o cliente abre na
+# calcada.
+#
+# 192 e nao 128: a vitrine desenha o circulo com 72px, e num aparelho retina
+# (2x) isso pede 144 pixels de verdade — 128 seria ampliado, e foto de rosto
+# ampliada e' o tipo de borrao que se ve. 192 cobre ate' 96px de tela com
+# folga. Em WebP da' 8-14 KB, ainda dentro do teto, e a queda de qualidade
+# por degraus de `lib/foto.ts` cuida da foto que insistir em passar.
+FOTO_LADO_PX = 192
+FOTO_TAMANHO_MAXIMO_BYTES = 20 * 1024
+# SVG fica de fora: e' imagem que carrega script.
+FOTO_MIMES = ("image/webp", "image/jpeg", "image/png")
