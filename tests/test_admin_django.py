@@ -1,3 +1,4 @@
+import re
 import uuid
 
 import pytest
@@ -188,3 +189,92 @@ def test_requisicao_seguinte_sem_escolha_nao_herda_a_anterior(client, cenario):
     AdminDjangoMiddleware(leitor_segunda)(segunda)
 
     assert lido_segunda["valor"] in (None, "")
+
+
+# --------------------------------------------------------- o seletor
+
+
+def _barbearia_id(cenario, slug="brutus"):
+    return str(cenario[slug].id)
+
+
+def test_o_seletor_lista_as_barbearias(client, cenario):
+    _logar_admin(client)
+    r = client.get("/admin/django/escolher-barbearia", headers={"host": HOST_ADMIN})
+    assert r.status_code == 200
+    corpo = r.content.decode()
+    assert "brutus" in corpo and "dontony" in corpo
+
+
+def test_escolher_grava_na_sessao(client, cenario):
+    _logar_admin(client)
+    alvo = _barbearia_id(cenario)
+    r = client.post(
+        "/admin/django/escolher-barbearia",
+        {"barbearia_id": alvo},
+        headers={"host": HOST_ADMIN},
+    )
+    assert r.status_code == 302
+    assert client.session["barbearia_escolhida"] == alvo
+
+
+def test_o_seletor_tambem_esta_atras_da_porta(client, cenario):
+    """Ele esta sob o mesmo prefixo, entao herda a barreira sem pedir. Sem
+    este teste, uma rota nova sob /admin/django podia nascer aberta e ninguem
+    perceberia."""
+    r = client.get("/admin/django/escolher-barbearia", headers={"host": HOST_ADMIN})
+    assert r.status_code == 404
+
+
+def test_id_que_nao_existe_nao_e_gravado(client, cenario):
+    """Gravar um id qualquer deixaria o admin num estado em que toda lista vem
+    vazia e nada explica por que."""
+    _logar_admin(client)
+    r = client.post(
+        "/admin/django/escolher-barbearia",
+        {"barbearia_id": str(uuid.uuid4())},
+        headers={"host": HOST_ADMIN},
+    )
+    assert r.status_code == 400
+    assert "barbearia_escolhida" not in client.session
+
+
+def test_o_formulario_leva_o_token_csrf_e_o_post_sem_ele_e_recusado(client, cenario):
+    """O client de teste padrao (`client`, acima) desliga a checagem de CSRF —
+    e' por isso que `test_escolher_grava_na_sessao` passaria verde mesmo se o
+    `<form>` nao emitisse `csrfmiddlewaretoken`, escondendo exatamente o
+    defeito que quebraria o seletor no navegador de verdade (403 "CSRF
+    verification failed", porque `CsrfViewMiddleware` e' global desde a Task 1
+    e esta view nao e' `csrf_exempt`). Este teste existe para pegar isso: liga
+    a checagem (`enforce_csrf_checks=True`) e prova as DUAS pontas — sem o
+    token o POST leva 403 (o controle negativo), e com o token tirado do
+    proprio HTML que a view devolveu o POST grava na sessao. Sem o controle
+    negativo, nao daria para distinguir "o token era necessario" de "o token
+    era irrelevante"."""
+    from django.test import Client
+
+    rigoroso = Client(enforce_csrf_checks=True)
+    _logar_admin(rigoroso)
+    alvo = _barbearia_id(cenario)
+
+    # Controle negativo: sem o token, com a checagem ligada, tem que ser
+    # recusado. Sem esta linha o teste provaria so' que o caminho feliz
+    # funciona, nao que o token e' o que protege.
+    sem_token = rigoroso.post(
+        "/admin/django/escolher-barbearia",
+        {"barbearia_id": alvo},
+        headers={"host": HOST_ADMIN},
+    )
+    assert sem_token.status_code == 403
+
+    r = rigoroso.get("/admin/django/escolher-barbearia", headers={"host": HOST_ADMIN})
+    assert r.status_code == 200
+    token = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', r.content.decode()).group(1)
+
+    com_token = rigoroso.post(
+        "/admin/django/escolher-barbearia",
+        {"barbearia_id": alvo, "csrfmiddlewaretoken": token},
+        headers={"host": HOST_ADMIN},
+    )
+    assert com_token.status_code == 302
+    assert rigoroso.session["barbearia_escolhida"] == alvo
