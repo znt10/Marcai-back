@@ -9,6 +9,7 @@ from .views.admin_barbearias import (
 )
 from .views.agenda_painel import AgendaPainelView
 from .views.agendamentos import (
+    AgendamentoIcsView,
     AgendamentoCancelarPublicoView,
     AgendamentoDetalheView,
     AgendamentosView,
@@ -71,6 +72,11 @@ urlpatterns = [
         "agendamentos/<str:codigo>",
         AgendamentoDetalheView.as_view(),
         name="agendamentos-detalhe",
+    ),
+    path(
+        "agendamentos/<str:codigo>/ics",
+        AgendamentoIcsView.as_view(),
+        name="agendamentos-ics",
     ),
     path(
         "agendamentos/<str:codigo>/cancelar",
