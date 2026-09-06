@@ -5,7 +5,18 @@ from django.http import Http404, JsonResponse
 
 from .config import SESSAO_BARBEIRO_COOKIE, TTL_CACHE_TENANT_S, sem_subdominio
 from .models import Barbearia
+from .rls import com_barbearia_por_requisicao
 from .slug import eh_host_admin, extrair_slug
+
+# Import de `app` dentro de `tenant`: inverte a direcao habitual das
+# dependencias deste projeto (`app` costuma importar de `tenant`, nunca o
+# contrario). Deliberado — a sessao do admin e' um servico de aplicacao, e
+# este middleware e' quem a consome. Se algum dia isso fechar um ciclo
+# (`app` importando `tenant.models`), o precedente e' `CrivoPainelMiddleware`
+# logo abaixo: ele importa `app.services.sessao` de DENTRO do `__call__`,
+# exatamente para quebrar o ciclo.
+from app.services.admin_sessao import COOKIE_SESSAO_ADMIN
+from app.services.admin_sessao import ler as ler_sessao_admin
 
 _cache: dict[str, tuple[Barbearia | None, float]] = {}
 
@@ -50,6 +61,13 @@ class ClienteMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        # O admin do Django e' isento: o formulario dele e' servido pela MESMA
+        # origem que o recebe, e ali quem protege e' o token CSRF do Django
+        # (ligado na etapa do admin), nao este header. O header existe para o
+        # arranjo da API — cross-origin e same-site ao mesmo tempo, onde o
+        # SameSite=Lax nao protege nada e so' o preflight obrigatorio protege.
+        if request.path.startswith(AdminDjangoMiddleware.PREFIXO):
+            return self.get_response(request)
         if request.method in self.VERBOS_QUE_ESCREVEM and self.HEADER not in request.META:
             return JsonResponse({"erro": "pedido sem cliente"}, status=403)
         return self.get_response(request)
@@ -182,3 +200,56 @@ class BarreiraAdminMiddleware:
             # existe para esconder — pior que o 403 que a tarefa recusou.
             raise Http404
         return self.get_response(request)
+
+
+class AdminDjangoMiddleware:
+    """A porta e o escopo do admin do Django (spec de 06/09/2026).
+
+    Faz duas coisas, e as duas so' sob `/admin/django`:
+
+    1. **A porta.** Exige o cookie da plataforma. O `BarreiraAdminMiddleware`
+       ja garante que so' se chega aqui do host do admin; esta camada e' o que
+       torna o admin do Django SEU, e nao de quem alcancar aquele host. 404 e
+       nao 403 pelo mesmo motivo de sempre: 403 confirmaria que existe.
+
+    2. **O escopo.** Define `app.barbearia_id` com a barbearia escolhida na
+       sessao. Sem isso, TODA listagem de model de tenant viria vazia — a
+       politica de RLS compara `barbearia_id` com `current_setting(...)`, que
+       sem valor devolve NULL, e `x = NULL` nao e' verdadeiro.
+
+    O ponto que faz este desenho valer a pena: quem filtra e' o POSTGRES, nao
+    um `get_queryset().filter(...)`. Um ModelAdmin que alguem registre amanha
+    sem pensar em tenant ja nasce enxergando so' a barbearia escolhida.
+
+    `atomic()` SEM `durable=True`, ao contrario de `com_barbearia`: aquele usa
+    durabilidade para estourar alto quando alguem aninha wrapper de tenant, e
+    aqui a transacao envolve a REQUISICAO inteira do admin, que pode passar por
+    caminhos que abram os seus proprios blocos.
+
+    Sem barbearia escolhida a variavel nao e' definida, e o admin mostra listas
+    vazias. E' o comportamento certo e legivel: "voce nao disse de quem esta
+    falando".
+    """
+
+    PREFIXO = "/admin/django"
+    CHAVE_SESSAO = "barbearia_escolhida"
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if not request.path.startswith(self.PREFIXO):
+            return self.get_response(request)
+
+        if not ler_sessao_admin(request.COOKIES.get(COOKIE_SESSAO_ADMIN)):
+            # Http404 SEM texto, igual a BarreiraAdminMiddleware: sob DEBUG o
+            # Django renderiza a mensagem da excecao na pagina de erro, e
+            # explicar a barreira em portugues seria pior que o 403 recusado.
+            raise Http404
+
+        escolhida = request.session.get(self.CHAVE_SESSAO)
+        if not escolhida:
+            return self.get_response(request)
+
+        with com_barbearia_por_requisicao(escolhida):
+            return self.get_response(request)

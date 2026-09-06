@@ -74,3 +74,34 @@ def com_barbearia_admin(barbearia_id):
                 [str(barbearia_id)],
             )
         yield
+
+
+@contextmanager
+def com_barbearia_por_requisicao(barbearia_id):
+    """Irma das duas acima, para o admin do Django (spec de 06/09/2026).
+
+    Mesma conexao que `com_barbearia` (`default`, papel `brutus_app` — menor
+    privilegio: ele nao escreve em `tenant_barbearia` e nao precisa). O que
+    muda e' a DURABILIDADE.
+
+    `durable=True` existe nas outras duas para estourar alto quando alguem
+    aninha wrapper de tenant — dentro de um bloco durable, um segundo `atomic`
+    viraria SAVEPOINT, e sair dele NAO devolveria o tenant de fora. Aqui a
+    transacao envolve a REQUISICAO inteira do admin, que passa por codigo do
+    Django (formulario, permissao, log de acao) capaz de abrir os seus
+    proprios blocos. Exigir durabilidade aqui transformaria uso normal do
+    admin em RuntimeError.
+
+    O que NAO muda, e e' o que importa: `is_local=true` no `set_config`. A
+    variavel morre com a transacao, e a conexao volta para a pool limpa.
+    """
+    if not barbearia_id:
+        raise ValueError("com_barbearia_por_requisicao precisa de um barbearia_id")
+
+    with transaction.atomic():
+        with connection.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.barbearia_id', %s, true)",
+                [str(barbearia_id)],
+            )
+        yield
