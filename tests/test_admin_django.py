@@ -2,6 +2,7 @@ import re
 import uuid
 
 import pytest
+from django.test import Client
 
 from app.services.admin_sessao import COOKIE_SESSAO_ADMIN, emitir
 
@@ -251,8 +252,6 @@ def test_o_formulario_leva_o_token_csrf_e_o_post_sem_ele_e_recusado(client, cena
     proprio HTML que a view devolveu o POST grava na sessao. Sem o controle
     negativo, nao daria para distinguir "o token era necessario" de "o token
     era irrelevante"."""
-    from django.test import Client
-
     rigoroso = Client(enforce_csrf_checks=True)
     _logar_admin(rigoroso)
     alvo = _barbearia_id(cenario)
@@ -266,6 +265,13 @@ def test_o_formulario_leva_o_token_csrf_e_o_post_sem_ele_e_recusado(client, cena
         headers={"host": HOST_ADMIN},
     )
     assert sem_token.status_code == 403
+    # Amarra o 403 a' CAUSA certa: se algum dia sumir a isencao de
+    # `/admin/django` no `ClienteMiddleware`, o POST tambem levaria 403 -- mas
+    # por falta de `X-Brutus-Cliente`, nao por falta de token CSRF, e o
+    # navegador quebraria por um motivo que este teste nao pegaria sem esta
+    # linha (continuaria verde, pelo motivo errado).
+    assert b"CSRF" in sem_token.content
+    assert b"pedido sem cliente" not in sem_token.content
 
     r = rigoroso.get("/admin/django/escolher-barbearia", headers={"host": HOST_ADMIN})
     assert r.status_code == 200
@@ -278,3 +284,93 @@ def test_o_formulario_leva_o_token_csrf_e_o_post_sem_ele_e_recusado(client, cena
     )
     assert com_token.status_code == 302
     assert rigoroso.session["barbearia_escolhida"] == alvo
+
+
+# ------------------------------------------- rodada de correcao 1 (revisao)
+
+
+@pytest.mark.parametrize(
+    "dados",
+    [
+        pytest.param({}, id="campo_ausente"),
+        pytest.param({"barbearia_id": "lixo"}, id="texto_solto"),
+        pytest.param({"barbearia_id": "'; DROP TABLE x; --"}, id="tentativa_de_sql"),
+    ],
+)
+def test_id_malformado_nao_derruba_a_view(client, cenario, dados):
+    """`Barbearia.id` e' UUIDField, e `request.POST.get("barbearia_id") or ""`
+    transforma campo ausente em `""` -- que, igual a "lixo" e a uma tentativa
+    de SQL, nao parseia como UUID. Sem validar a FORMA antes do `filter`, o
+    Django levanta `ValidationError` DENTRO do ORM, antes de qualquer SQL
+    rodar, e a view devolve 500 em vez do 400 que um UUID bem formado mas
+    inexistente ja recebe. As duas perguntas ("essa barbearia existe?" e
+    "isso e' um UUID?") tem a MESMA resposta pratica para quem preenche o
+    formulario: nao ha barbearia para esse valor."""
+    _logar_admin(client)
+    r = client.post(
+        "/admin/django/escolher-barbearia",
+        dados,
+        headers={"host": HOST_ADMIN},
+    )
+    assert r.status_code == 400
+    assert "barbearia_escolhida" not in client.session
+
+
+def test_a_sessao_grava_a_forma_canonica_do_uuid(client, cenario):
+    """A politica de RLS compara `barbearia_id::text` (ver
+    `tenant/migrations/0002_rls.py`) contra `current_setting('app.barbearia_id',
+    true)`, e o `::text` do Postgres sempre devolve a forma CANONICA --
+    minuscula, com hifens. Gravar na sessao o texto CRU do POST deixaria
+    passar formas equivalentes mas que o `::text` nunca vai igualar
+    (maiusculo, sem hifen, `urn:uuid:...`): o `filter(id=...)` do Django
+    normaliza antes de consultar e aceita todas elas, entao o POST responde
+    302 alegre, a sessao grava a forma errada, e o admin cai no mesmo "toda
+    lista vem vazia e nada explica por que" que a validacao de existencia
+    tenta evitar. Postar em MAIUSCULO e' o jeito mais direto de provar isso:
+    se a sessao guardasse o texto cru, esta asserção falharia."""
+    _logar_admin(client)
+    alvo = _barbearia_id(cenario)
+    r = client.post(
+        "/admin/django/escolher-barbearia",
+        {"barbearia_id": alvo.upper()},
+        headers={"host": HOST_ADMIN},
+    )
+    assert r.status_code == 302
+    assert client.session["barbearia_escolhida"] == alvo
+
+
+def test_o_seletor_tambem_responde_com_a_barra_no_final(client, cenario):
+    """O `catch_all_view` de `admin.site.urls` engole qualquer caminho que
+    sobre sob `/admin/django/` e devolve 302 para o login do Django sem
+    explicar nada -- quem digitar a URL com barra cairia nisso se a rota so'
+    estivesse registrada sem barra. `APPEND_SLASH` nao ajuda porque o
+    catch-all resolve ANTES dele ter chance de agir."""
+    _logar_admin(client)
+    r = client.get("/admin/django/escolher-barbearia/", headers={"host": HOST_ADMIN})
+    assert r.status_code == 200
+
+
+def test_barbearia_inativa_aparece_marcada(client, cenario):
+    """Uma barbearia inativa e' recusada pelo `TenantMiddleware` em producao
+    (`_buscar_por_slug` filtra `ativo=True`): escolhe-la aqui da' um admin
+    funcional sobre um tenant que, do lado do subdominio, nao existe. Listar
+    todas continua certo -- e' a ferramenta do dono da plataforma, e o brief
+    manda assim -- mas sem o aviso ninguem notaria o descompasso antes de
+    mexer em dado de uma barbearia que o publico nao alcanca mais."""
+    from tenant.models import Barbearia
+
+    Barbearia.objects.using("owner").create(
+        id=str(uuid.uuid4()),
+        slug="zumbi",
+        nome="Zumbi Barbearia",
+        endereco="Rua Aurora, 88",
+        horario_resumo=None,
+        whatsapp_contato="11900000000",
+        ativo=False,
+        criado_em="2026-08-11T12:00:00Z",
+    )
+    _logar_admin(client)
+    r = client.get("/admin/django/escolher-barbearia", headers={"host": HOST_ADMIN})
+    corpo = r.content.decode()
+    assert "zumbi" in corpo
+    assert "(inativa)" in corpo

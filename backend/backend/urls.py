@@ -15,6 +15,12 @@ urlpatterns = [
     # qualquer caminho sob o proprio prefixo, entao uma rota nossa registrada
     # depois dele nunca seria alcancada.
     path("admin/django/escolher-barbearia", escolher_barbearia, name="escolher-barbearia"),
+    # A variante COM barra precisa da propria entrada: o `catch_all_view` de
+    # `admin.site.urls` engole o que sobrar sob `/admin/django/` e devolve
+    # 302 para o login do Django sem explicar nada, entao a rota tem que
+    # casar exatamente — nem `APPEND_SLASH` nem a entrada sem barra acima
+    # cobrem esta forma.
+    path("admin/django/escolher-barbearia/", escolher_barbearia, name="escolher-barbearia-barra"),
     # Sob `/admin/` de PROPOSITO: o `BarreiraAdminMiddleware` ja devolve 404
     # para tudo que comeca com `/admin` fora do host do admin, entao esta rota
     # nasce protegida sem regra nova. Montar num prefixo proprio exigiria uma

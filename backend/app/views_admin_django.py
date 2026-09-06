@@ -9,6 +9,8 @@ pessoa, e um arquivo de template para isso seria mais lugar para procurar do
 que economia de codigo.
 """
 
+import uuid
+
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseRedirect
 from django.middleware.csrf import get_token
 from django.utils.html import escape
@@ -28,20 +30,49 @@ _CONEXAO = "admin"
 def escolher_barbearia(request):
     if request.method == "POST":
         pedido = request.POST.get("barbearia_id") or ""
-        # Confere que EXISTE antes de gravar: um id qualquer deixaria o admin
-        # num estado em que toda lista vem vazia e nada explica por que.
-        if not Barbearia.objects.using(_CONEXAO).filter(id=pedido).exists():
+        # Forma invalida (campo ausente vira "" pelo `or ""` acima, texto
+        # solto, tentativa de SQL) e id bem formado mas inexistente merecem a
+        # MESMA resposta: as duas alegam "existe alguma barbearia com este
+        # id", e nenhuma e' verdade. Sem validar a FORMA antes do `filter`,
+        # `Barbearia.id` (UUIDField) faz o Django levantar `ValidationError`
+        # DENTRO do ORM, antes de qualquer SQL rodar — e a view devolveria 500
+        # em vez do 400 que a mesma pergunta ja merece para um UUID
+        # inexistente.
+        try:
+            id_normalizado = uuid.UUID(pedido)
+        except ValueError:
             return HttpResponseBadRequest("barbearia inexistente")
-        request.session[AdminDjangoMiddleware.CHAVE_SESSAO] = pedido
+
+        barbearia = Barbearia.objects.using(_CONEXAO).filter(id=id_normalizado).first()
+        if barbearia is None:
+            return HttpResponseBadRequest("barbearia inexistente")
+
+        # Grava a forma CANONICA (a que voltou do banco), nunca o texto cru
+        # do POST: a politica de RLS compara `barbearia_id::text` (ver
+        # tenant/migrations/0002_rls.py) contra `current_setting(...)`, e o
+        # `::text` do Postgres sempre devolve minusculo com hifens. Um UUID
+        # escrito diferente mas equivalente (maiusculo, sem hifen,
+        # `urn:uuid:...`) passa no `filter` — o Django normaliza antes de
+        # consultar — mas nunca vai igualar o `::text`, e o admin cairia no
+        # mesmo "toda lista vem vazia e nada explica por que" que esta
+        # validacao inteira existe para evitar.
+        request.session[AdminDjangoMiddleware.CHAVE_SESSAO] = str(barbearia.id)
         return HttpResponseRedirect("/admin/django/")
 
     atual = request.session.get(AdminDjangoMiddleware.CHAVE_SESSAO)
     linhas = []
     for b in Barbearia.objects.using(_CONEXAO).order_by("slug"):
         marca = " ← atual" if str(b.id) == str(atual) else ""
+        # Uma barbearia inativa e' recusada pelo `TenantMiddleware` em
+        # producao (`_buscar_por_slug` filtra `ativo=True`): escolhe-la aqui
+        # daria um admin funcional sobre um tenant que, do lado do
+        # subdominio, nao existe mais. Listar todas continua certo — e' a
+        # ferramenta do dono da plataforma — mas sem o aviso ninguem notaria
+        # o descompasso antes de mexer em dado.
+        aviso = "" if b.ativo else " (inativa)"
         linhas.append(
             f'<li><button name="barbearia_id" value="{escape(str(b.id))}">'
-            f"{escape(b.slug)}</button> {escape(b.nome)}{marca}</li>"
+            f"{escape(b.slug)}</button> {escape(b.nome)}{aviso}{marca}</li>"
         )
     # `get_token(request)` (e nao `django.middleware.csrf.rotate_token`, nem
     # ler um cookie que ainda nao existe): esta pagina e' servida pela MESMA
