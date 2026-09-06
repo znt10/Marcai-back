@@ -108,6 +108,9 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    # Depois de Session e Auth: ele le `request.session`, que so' existe
+    # depois do SessionMiddleware.
+    "tenant.middleware.AdminDjangoMiddleware",
     # Por ultimo: os dois crivos acima recusam por HOST (admin ou nao), e este
     # recusa por CAMINHO. Deixando-o no fim, um pedido que ja morreu por host
     # nao passa por aqui — os prefixos dos dois nao se cruzam hoje, entao a
