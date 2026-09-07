@@ -103,3 +103,51 @@ e isso é o comportamento certo.
   sem ela, falhando. Prova rodada só com a coisa já aplicada não distingue "era
   necessário" de "era irrelevante".
 - Diga quais arquivos mudaram e por quê.
+
+## "Rodar na net" — abrir pelo celular, na rede local
+
+Quando o dono pedir para **"rodar na net"**, ele quer abrir o app **no celular
+dele, pela rede de casa**. Não é deploy: não há nada hospedado, e o `CMD` do
+Dockerfile é `runserver`, que não deve atender internet.
+
+O mecanismo já existe e chama-se **`TENANT_PADRAO`**. O tenant normalmente vem do
+subdomínio, e o celular não alcança `brutus.localhost` — ali `localhost` é o
+próprio aparelho. Com um slug nessa variável, **todo host sem subdomínio cai
+naquela barbearia**, então `http://<ip-da-máquina>:3000` serve ela, sem DNS
+curinga e sem internet.
+
+A receita, e ela mexe nos DOIS repositórios:
+
+```bash
+ip -4 addr show scope global | grep -oP 'inet \K[\d.]+' | head -1   # o IP da máquina
+```
+
+| arquivo | variável | valor |
+|---|---|---|
+| `Marcai-back/.env` | `TENANT_PADRAO` | o slug (ex.: `znt`) |
+| `Marcai-back/.env` | `URL_BASE` | `http://<ip>:3000` — é onde o link do convite abre |
+| `Marcai-front/.env` | `TENANT_PADRAO` | o MESMO slug |
+| `Marcai-front/.env` | `NEXT_PUBLIC_URL_BASE` | `http://<ip>:3000` |
+
+**A armadilha, e ela já custou uma volta:** no `.env` do FRONT a variável chama-se
+`TENANT_PADRAO`, **sem** o prefixo. O `docker-compose.yml` de lá interpola
+`${TENANT_PADRAO}` e é ele quem define `NEXT_PUBLIC_TENANT_PADRAO` dentro do
+contêiner. Escrever `NEXT_PUBLIC_TENANT_PADRAO=...` no `.env` do front **não faz
+nada** — a compose sobrescreve. O sintoma é o Django resolver a barbearia certo
+e o Next servir a página institucional no mesmo endereço.
+
+Depois, `docker compose up -d` nos dois e confira **os dois lados**, porque um
+funciona sem o outro:
+
+```bash
+curl -s http://<ip>:8000/api/saude          # tem de trazer o slug certo
+curl -s http://<ip>:3000/ | grep -i <nome>  # NÃO pode ser "Agenda para barbearias"
+```
+
+**O preço, e ele é real:** uma barbearia por vez, e o painel da plataforma
+(`admin.<domínio>`) fica de fora — esse continua só no PC, em
+`admin.localhost:3000`. A trava é `DJANGO_DEBUG=1`: `tenant_padrao` em
+`tenant/config.py` devolve `""` fora de DEBUG, então a variável é inerte em
+produção por mais que alguém a defina.
+
+Para desligar, esvazie `TENANT_PADRAO` nos dois `.env` e suba de novo.
