@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 
 from django.db import IntegrityError
-from django.http import HttpResponse
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -17,7 +16,6 @@ from app.services.agendamentos import (
     eh_sobreposicao,
     marcar,
 )
-from app.services.calendario import ics_do_agendamento
 from app.services.mensagens import (
     msg_barbeiro_cancelado,
     msg_barbeiro_novo,
@@ -146,37 +144,3 @@ class AgendamentoCancelarPublicoView(ExigeTenant, APIView):
         # "ja_cancelado" cai aqui tambem, de proposito: quem apertou o botao
         # duas vezes queria o mesmo desfecho, e ele ja vale — 200 idempotente.
         return Response({"ok": True})
-
-
-class AgendamentoIcsView(ExigeTenant, APIView):
-    """GET /api/agendamentos/<codigo>/ics — o evento para o calendario do celular.
-
-    Rota propria, e nao um campo na resposta do detalhe, porque o que o iPhone
-    precisa e' de uma URL que responda `Content-Type: text/calendar`. Era isso
-    que faltava: a tela montava o mesmo arquivo num `Blob` com
-    `a.download`, e o Safari do iOS ignora o `download` em URL `blob:` — o
-    botao nao fazia nada, ou abria o texto cru na tela.
-
-    Publica pelo CODIGO, como o detalhe e o cancelamento ao lado: quem tem o
-    link tem o horario, e o RLS garante que um codigo de outra barbearia nao
-    e' encontrado aqui.
-    """
-
-    def get(self, request, codigo):
-        agora = datetime.now(timezone.utc)
-        a = detalhe_publico(self.barbearia_id, codigo, agora)
-        if a is None:
-            return Response(NAO_ENCONTRADO, status=404)
-
-        texto = ics_do_agendamento(
-            codigo=a["codigo"], servico_nome=a["servico_nome"],
-            barbeiro_nome=a["barbeiro_nome"], barbearia_nome=request.barbearia.nome,
-            inicio=a["inicio"], fim=a["fim"], endereco=request.barbearia.endereco,
-            status=a["status"], agora=agora,
-        )
-        resposta = HttpResponse(texto, content_type="text/calendar; charset=utf-8")
-        # `attachment` com nome: e' o que faz o iOS abrir a folha do Calendario
-        # em vez de renderizar o texto. O nome aparece na folha, entao ele diz
-        # o que e' em vez de "download.ics".
-        resposta["Content-Disposition"] = f'attachment; filename="marcai-{codigo}.ics"'
-        return resposta
