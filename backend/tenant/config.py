@@ -81,7 +81,23 @@ PRAZO_CANCELAMENTO_MIN = 60
 # com o cliente na frente e o balcao e' um IP so, que o limite morderia.
 CHECK_NUMERO_TIMEOUT_MS = 3_000
 CHECK_NUMERO_TTL_MS = 86_400_000        # 24h
-CHECK_NUMERO_LIMITE_POR_IP_HORA = 10
+# 10 viraram 60 quando o oraculo passou a ser OBRIGATORIO para marcar.
+#
+# Com 'indeterminado' deixando passar, estourar o limite so' pulava a
+# verificacao. Agora estourar o limite RECUSA o agendamento — e o limite e' por
+# IP, que no 4G nao e' uma pessoa: operadora de celular poe milhares de
+# assinantes atras do mesmo endereco (CGNAT). Com 10, o 11o cliente daquela
+# operadora seria recusado sem ter feito nada.
+#
+# Continua sendo POR IP, e nao por numero, porque e' isso que ele protege: quem
+# usa o formulario para varrer numeros consulta numeros DIFERENTES, um por vez,
+# e um limite por numero nunca morderia — cada consulta seria a primeira. O que
+# muda e' so' o teto.
+#
+# 60/hora ainda e' varredura inviavel (1440/dia por IP) e e' vinte vezes o uso
+# humano: quem marca consulta um numero, dois se errar de digitar. E consulta
+# repetida do MESMO numero nao conta — o cache de 24h e lido ANTES do limite.
+CHECK_NUMERO_LIMITE_POR_IP_HORA = 60
 
 # ---- Sessao do admin da plataforma (front/src/lib/config.ts, admin §4) ----
 #

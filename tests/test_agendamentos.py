@@ -78,10 +78,15 @@ def _agendamento(
 
 @pytest.fixture(autouse=True)
 def _sem_whatsapp_de_verdade(monkeypatch):
-    # Sem EVOLUTION_API_URL, `numero_existe` devolve 'indeterminado' — deixa
-    # passar, e' o comportamento correto pra' testes que nao sao SOBRE o
-    # oraculo (§10.5: indisponibilidade nao e' resposta).
+    # O oraculo passa a ser OBRIGATORIO: 'indeterminado' bloqueia, nao deixa
+    # mais passar. Entao apagar EVOLUTION_API_URL (que era o que esta fixture
+    # fazia) deixaria de ser "nao testar o oraculo" e viraria "reprovar todo
+    # agendamento" — cada teste desta suite falharia por um motivo que nao e'
+    # o dele. Fingir 'existe' e' o equivalente novo da intencao antiga.
     monkeypatch.delenv("EVOLUTION_API_URL", raising=False)
+    monkeypatch.setattr(
+        "app.api.v1.views.agendamentos.numero_existe", lambda whatsapp, ip: "existe"
+    )
 
 
 # ------------------------------------------------------------- POST (marcar)
@@ -194,9 +199,19 @@ def test_numero_sem_whatsapp_e_recusado_antes_da_transacao(client, cenario, monk
     assert not Agendamento.objects.using("owner").filter(barbeiro_id=barbeiro.id).exists()
 
 
-def test_numero_indeterminado_deixa_passar(client, cenario, monkeypatch):
-    """§10.5: indisponibilidade do oraculo NAO e' resposta — so' 'nao_existe'
-    de verdade bloqueia."""
+def test_numero_indeterminado_BLOQUEIA_e_manda_chamar_no_zap(client, cenario, monkeypatch):
+    """REVERTE o §10.5. A regra era "indisponibilidade nao e' resposta", e o
+    oraculo so' bloqueava com um 'nao_existe' de verdade; agendamento com
+    numero nao confirmado passava.
+
+    O dono pediu o contrario, sabendo o preco: se a Evolution cair, ninguem
+    marca sozinho. O que torna isso aceitavel e' a mensagem — ela manda a
+    pessoa para o WhatsApp da barbearia, entao o cliente nao some, ele muda de
+    canal. Recusar em silencio seria perder a venda.
+
+    503 e nao 422: nao e' erro de quem digitou. O 422 diria "seu numero esta
+    errado" para alguem cujo numero pode estar perfeito.
+    """
     b = cenario["brutus"]
     barbeiro = _barbeiro(b.id)
     servico = _servico_vinculado(b.id, barbeiro)
@@ -215,7 +230,62 @@ def test_numero_indeterminado_deixa_passar(client, cenario, monkeypatch):
             },
             content_type="application/json", headers={"host": HOST, **CABECALHO},
         )
-    assert r.status_code == 201
+    assert r.status_code == 503
+    # O numero da barbearia tem de estar no texto: sem ele a mensagem manda
+    # "chama a gente" sem dizer onde.
+    assert b.whatsapp_contato[-4:] in r.json()["erro"].replace(" ", "").replace("-", "")
+
+
+def test_fixo_e_recusado_sem_nem_consultar_o_oraculo(client, cenario, monkeypatch):
+    """O ganho de validar antes: fixo nao tem WhatsApp, e reconhecer isso nao
+    custa chamada de rede, nao depende da Evolution estar de pe e nao gasta
+    consulta do limite por IP.
+
+    O controle negativo esta em `tests/test_celular.py`: `normalizar` ACEITA
+    este mesmo numero. Sem ele, este teste nao distinguiria a regra nova da
+    validacao que ja existia.
+    """
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    servico = _servico_vinculado(b.id, barbeiro)
+    inicio = _proximo_slot_livre(barbeiro, servico)
+
+    consultas = []
+    monkeypatch.setattr(
+        "app.api.v1.views.agendamentos.numero_existe",
+        lambda whatsapp, ip: consultas.append(whatsapp) or "existe",
+    )
+
+    r = client.post(
+        "/api/agendamentos",
+        {
+            "barbeiroId": barbeiro.id, "servicoId": servico.id,
+            "inicio": inicio.isoformat(), "nome": "Cliente Novo",
+            "whatsapp": "1132217869",
+        },
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+
+    assert r.status_code == 422
+    assert consultas == [], "o oraculo foi consultado para um fixo"
+
+
+def test_ddd_que_nao_existe_e_recusado(client, cenario):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    servico = _servico_vinculado(b.id, barbeiro)
+    inicio = _proximo_slot_livre(barbeiro, servico)
+
+    r = client.post(
+        "/api/agendamentos",
+        {
+            "barbeiroId": barbeiro.id, "servicoId": servico.id,
+            "inicio": inicio.isoformat(), "nome": "Cliente Novo",
+            "whatsapp": "20982217869",
+        },
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+    assert r.status_code == 422
 
 
 def test_marcar_no_passado_e_422(client, cenario):

@@ -24,7 +24,7 @@ from app.services.mensagens import (
 )
 from app.services.trava_ip import ip_de
 from app.services.whatsapp import enviar_texto, numero_existe
-from tenant.telefone import formatar, normalizar
+from tenant.telefone import celular, formatar
 
 NAO_ENCONTRADO = {"erro": "Agendamento não encontrado."}
 
@@ -33,9 +33,31 @@ class AgendamentosView(ExigeTenant, APIView):
     """POST /api/agendamentos — o cliente marca sozinho, sem sessao nenhuma.
 
     Mesmo motor do painel (`marcar()`, em app/services/agendamentos.py) mais
-    UMA checagem que so' este lado faz: o oraculo `numero_existe` da
-    Evolution, ANTES de abrir a transacao — chamada de rede nao pode segurar
-    conexao de banco esperando API externa.
+    DUAS checagens que so' este lado faz, nesta ordem:
+
+    1. `celular()` — regra pura, sem rede. Recusa fixo e DDD inexistente, que
+       sao os erros de digitacao mais comuns. Vem primeiro de proposito: pega
+       o caso comum sem gastar chamada externa nem consulta do limite por IP.
+    2. O oraculo `numero_existe` da Evolution, ANTES de abrir a transacao —
+       chamada de rede nao pode segurar conexao de banco esperando API
+       externa.
+
+    ## O oraculo passou a ser OBRIGATORIO, e isso reverte o §10.5
+
+    A regra era "indisponibilidade nao e' resposta": so' um 'nao_existe' de
+    verdade bloqueava, e numero nao confirmado marcava normalmente. Isso
+    trocava um risco pelo outro — nenhum agendamento se perdia por causa da
+    Evolution, mas horario marcado com numero errado vira cadeira vazia: sem
+    confirmacao, sem lembrete, sem link de cancelar, e ninguem descobre ate' o
+    cliente nao aparecer.
+
+    O dono escolheu o outro lado, sabendo o preco: **Evolution fora do ar =
+    ninguem marca sozinho**. O que torna isso aceitavel e' a resposta — ela
+    manda a pessoa para o WhatsApp da barbearia em vez de recusar em silencio.
+    O cliente nao some, ele muda de canal.
+
+    503 e nao 422 para esse caso: nao e' erro de quem digitou, e um 422 diria
+    "seu numero esta errado" a alguem cujo numero pode estar perfeito.
     """
 
     def post(self, request):
@@ -44,14 +66,28 @@ class AgendamentosView(ExigeTenant, APIView):
             return Response({"erro": "Preenche nome e WhatsApp pra gente."}, status=422)
         d = entrada.validated_data
 
-        whatsapp = normalizar(d["whatsapp"])
+        whatsapp = celular(d["whatsapp"])
         if not whatsapp:
-            return Response({"erro": "Confere o WhatsApp — parece faltar dígito."}, status=422)
+            return Response(
+                {"erro": "Confere o WhatsApp — precisa ser um celular com DDD."}, status=422
+            )
 
         ip = ip_de(request)
-        if numero_existe(whatsapp, ip) == "nao_existe":
+        veredito = numero_existe(whatsapp, ip)
+        if veredito == "nao_existe":
             return Response(
                 {"erro": "Esse número não tem WhatsApp. Confere pra gente?"}, status=422
+            )
+        if veredito != "existe":
+            return Response(
+                {
+                    "erro": (
+                        "Não consegui confirmar seu WhatsApp agora. "
+                        f"Chama a gente no {formatar(request.barbearia.whatsapp_contato)} "
+                        "que a gente marca pra você."
+                    )
+                },
+                status=503,
             )
 
         agora = datetime.now(timezone.utc)
