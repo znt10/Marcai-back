@@ -3,3 +3,10 @@ __pycache__/
 .venv/
 .env
 .pytest_cache/
+
+# Ferramentas de agente e workspace de scratch — nada disso vai para o
+# repositorio publico.
+.claude/
+.superpowers/
+AGENTS.md
+CLAUDE.md
