@@ -191,4 +191,4 @@ trazendo schema que este projeto não pediu.
 
 ## Licença
 
-Sem licença declarada: todos os direitos reservados.
+MIT — veja o arquivo [`LICENSE`](LICENSE).
