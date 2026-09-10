@@ -24,3 +24,7 @@ argon2-cffi==25.1.0
 pytest==8.*
 pytest-django==4.*
 pytest-env==1.*
+# Serve o CSS/JS do admin do Django. O gunicorn nao serve /static, e DEBUG
+# ligado so' faz isso no runserver: sem ele o admin abre em HTML cru. A 6.12
+# declara suporte ao Django 6.0.
+whitenoise==6.12.*

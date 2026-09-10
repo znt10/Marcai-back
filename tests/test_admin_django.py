@@ -502,3 +502,55 @@ def test_a_barbearia_aparece_pelo_nome_e_nao_pelo_uuid(client, cenario):
 
     barbeiro = Barbeiro.objects.using("owner").filter(barbearia_id=cenario["brutus"].id).first()
     assert str(barbeiro) == barbeiro.nome
+
+
+# ---- Pelo proxy da Vercel (producao) ----------------------------------------
+#
+# Em producao o admin do Django chega pelo mesmo caminho com segredo que a API
+# usa (tenant.middleware.HostDoProxyMiddleware): Host do Railway, o do admin em
+# `X-Marcai-Host`, e o navegador numa origem HTTPS enquanto a conexao ate aqui
+# e' HTTP. Os testes abaixo cobrem o que so' quebra nesse arranjo.
+
+_RAILWAY = "marcai-back-production.up.railway.app"
+_SEGREDO = "segredo-do-proxy-so-de-teste"
+
+
+def _cabecalhos_do_proxy(settings):
+    settings.PROXY_SEGREDO = _SEGREDO
+    return {"host": _RAILWAY, "x-marcai-host": HOST_ADMIN, "x-marcai-proxy": _SEGREDO}
+
+
+@pytest.mark.parametrize(
+    "origem,recusa",
+    [
+        # A origem do navegador em producao: HTTPS, embora a conexao seja HTTP.
+        ("https://admin.localhost", False),
+        ("https://malicioso.com", True),
+    ],
+)
+def test_login_do_django_pelo_proxy_so_aceita_a_origem_do_admin(cenario, settings, origem, recusa):
+    cabecalhos = _cabecalhos_do_proxy(settings)
+    c = Client(enforce_csrf_checks=True)
+    _logar_admin(c)
+
+    r = c.get("/admin/django/login/", headers=cabecalhos)
+    assert r.status_code == 200
+    token = c.cookies["csrftoken"].value
+
+    r = c.post(
+        "/admin/django/login/",
+        {"username": "x", "password": "y", "csrfmiddlewaretoken": token},
+        headers={**cabecalhos, "origin": origem},
+    )
+    assert (r.status_code == 403) is recusa
+
+
+def test_o_css_do_admin_e_servido_pelo_proprio_django(cenario, settings):
+    """Sem isto o admin abre em HTML cru: o gunicorn nao serve /static, e
+    DEBUG ligado so' serve estatico no runserver. USE_FINDERS forcado para o
+    teste nao depender de ter rodado `collectstatic` nem do DEBUG do ambiente —
+    o middleware le a configuracao ao subir, e cada Client sobe o dele."""
+    settings.WHITENOISE_USE_FINDERS = True
+    r = Client().get("/static/admin/css/base.css", headers=_cabecalhos_do_proxy(settings))
+    assert r.status_code == 200
+    assert r["Content-Type"].startswith("text/css")

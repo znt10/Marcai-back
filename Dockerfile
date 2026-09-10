@@ -21,6 +21,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 RUN chmod +x /app/entrypoint.sh
 
+# Junta o CSS/JS do admin do Django em STATIC_ROOT para o WhiteNoise servir.
+# PGDATABASE de fachada: o settings.py a exige no import, mas o collectstatic
+# nao abre conexao nenhuma com o banco.
+RUN PGDATABASE=collectstatic python manage.py collectstatic --noinput
+
 EXPOSE 8000
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

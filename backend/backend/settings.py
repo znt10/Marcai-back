@@ -57,6 +57,13 @@ USE_X_FORWARDED_HOST = False
 # Precisa ser IGUAL ao PROXY_SEGREDO da Vercel.
 PROXY_SEGREDO = os.environ.get("PROXY_SEGREDO", "")
 
+# O admin do Django pelo proxy. O navegador esta em `https://admin.<dominio>`,
+# mas a conexao Vercel -> Railway que chega aqui e' HTTP, entao o CSRF monta a
+# origem esperada como `http://admin.<dominio>` e recusaria todo POST do admin
+# (login incluso) com 403. So' o host do admin: e' o unico que serve formulario
+# do Django — a API e' `csrf_exempt` pelo DRF.
+CSRF_TRUSTED_ORIGINS = [f"https://admin.{DOMINIO_BASE}"]
+
 # CORS e da biblioteca (django-cors-headers, igual ao Unistock_Back). A unica
 # adaptacao obrigatoria: la a lista de origens e estatica, aqui a origem varia
 # por barbearia (brutus.localhost:3000, dontony.localhost:3000, …).
@@ -102,6 +109,11 @@ MIDDLEWARE = [
     # quando o pedido vem pelo front com o segredo, troca o Host do Railway
     # pelo da barbearia. Sem o segredo nao faz nada.
     "tenant.middleware.HostDoProxyMiddleware",
+    # O CSS/JS do admin do Django. Antes do TenantMiddleware de proposito:
+    # arquivo estatico nao e' de barbearia nenhuma, e resolver tenant para
+    # servir `base.css` seria consulta ao banco a troco de nada. Como ele nao
+    # le host, serve em qualquer host — sao os arquivos publicos do admin.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     # Logo em seguida: ele responde o preflight OPTIONS e sai, sem passar
     # pela resolucao de tenant. Preflight nao carrega Host de barbearia.
     "corsheaders.middleware.CorsMiddleware",
@@ -236,5 +248,9 @@ CELERY_BEAT_SCHEDULE = {
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 STATIC_URL = "static/"
+# Onde o `collectstatic` do Dockerfile junta os arquivos que o WhiteNoise serve.
+# Em dev (DEBUG=1) o WhiteNoise le direto dos apps e esta pasta nem precisa
+# existir.
+STATIC_ROOT = BASE_DIR / "staticfiles"
 USE_TZ = True
 TIME_ZONE = "America/Sao_Paulo"

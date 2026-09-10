@@ -10,3 +10,6 @@ __pycache__/
 .superpowers/
 AGENTS.md
 CLAUDE.md
+
+# Saida do `collectstatic` (Dockerfile). Gerada no build, nunca versionada.
+backend/staticfiles/
