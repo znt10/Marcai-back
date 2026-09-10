@@ -48,6 +48,15 @@ else:
 # precisa subir, testar e ir para producao sozinho (spec §5).
 USE_X_FORWARDED_HOST = False
 
+# Com o front na frente (producao), o host da barbearia chega em
+# `X-Marcai-Host` e so' vale acompanhado deste segredo — ver
+# `tenant.middleware.HostDoProxyMiddleware`. O `X-Forwarded-Host` acima nem
+# serviria: a Vercel o entrega com o host do Railway.
+#
+# Vazio = desligado, e e' assim em dev e na suite: o back le so' o Host real.
+# Precisa ser IGUAL ao PROXY_SEGREDO da Vercel.
+PROXY_SEGREDO = os.environ.get("PROXY_SEGREDO", "")
+
 # CORS e da biblioteca (django-cors-headers, igual ao Unistock_Back). A unica
 # adaptacao obrigatoria: la a lista de origens e estatica, aqui a origem varia
 # por barbearia (brutus.localhost:3000, dontony.localhost:3000, …).
@@ -89,7 +98,11 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    # Primeiro de todos: ele responde o preflight OPTIONS e sai, sem passar
+    # Antes de TODO leitor de host (o CORS logo abaixo e o TenantMiddleware):
+    # quando o pedido vem pelo front com o segredo, troca o Host do Railway
+    # pelo da barbearia. Sem o segredo nao faz nada.
+    "tenant.middleware.HostDoProxyMiddleware",
+    # Logo em seguida: ele responde o preflight OPTIONS e sai, sem passar
     # pela resolucao de tenant. Preflight nao carrega Host de barbearia.
     "corsheaders.middleware.CorsMiddleware",
     # Antes de tudo que le sessao do Django: `request.session` so existe

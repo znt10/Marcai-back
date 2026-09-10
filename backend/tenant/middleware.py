@@ -1,3 +1,4 @@
+import hmac
 import time
 
 from django.conf import settings
@@ -71,6 +72,63 @@ class ClienteMiddleware:
             return self.get_response(request)
         if request.method in self.VERBOS_QUE_ESCREVEM and self.HEADER not in request.META:
             return JsonResponse({"erro": "pedido sem cliente"}, status=403)
+        return self.get_response(request)
+
+
+class HostDoProxyMiddleware:
+    """Devolve ao pedido o host da barbearia quando ele chega pelo front.
+
+    Em producao o navegador fala so' com a Vercel, e o rewrite de `/api/*`
+    (next.config.ts) entrega o pedido ao Django no Railway. Nesse salto o Host
+    vira `marcai-back-production.up.railway.app` — e ate o `X-Forwarded-Host`
+    chega com ele, conferido no proprio DisallowedHost de producao. Por isso
+    `USE_X_FORWARDED_HOST` nao resolveria: nao ha host original em cabecalho
+    padrao nenhum para ele ler.
+
+    O `proxy.ts` repassa o host em `X-Marcai-Host`, junto de `X-Marcai-Proxy`
+    com o PROXY_SEGREDO. So' com o segredo certo o Host e' trocado. Sem ele —
+    ou com PROXY_SEGREDO vazio, que e' o caso de dev e da suite — nada muda e o
+    back segue lendo o Host real da conexao: continua subindo e testando
+    sozinho, sem o front na frente (spec §5).
+
+    O formato do host NAO e' validado aqui, de proposito. Quem recusa dominio
+    alheio continua sendo `ALLOWED_HOSTS`, dentro da mesma `get_host()` que
+    `CorsMiddleware` e `TenantMiddleware` ja chamam. Um segredo vazado nao
+    abriria dominio de fora — deixaria so' escolher entre as barbearias.
+
+    O IP do cliente vem junto, em `X-Marcai-IP`, pelo mesmo motivo. No salto,
+    o primeiro IP do `X-Forwarded-For` passa a ser o da Vercel (conferido em
+    producao: `18.228.6.216`, AWS Sao Paulo, na frente do IP real), e a trava
+    de login do admin (`trava_ip.ip_de`) contaria as falhas de todo mundo num
+    balde so' — cinco senhas erradas de qualquer pessoa trancariam o painel
+    para todos. Com o segredo certo, o IP repassado substitui o
+    `X-Forwarded-For`, e `ip_de` segue sem mudar uma linha.
+
+    Os tres cabecalhos saem do META sempre, com ou sem segredo: nada adiante
+    tem motivo para le-los, e o segredo nao deve sobreviver ate uma pagina de
+    erro. Primeiro da lista de MIDDLEWARE, antes de todo leitor de host.
+    """
+
+    HOST = "HTTP_X_MARCAI_HOST"
+    IP = "HTTP_X_MARCAI_IP"
+    SEGREDO = "HTTP_X_MARCAI_PROXY"
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        host = request.META.pop(self.HOST, "")
+        ip = request.META.pop(self.IP, "")
+        recebido = request.META.pop(self.SEGREDO, "")
+        # Lido a cada pedido, e nao no __init__: trocar o segredo no ambiente
+        # tem que valer sem depender de em que momento o worker subiu.
+        segredo = settings.PROXY_SEGREDO
+        # `compare_digest` em bytes: com str ele lanca TypeError para texto nao
+        # ASCII, e um cabecalho forjado viraria 500 em vez de ser ignorado.
+        if segredo and host and hmac.compare_digest(recebido.encode(), segredo.encode()):
+            request.META["HTTP_HOST"] = host
+            if ip:
+                request.META["HTTP_X_FORWARDED_FOR"] = ip
         return self.get_response(request)
 
 
