@@ -196,7 +196,7 @@ DATABASES = {
     # (fora do RLS) nas rotas de admin.
     "admin": _banco("brutus_admin", "admin"),
     # O banco da Evolution — outro banco FISICO, dono e credencial proprios
-    # (docker/init-db.sql), sem relacao nenhuma com PGDATABASE (que so
+    # (docker/init-db.sh), sem relacao nenhuma com PGDATABASE (que so
     # escolhe entre `brutus`/`brutus_test`). So o zelador (fatia 7,
     # app/services/zelador.py) usa este alias, com SQL cru — sem models: o
     # schema e' da Evolution, nao e' nosso pra declarar.

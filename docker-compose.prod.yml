@@ -1,0 +1,213 @@
+# Produção num servidor só, pelo Coolify: front, back e tudo o que eles usam.
+#
+# Não é o `docker-compose.yml` com outra etiqueta. Aquele é de desenvolvimento
+# e quatro coisas nele são erradas num servidor:
+#
+#   - `runserver`, o servidor de dev do Django, no lugar do gunicorn;
+#   - `DJANGO_DEBUG=1`, que mostra traceback e desliga o `Secure` do cookie;
+#   - portas publicadas no host. A 8000 é a do painel do próprio Coolify, e a
+#     5433 poria o Postgres na internet. Aqui nada publica porta: quem entra é
+#     o Traefik do Coolify, e só no front;
+#   - `.:/app` montado por cima da imagem, para o código recarregar.
+#
+# O front mora NESTE arquivo, e não num recurso separado do Coolify, por causa
+# de três segredos que têm de ser idênticos dos dois lados (`SESSAO_JWT_SECRET`,
+# `ADMIN_JWT_SECRET`, `PROXY_SEGREDO`). Em dois recursos seriam dois formulários
+# de variáveis, e o sintoma de divergir é deslogar todo mundo só em algumas
+# telas. Aqui cada um é escrito uma vez só.
+#
+# Toda variável com `:?` é obrigatória: o Coolify não deixa fazer o deploy
+# enquanto ela estiver vazia.
+
+x-django: &django
+  build: { context: . }
+  restart: unless-stopped
+  environment: &ambiente_django
+    PGDATABASE: brutus
+    PGHOST: db
+    PGPORT: "5432"
+    PGPASSWORD_OWNER: ${PGPASSWORD_OWNER:?}
+    PGPASSWORD_APP: ${PGPASSWORD_APP:?}
+    PGPASSWORD_ADMIN: ${PGPASSWORD_ADMIN:?}
+    PGPASSWORD_EVOLUTION: ${PGPASSWORD_EVOLUTION:?}
+    DJANGO_DEBUG: "0"
+    DOMINIO_BASE: ${DOMINIO_BASE:?}
+    REDIS_URL: redis://redis:6379/1
+    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?}
+    SESSAO_JWT_SECRET: ${SESSAO_JWT_SECRET:?}
+    ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:?}
+    # Sem `:?`: sem admin configurado o login só nega, e subir assim é um
+    # estado válido (ver `.env.example`).
+    ADMIN_USUARIO: ${ADMIN_USUARIO:-}
+    ADMIN_SENHA_HASH_B64: ${ADMIN_SENHA_HASH_B64:-}
+    PROXY_SEGREDO: ${PROXY_SEGREDO:?}
+    EVOLUTION_API_URL: http://evolution:8080
+    EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?}
+    EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-Marcai}
+    URL_BASE: https://${DOMINIO_BASE}
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: postgres
+      # Lidas pelo `docker/init-db.sh` na primeira subida do volume. As
+      # mesmas que o Django recebe acima: é o mesmo papel dos dois lados.
+      PGPASSWORD_OWNER: ${PGPASSWORD_OWNER:?}
+      PGPASSWORD_APP: ${PGPASSWORD_APP:?}
+      PGPASSWORD_ADMIN: ${PGPASSWORD_ADMIN:?}
+      PGPASSWORD_EVOLUTION: ${PGPASSWORD_EVOLUTION:?}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Não é cache de conveniência: a Evolution usa o Redis no caminho de ENVIO
+  # (ver o `docker-compose.yml`). `appendonly` para a fila sobreviver a
+  # reinício.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis:/data
+
+  # A configuração da Evolution é a do `docker-compose.yml`, onde cada linha
+  # tem o motivo escrito. Muda só a senha do banco, que lá era fixa.
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: unless-stopped
+    volumes:
+      # A sessão do WhatsApp. Sem o volume, todo deploy obriga a barbearia a
+      # escanear o QR de novo.
+      - evolution_instances:/evolution/instances
+    environment:
+      SERVER_URL: http://localhost:8080
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:?}
+      DATABASE_PROVIDER: postgresql
+      # A senha vai DENTRO de uma URL: gere só com letras e números (o
+      # comando do guia usa hex), senão um `@` ou `/` quebra a conexão.
+      DATABASE_CONNECTION_URI: postgresql://evolution:${PGPASSWORD_EVOLUTION:?}@db:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: brutus
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      DATABASE_SAVE_DATA_LABELS: "false"
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/6
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_REDIS_SAVE_INSTANCES: "false"
+      CACHE_LOCAL_ENABLED: "false"
+      DEL_INSTANCE: "false"
+      LOG_LEVEL: ERROR,WARN,INFO
+      LOG_BAILEYS: error
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+
+  api:
+    <<: *django
+    # O `entrypoint.sh` da imagem continua valendo aqui: espera o banco, roda
+    # as migrations e só então chega neste comando.
+    command: ["gunicorn", "backend.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3"]
+    depends_on:
+      db: { condition: service_healthy }
+    # Porta aberta = migrations aplicadas: o gunicorn só sobe depois do
+    # `migrate` do entrypoint. É por isso que worker e beat esperam por isto,
+    # e não pelo banco. E é conexão TCP, não HTTP: um GET em `localhost` levaria
+    # 400 do `ALLOWED_HOSTS`, que só aceita o domínio.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  worker:
+    <<: *django
+    # Sem o entrypoint da imagem, de propósito. Com ele, api, worker e beat
+    # rodariam `migrate` os três ao mesmo tempo no banco novo, e dois
+    # `CREATE TABLE` iguais em paralelo derrubam um dos contêineres no
+    # primeiro deploy. Quem migra é só o `api`; estes esperam ele ficar pronto.
+    entrypoint: []
+    command: ["celery", "-A", "backend", "worker", "-l", "info", "-Q", "celery"]
+    depends_on:
+      api: { condition: service_healthy }
+      evolution: { condition: service_started }
+
+  beat:
+    <<: *django
+    entrypoint: []
+    command: ["celery", "-A", "backend", "beat", "-l", "info", "--schedule=/tmp/celerybeat-schedule"]
+    depends_on:
+      api: { condition: service_healthy }
+
+  front:
+    build:
+      # O front vem do repositório DELE, pelo GitHub, e não de uma cópia aqui.
+      # Consequência: um push no front NÃO dispara deploy sozinho — é preciso
+      # clicar em Redeploy no Coolify.
+      context: https://github.com/znt10/Marcai-front.git#${FRONT_BRANCH:-main}
+      target: prod
+      # Entram no BUILD, não só no contêiner: o Next as escreve dentro do
+      # bundle (ver o Dockerfile do front).
+      args:
+        NEXT_PUBLIC_DOMINIO_BASE: ${DOMINIO_BASE:?}
+        # A porta padrão do HTTPS é o que faz o navegador chamar a própria
+        # origem, e o rewrite de `/api/*` levar o pedido ao Django por dentro.
+        NEXT_PUBLIC_API_URL: "443"
+        NEXT_PUBLIC_URL_BASE: https://${DOMINIO_BASE}
+        NEXT_PUBLIC_TENANT_PADRAO: ""
+        API_INTERNA_URL: http://api:8000
+    restart: unless-stopped
+    environment:
+      # Lidas pelo `proxy.ts` a cada pedido, então basta o runtime.
+      ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:?}
+      SESSAO_JWT_SECRET: ${SESSAO_JWT_SECRET:?}
+      PROXY_SEGREDO: ${PROXY_SEGREDO:?}
+      API_INTERNA_URL: http://api:8000
+    depends_on:
+      api: { condition: service_healthy }
+    # Cada barbearia é um subdomínio. O domínio raiz (`usemarcai.online`) vai
+    # no campo "Domains" do Coolify, que gera as rotas dele e liga o proxy à
+    # rede deste compose. Os SUBDOMÍNIOS vêm destas etiquetas, porque o campo
+    # do Coolify recebe domínios, não um curinga com certificado curinga.
+    #
+    # O certificado `*.dominio` só sai pelo desafio de DNS do Let's Encrypt —
+    # ver o guia de deploy. Com o desafio HTTP padrão, estas rotas sobem e o
+    # certificado nunca chega.
+    #
+    # Os pontos do domínio entram na regex sem escape: `.` casa qualquer
+    # caractere, então a regra aceitaria um Host forjado como
+    # `xusemarcaiYonline`. Não abre nada: quem recusa host alheio é o
+    # `ALLOWED_HOSTS` do Django, e o `proxy.ts` não acha barbearia nele.
+    labels:
+      - traefik.enable=true
+      - traefik.http.services.marcai-front.loadbalancer.server.port=3000
+      - traefik.http.middlewares.marcai-https.redirectscheme.scheme=https
+      - traefik.http.routers.marcai-subdominios-http.entrypoints=http
+      - traefik.http.routers.marcai-subdominios-http.rule=HostRegexp(`^[a-z0-9-]+\.${DOMINIO_BASE}$$`)
+      - traefik.http.routers.marcai-subdominios-http.middlewares=marcai-https
+      - traefik.http.routers.marcai-subdominios-http.service=marcai-front
+      - traefik.http.routers.marcai-subdominios.entrypoints=https
+      - traefik.http.routers.marcai-subdominios.rule=HostRegexp(`^[a-z0-9-]+\.${DOMINIO_BASE}$$`)
+      - traefik.http.routers.marcai-subdominios.service=marcai-front
+      - traefik.http.routers.marcai-subdominios.tls=true
+      - traefik.http.routers.marcai-subdominios.tls.certresolver=letsencrypt
+      - traefik.http.routers.marcai-subdominios.tls.domains[0].main=${DOMINIO_BASE}
+      - traefik.http.routers.marcai-subdominios.tls.domains[0].sans=*.${DOMINIO_BASE}
+
+volumes:
+  pgdata:
+  redis:
+  evolution_instances:

@@ -20,7 +20,7 @@ TABELAS = [
 # do Prisma, juntas: separadas la porque a segunda foi a correcao da primeira,
 # e nao ha por que reproduzir o erro para em seguida corrigi-lo.
 CRIAR = [
-    # O `docker/init-db.sql` ja cria o papel num volume novo. O CREATE
+    # O `docker/init-db.sh` ja cria o papel num volume novo. O CREATE
     # idempotente aqui cobre banco que nasceu antes desta etapa — e o motivo de
     # `brutus_owner` ter CREATEROLE.
     """
@@ -34,7 +34,7 @@ CRIAR = [
     "GRANT USAGE ON SCHEMA public TO brutus_admin;",
 ]
 
-# DML nas tabelas de tenant. O `ALTER DEFAULT PRIVILEGES` do init-db.sql ja
+# DML nas tabelas de tenant. O `ALTER DEFAULT PRIVILEGES` do init-db.sh ja
 # cobre tudo que `brutus_owner` cria depois dele — e agora quem cria e o
 # Django, entao as oito tabelas ja nascem com o GRANT. Isto aqui e a rede para
 # um banco que ja existia antes: GRANT e idempotente, repetir nao custa nada,
@@ -83,7 +83,7 @@ REMOVER = [
     for t in TABELAS + ["tenant_barbearia"]
 ] + [
     "REVOKE USAGE ON SCHEMA public FROM brutus_admin;",
-    # O papel NAO e derrubado no reverso: ele e criado pelo init-db.sql antes
+    # O papel NAO e derrubado no reverso: ele e criado pelo init-db.sh antes
     # de qualquer migration rodar, e um DROP ROLE aqui apagaria uma coisa que
     # esta migration nao criou. Reverter tem que devolver o banco ao estado
     # anterior, nao a um estado que nunca existiu.

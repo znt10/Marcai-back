@@ -4,7 +4,7 @@ import pytest
 from django.db import connections
 
 
-# O banco de teste ja EXISTE — `init-db.sql` cria o `brutus_test` junto com o
+# O banco de teste ja EXISTE — `init-db.sh` cria o `brutus_test` junto com o
 # `brutus`, no mesmo volume. O que mudou na fatia 1 e quem o MIGRA: era o
 # Prisma (via DATABASE_URL_TEST, do lado do front), e agora e este `migrate`.
 #
@@ -16,7 +16,7 @@ from django.db import connections
 # `database="owner"` pelo mesmo motivo do entrypoint.sh: as duas conexoes
 # apontam para o mesmo banco e o que muda e o papel. `brutus_app` (o default)
 # nao tem direito de DDL, e as tabelas precisam nascer de `brutus_owner` para
-# que o `ALTER DEFAULT PRIVILEGES` do init-db.sql conceda DML aos outros dois
+# que o `ALTER DEFAULT PRIVILEGES` do init-db.sh conceda DML aos outros dois
 # papeis.
 #
 # `migrate` e idempotente: numa segunda corrida ele le `django_migrations`, ve
@@ -45,7 +45,7 @@ def _sem_flush_no_teardown():
     `brutus_app` nao tem direito de TRUNCATE, e isso e deliberado, nao uma
     lacuna a preencher: o papel do runtime nao deve conseguir esvaziar tabela.
     Conceder o direito so para o teste passar enfraqueceria em producao a
-    separacao que o `init-db.sql` monta de proposito.
+    separacao que o `init-db.sh` monta de proposito.
 
     O que se perde ao desligar e nada: `limpar_banco` (abaixo) ja TRUNCA as
     mesmas tabelas, como `owner`, e na ENTRADA de cada teste — que e a ordem

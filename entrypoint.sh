@@ -29,7 +29,7 @@ done
 #
 # `owner` e `brutus_owner`: e ele quem tem o DDL, e e ele que a politica
 # `owner_irrestrito` isenta do RLS. As tabelas tambem precisam NASCER dele,
-# porque o `ALTER DEFAULT PRIVILEGES FOR ROLE brutus_owner` do init-db.sql so
+# porque o `ALTER DEFAULT PRIVILEGES FOR ROLE brutus_owner` do init-db.sh so
 # concede DML a brutus_app/brutus_admin no que brutus_owner cria.
 echo "[entrypoint] aplicando migrations..."
 python manage.py migrate --noinput --database=owner

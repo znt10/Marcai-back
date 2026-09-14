@@ -152,7 +152,7 @@ Neste modo o `pytest.ini` aponta para `localhost:5433` (a porta publicada do
 
 ### Sem pré-requisito: `brutus_test` migra sozinho
 
-`docker/init-db.sql` cria `brutus_test` junto com `brutus`, de propriedade de
+`docker/init-db.sh` cria `brutus_test` junto com `brutus`, de propriedade de
 `brutus_owner`, no mesmo volume. A fixture de sessão `django_db_setup`
 (`tests/conftest.py`) chama `manage.py migrate --database=owner` antes do
 primeiro teste que toca banco — a mesma migração que o `entrypoint.sh` roda ao
