@@ -190,9 +190,18 @@ services:
     # rede deste compose. Os SUBDOMÍNIOS vêm destas etiquetas, porque o campo
     # do Coolify recebe domínios, não um curinga com certificado curinga.
     #
-    # O certificado `*.dominio` só sai pelo desafio de DNS do Let's Encrypt —
-    # ver o guia de deploy. Com o desafio HTTP padrão, estas rotas sobem e o
-    # certificado nunca chega.
+    # O certificado `*.dominio` só sai pelo desafio de DNS do Let's Encrypt,
+    # e vem de um resolvedor PRÓPRIO do proxy (`letsencrypt-dns`), separado do
+    # `letsencrypt` padrão do Coolify, que segue no desafio HTTP para o
+    # domínio raiz e o `www`.
+    #
+    # Separados porque, no desafio de DNS, o domínio raiz e o curinga gravam
+    # no MESMO registro (`_acme-challenge.<dominio>`), e a API da Hostinger
+    # regrava a lista inteira a cada valor: dois pedidos simultâneos se
+    # atropelam, e o último apaga o valor do outro. No servidor isso deu certo
+    # numa tentativa e falhou na seguinte. Com o raiz no HTTP e o certificado
+    # abaixo cobrindo SÓ `*.dominio`, cada registro recebe um valor por vez.
+    # O `*.` cobre as barbearias, o `admin` e o `www`; o raiz tem o dele.
     #
     # O domínio vem ESCRITO aqui, e não de `${DOMINIO_BASE}` como no resto do
     # arquivo. O Coolify não substitui variável dentro de etiqueta: no
@@ -215,9 +224,8 @@ services:
       - traefik.http.routers.marcai-subdominios.rule=HostRegexp(`^[a-z0-9-]+\.usemarcai\.online\z`)
       - traefik.http.routers.marcai-subdominios.service=marcai-front
       - traefik.http.routers.marcai-subdominios.tls=true
-      - traefik.http.routers.marcai-subdominios.tls.certresolver=letsencrypt
-      - traefik.http.routers.marcai-subdominios.tls.domains[0].main=usemarcai.online
-      - traefik.http.routers.marcai-subdominios.tls.domains[0].sans=*.usemarcai.online
+      - traefik.http.routers.marcai-subdominios.tls.certresolver=letsencrypt-dns
+      - traefik.http.routers.marcai-subdominios.tls.domains[0].main=*.usemarcai.online
 
 volumes:
   pgdata:
