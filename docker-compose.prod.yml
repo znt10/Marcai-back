@@ -194,25 +194,30 @@ services:
     # ver o guia de deploy. Com o desafio HTTP padrão, estas rotas sobem e o
     # certificado nunca chega.
     #
-    # Os pontos do domínio entram na regex sem escape: `.` casa qualquer
-    # caractere, então a regra aceitaria um Host forjado como
-    # `xusemarcaiYonline`. Não abre nada: quem recusa host alheio é o
-    # `ALLOWED_HOSTS` do Django, e o `proxy.ts` não acha barbearia nele.
+    # O domínio vem ESCRITO aqui, e não de `${DOMINIO_BASE}` como no resto do
+    # arquivo. O Coolify não substitui variável dentro de etiqueta: no
+    # primeiro deploy o Traefik recebeu `${DOMINIO_BASE}` ao pé da letra, pediu
+    # ao Let's Encrypt um certificado para `${dominio_base}` e nenhuma
+    # barbearia abriu. Trocar de domínio é trocar aqui E na variável.
+    #
+    # Pelo mesmo motivo não há `$` nenhum nas etiquetas: o fim da regex é
+    # `\z` (fim do texto, na regex do Go), e não `$`. Sem âncora no fim, a
+    # regra casaria `brutus.usemarcai.online.qualquercoisa`.
     labels:
       - traefik.enable=true
       - traefik.http.services.marcai-front.loadbalancer.server.port=3000
       - traefik.http.middlewares.marcai-https.redirectscheme.scheme=https
       - traefik.http.routers.marcai-subdominios-http.entrypoints=http
-      - traefik.http.routers.marcai-subdominios-http.rule=HostRegexp(`^[a-z0-9-]+\.${DOMINIO_BASE}$$`)
+      - traefik.http.routers.marcai-subdominios-http.rule=HostRegexp(`^[a-z0-9-]+\.usemarcai\.online\z`)
       - traefik.http.routers.marcai-subdominios-http.middlewares=marcai-https
       - traefik.http.routers.marcai-subdominios-http.service=marcai-front
       - traefik.http.routers.marcai-subdominios.entrypoints=https
-      - traefik.http.routers.marcai-subdominios.rule=HostRegexp(`^[a-z0-9-]+\.${DOMINIO_BASE}$$`)
+      - traefik.http.routers.marcai-subdominios.rule=HostRegexp(`^[a-z0-9-]+\.usemarcai\.online\z`)
       - traefik.http.routers.marcai-subdominios.service=marcai-front
       - traefik.http.routers.marcai-subdominios.tls=true
       - traefik.http.routers.marcai-subdominios.tls.certresolver=letsencrypt
-      - traefik.http.routers.marcai-subdominios.tls.domains[0].main=${DOMINIO_BASE}
-      - traefik.http.routers.marcai-subdominios.tls.domains[0].sans=*.${DOMINIO_BASE}
+      - traefik.http.routers.marcai-subdominios.tls.domains[0].main=usemarcai.online
+      - traefik.http.routers.marcai-subdominios.tls.domains[0].sans=*.usemarcai.online
 
 volumes:
   pgdata:
