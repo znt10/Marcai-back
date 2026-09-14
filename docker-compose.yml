@@ -9,7 +9,7 @@ services:
     ports: ["5433:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -114,7 +114,7 @@ services:
       SERVER_URL: http://localhost:8080
       AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
 
-      # O Postgres que já existe, com papel e banco próprios (docker/init-db.sql).
+      # O Postgres que já existe, com papel e banco próprios (docker/init-db.sh).
       DATABASE_PROVIDER: postgresql
       DATABASE_CONNECTION_URI: postgresql://evolution:evolution@db:5432/evolution?schema=public
       DATABASE_CONNECTION_CLIENT_NAME: brutus
