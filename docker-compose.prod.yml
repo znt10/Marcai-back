@@ -139,7 +139,14 @@ services:
     # rodariam `migrate` os três ao mesmo tempo no banco novo, e dois
     # `CREATE TABLE` iguais em paralelo derrubam um dos contêineres no
     # primeiro deploy. Quem migra é só o `api`; estes esperam ele ficar pronto.
-    entrypoint: []
+    #
+    # `env` e não `[]`, que é a forma que o Docker documenta para "sem
+    # entrypoint": o Coolify reescreve este arquivo antes de rodar, e na
+    # reescrita a lista vazia vira um mapa vazio — o deploy morria com
+    # `services.worker.entrypoint must be a null`. O `env` sem variáveis só
+    # executa o `command` no lugar dele, então o celery continua sendo o
+    # processo 1 do contêiner e recebe o sinal de parada direto.
+    entrypoint: ["/usr/bin/env"]
     command: ["celery", "-A", "backend", "worker", "-l", "info", "-Q", "celery"]
     depends_on:
       api: { condition: service_healthy }
@@ -147,7 +154,7 @@ services:
 
   beat:
     <<: *django
-    entrypoint: []
+    entrypoint: ["/usr/bin/env"]
     command: ["celery", "-A", "backend", "beat", "-l", "info", "--schedule=/tmp/celerybeat-schedule"]
     depends_on:
       api: { condition: service_healthy }
