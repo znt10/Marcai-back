@@ -337,3 +337,56 @@ prova que o WhatsApp manda aquilo.
 - **Tres testes do backend dependem de relogio** (derivam dia da semana de uma
   data em UTC enquanto o motor usa Sao Paulo; so' falham entre 00:00 e 03:00
   UTC). Pre-existentes, fora do escopo, cartao separado.
+
+## 11. Resultado da fatia 0 (16/09/2026, Evolution 2.3.7 local)
+
+Medido contra a instancia de uma barbearia CONECTADA, com um coletor
+descartavel no lugar do webhook. Coletor removido, webhook devolvido identico
+ao original (conferido campo a campo) e eventos apagados.
+
+| # | Pergunta | Resposta |
+|---|---|---|
+| 1 | `fromMe` e' entregue? | **Sim.** Mensagens digitadas no proprio aparelho chegaram como `messages.upsert` com `fromMe: true`. A premissa de "cala quando o dono responde" esta de pe'. |
+| 2 | Forma do corpo | Texto simples chega em `message.conversation`. **Resposta citando NAO foi medida** — ver lacunas. |
+| 3 | `webhook/set` reescreve eventos de instancia conectada? | **Sim.** 201, a lista de eventos mudou e a conexao continuou `open`. A secao 7 esta de pe'. |
+| 4 | `remoteJid` de grupo | `...@g.us`, confirmado. |
+| 5 | Tempo do `sendText` | **0,37 s**, duas medidas. Folga grande para um limite de 5 s. |
+
+### O achado que a spec nao previa: volume
+
+O numero medido era de USO REAL, e em poucos segundos chegaram 42 eventos —
+**40 deles de grupo**, e a maioria com midia (audio, imagem, video, figurinha,
+album), vindo com o conteudo da midia dentro do proprio evento.
+
+Tres consequencias para o desenho:
+
+1. **O descarte de grupo e de nao-texto nao e' um detalhe, e' o caso comum.**
+   Com o bot ligado, a imensa maioria do trafego do webhook sera lixo para o
+   bot. O descarte precisa acontecer ANTES de qualquer consulta ao banco —
+   `@g.us` e ausencia de `conversation`/`extendedTextMessage` sao leitura do
+   corpo, sem banco nenhum. A ordem da secao 6 ja' faz isso; agora e'
+   obrigatoria, nao estetica.
+2. **Evento com midia pode ser grande.** Um video dentro do evento pode
+   passar do limite de corpo do Django (`DATA_UPLOAD_MAX_MEMORY_SIZE`, 2,5 MB
+   por padrao). Se o Django recusar antes da view, a resposta nao e' 200, e a
+   Evolution REENVIA — o laco que a view foi desenhada para evitar. Precisa
+   de medicao propria: se `base64: false` no webhook realmente tira a midia,
+   ou se o limite precisa subir para esta rota.
+3. **A decisao de privacidade da secao 7 ficou concreta.** Ligar o bot faz
+   passar pelo Marcai TODA a conversa daquele numero, inclusive grupos
+   pessoais. O interruptor desligado por padrao, e o webhook sem
+   `MESSAGES_UPSERT` enquanto desligado, deixam de ser cuidado e viram
+   requisito.
+
+### Lacunas
+
+- **Resposta citando** (`extendedTextMessage.text`) — nao apareceu no coletor.
+- **Mensagem de outra pessoa em conversa privada.** As duas mensagens de
+  teste mandadas pela instancia central (201) nao produziram evento no tempo
+  observado. Pode ser atraso, entrega entre duas instancias da mesma
+  Evolution, ou `remoteJid` em formato `@lid`. Nao investigado.
+- **`base64: false`** — ver item 2 acima.
+
+**As tres precisam de um NUMERO DE TESTE DEDICADO**, e nao do numero de uso
+real: medir exige capturar o trafego, e capturar o trafego de um numero real
+e' capturar conversa de gente que nao tem nada a ver com o teste.
