@@ -272,3 +272,24 @@ def test_pedir_qr_com_falha_de_rede_devolve_none(caplog):
     with patch.object(wi.requests, "get", side_effect=requests_lib.ConnectionError("boom")):
         with caplog.at_level("ERROR"):
             assert wi.pedir_qr("marcai-x") is None
+
+
+def test_a_criacao_espera_mais_que_o_resto(cenario):
+    """Regressao com data e numero: contra a Evolution 2.3.7, o
+    `POST /instance/create` levou 5,3s numa maquina ociosa — ele sobe um
+    socket Baileys antes de responder. Com o timeout curto das outras
+    chamadas, todo cadastro de barbearia com zap estourava, e estourava do
+    jeito pior: a instancia nascia do lado de la assim mesmo, e o dono so
+    via o QR quando a conferencia de 5 minutos passasse.
+    """
+    barbearia = cenario["brutus"]
+    _linha(barbearia)
+
+    with patch.object(wi.requests, "post", return_value=Mock(ok=True, status_code=201)) as post:
+        wi.garantir_instancia(barbearia)
+
+    criar, webhook = post.call_args_list
+    assert criar.kwargs["timeout"] == wi.TIMEOUT_CRIACAO_S
+    assert wi.TIMEOUT_CRIACAO_S >= 15, "5,3s medidos; menos que isto nao cobre uma VPS carregada"
+    # As rapidas continuam rapidas: `webhook/set` respondeu em milissegundos.
+    assert webhook.kwargs["timeout"] == wi.TIMEOUT_S

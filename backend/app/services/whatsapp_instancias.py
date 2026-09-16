@@ -38,10 +38,27 @@ logger = logging.getLogger(__name__)
 # configuravel — dominio, plano ou nome da barbearia mudam; o id, nao.
 PREFIXO = "marcai-"
 
-# Curtos de proposito. Quem chama esta no caminho de um pedido ou de um tique,
+# Curto de proposito. Quem chama esta no caminho de um pedido ou de um tique,
 # e esperar 30s pela Evolution e' pior do que nao saber: o estado que falta
-# aqui a conferencia periodica descobre no proximo ciclo.
+# aqui a conferencia periodica descobre no proximo ciclo. Medido contra a
+# 2.3.7: `webhook/set` e `connectionState` respondem em MILISSEGUNDOS, entao
+# 5s ja e' folga enorme para elas.
 TIMEOUT_S = 5
+
+# A criacao e outra coisa, e isto foi medido doendo: `POST /instance/create`
+# sobe um socket Baileys antes de responder e levou **5,3s** numa maquina de
+# desenvolvimento ociosa — logo acima dos 5s acima. Com o timeout curto o
+# cadastro de uma barbearia com zap falhava toda vez, e falhava do jeito mais
+# confuso possivel: a instancia era criada do lado de la assim mesmo (o
+# trabalho continua depois que a conexao cai), a linha ficava `PENDENTE`, e o
+# dono so via o QR quando a conferencia de 5 minutos passasse.
+#
+# 15s, e nao 30: isto roda dentro do pedido HTTP do admin (via `on_commit`),
+# entao o numero e' quanto tempo alguem fica olhando para uma tela travada no
+# pior caso. Tres vezes o medido cobre uma VPS carregada; o que passar disso
+# cai na conferencia periodica, que conserta sozinha — e o `create` repetido
+# la bate no 403 idempotente em vez de criar uma segunda instancia.
+TIMEOUT_CRIACAO_S = 15
 
 
 def _config() -> dict[str, str]:
@@ -138,7 +155,7 @@ def garantir_instancia(barbearia) -> None:
                 "integration": "WHATSAPP-BAILEYS",
             },
             headers={"apikey": cfg["chave"]},
-            timeout=TIMEOUT_S,
+            timeout=TIMEOUT_CRIACAO_S,
         )
     except requests.RequestException as e:
         logger.error("[whatsapp-instancia] falha ao criar instancia %s: %s", linha.nome, e)
