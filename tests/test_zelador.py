@@ -187,3 +187,36 @@ def test_poda_nao_enviadas_antigas_e_preserva_as_recentes(cenario):
 
     with com_barbearia(b.id):
         assert [m.cliente_nome for m in MensagemNaoEnviada.objects.all()] == ["Nova"]
+
+
+def test_poda_conversas_paradas_e_preserva_as_vivas_e_as_mudas(cenario):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from app.services.zelador import _podar_conversas
+    from tenant.config import BOT_CONVERSA_GUARDADA_DIAS
+    from tenant.models import ConversaWhatsapp
+    from tenant.rls import com_barbearia
+
+    b = cenario["brutus"]
+    agora = timezone.now()
+    velha = agora - timedelta(days=BOT_CONVERSA_GUARDADA_DIAS + 1)
+    for numero, atualizado, mudo in (
+        ("83900000001", velha, None),                         # some
+        ("83900000002", agora - timedelta(hours=1), None),    # fica: recente
+        # Fica: parada ha dias, mas alguem da barbearia ainda esta falando
+        # com essa pessoa. Apagar a linha faria o bot voltar a atropelar.
+        ("83900000003", velha, agora + timedelta(hours=2)),
+    ):
+        ConversaWhatsapp.objects.using("owner").create(
+            id=str(uuid.uuid4()), barbearia_id=b.id, whatsapp=numero,
+            atualizado_em=atualizado, mudo_ate=mudo,
+        )
+
+    assert _podar_conversas() == 1
+
+    with com_barbearia(b.id):
+        assert sorted(ConversaWhatsapp.objects.values_list("whatsapp", flat=True)) == [
+            "83900000002", "83900000003",
+        ]

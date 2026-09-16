@@ -4,8 +4,8 @@ from datetime import timedelta
 from django.db import connections
 from django.utils import timezone
 
-from tenant.config import ZELADOR_DIAS_DE_HISTORICO
-from tenant.models import Barbearia, MensagemNaoEnviada
+from tenant.config import BOT_CONVERSA_GUARDADA_DIAS, ZELADOR_DIAS_DE_HISTORICO
+from tenant.models import Barbearia, ConversaWhatsapp, MensagemNaoEnviada
 from tenant.rls import com_barbearia
 
 logger = logging.getLogger(__name__)
@@ -74,6 +74,7 @@ def alarmar_e_podar() -> dict:
         "podados_message_update": podados_message_update,
         "podados_message": podados_message,
         "podadas_nao_enviadas": _podar_nao_enviadas(),
+        "podadas_conversas": _podar_conversas(),
     }
 
 
@@ -93,5 +94,29 @@ def _podar_nao_enviadas() -> int:
     for b in Barbearia.objects.all():
         with com_barbearia(b.id):
             apagadas, _ = MensagemNaoEnviada.objects.filter(criado_em__lt=limite).delete()
+        podadas += apagadas
+    return podadas
+
+
+def _podar_conversas() -> int:
+    """Conversa do bot parada ha mais de BOT_CONVERSA_GUARDADA_DIAS.
+
+    Conversa e' estado de minutos: depois de 20 ela ja recomeca do menu. Passado
+    o prazo, a linha so' guardaria o numero de alguem sem motivo nenhum.
+
+    A conversa MUDA fica, mesmo velha: `mudo_ate` no futuro quer dizer que
+    alguem da barbearia esta falando com essa pessoa, e apagar a linha faria o
+    bot voltar a responder por cima.
+    """
+    agora = timezone.now()
+    limite = agora - timedelta(days=BOT_CONVERSA_GUARDADA_DIAS)
+    podadas = 0
+    for b in Barbearia.objects.all():
+        with com_barbearia(b.id):
+            apagadas, _ = (
+                ConversaWhatsapp.objects.filter(atualizado_em__lt=limite)
+                .exclude(mudo_ate__gt=agora)
+                .delete()
+            )
         podadas += apagadas
     return podadas
