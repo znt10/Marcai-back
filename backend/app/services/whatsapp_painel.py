@@ -19,7 +19,7 @@ from tenant.models import (
 )
 from tenant.rls import com_barbearia
 
-from .whatsapp_instancias import desconectar_aparelho, pedir_qr
+from .whatsapp_instancias import aplicar_assinatura, desconectar_aparelho, pedir_qr
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,7 @@ def ver(barbearia, papel: str) -> dict:
             "desconectadoDesde": None,
             "qrBase64": None,
             "naoEnviadas": 0,
+            "botAtivo": False,
         }
 
     with com_barbearia(barbearia.id):
@@ -61,6 +62,7 @@ def ver(barbearia, papel: str) -> dict:
             "desconectadoDesde": None,
             "qrBase64": None,
             "naoEnviadas": nao_enviadas,
+            "botAtivo": False,
         }
 
     eh_dono = papel == "DONO"
@@ -89,6 +91,7 @@ def ver(barbearia, papel: str) -> dict:
         "desconectadoDesde": linha.desconectado_desde,
         "qrBase64": qr,
         "naoEnviadas": nao_enviadas,
+        "botAtivo": linha.bot_ativo,
     }
 
 
@@ -119,5 +122,30 @@ def desconectar(barbearia) -> bool:
             qr_base64=None,
             numero_conectado=None,
             atualizado_em=timezone.now(),
+        )
+    return True
+
+
+def ligar_bot(barbearia, ativo: bool) -> bool:
+    """Liga ou desliga o atendimento automatico. A EVOLUTION PRIMEIRO.
+
+    A lista de eventos mora na instancia, la. Gravar antes e aplicar depois
+    abriria a janela em que o banco diz "ligado" e nenhuma mensagem chega —
+    e se a aplicacao falhasse, a janela nunca fecharia. Falhou, nada muda.
+    """
+    if barbearia.plano != PlanoBarbearia.COM_ZAP:
+        return False
+
+    with com_barbearia(barbearia.id):
+        linha = WhatsappInstancia.objects.filter(barbearia_id=barbearia.id).first()
+    if linha is None or linha.estado == EstadoInstancia.PENDENTE:
+        return False
+
+    if not aplicar_assinatura(linha.nome, bot=ativo):
+        return False
+
+    with com_barbearia(barbearia.id):
+        WhatsappInstancia.objects.filter(barbearia_id=barbearia.id).update(
+            bot_ativo=ativo, atualizado_em=timezone.now(),
         )
     return True

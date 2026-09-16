@@ -293,3 +293,41 @@ def test_a_criacao_espera_mais_que_o_resto(cenario):
     assert wi.TIMEOUT_CRIACAO_S >= 15, "5,3s medidos; menos que isto nao cobre uma VPS carregada"
     # As rapidas continuam rapidas: `webhook/set` respondeu em milissegundos.
     assert webhook.kwargs["timeout"] == wi.TIMEOUT_S
+
+
+# ---- aplicar_assinatura ----
+
+
+def test_assinatura_com_bot_pede_mensagens_e_tira_a_midia():
+    """`base64: false` com o bot ligado: com `true`, cada foto, audio e video
+    que chega no numero viria inteiro dentro do evento (fatia 0). O QR continua
+    chegando pela busca do painel (`pedir_qr`)."""
+    with patch.object(wi.requests, "post", return_value=Mock(ok=True, status_code=201)) as post:
+        assert wi.aplicar_assinatura("marcai-x", bot=True) is True
+    corpo = post.call_args.kwargs["json"]["webhook"]
+    assert sorted(corpo["events"]) == ["CONNECTION_UPDATE", "MESSAGES_UPSERT", "QRCODE_UPDATED"]
+    assert corpo["base64"] is False
+
+
+def test_assinatura_sem_bot_volta_ao_de_sempre():
+    with patch.object(wi.requests, "post", return_value=Mock(ok=True, status_code=201)) as post:
+        assert wi.aplicar_assinatura("marcai-x", bot=False) is True
+    corpo = post.call_args.kwargs["json"]["webhook"]
+    assert sorted(corpo["events"]) == ["CONNECTION_UPDATE", "QRCODE_UPDATED"]
+    assert corpo["base64"] is True
+
+
+def test_assinatura_sem_evolution_configurada_falha(monkeypatch):
+    monkeypatch.delenv("EVOLUTION_API_URL", raising=False)
+    assert wi.aplicar_assinatura("marcai-x", bot=True) is False
+
+
+def test_garantir_reaplica_o_webhook_sem_desligar_o_bot(cenario):
+    """A conferencia periodica chama `garantir_instancia`. Se ela reaplicasse
+    a lista sem mensagens, o bot pararia de ouvir sem ninguem ter desligado."""
+    barbearia = cenario["brutus"]
+    _linha(barbearia, bot_ativo=True)
+    with patch.object(wi.requests, "post", return_value=Mock(ok=True, status_code=201)) as post:
+        wi.garantir_instancia(barbearia)
+    _, webhook = post.call_args_list
+    assert "MESSAGES_UPSERT" in webhook.kwargs["json"]["webhook"]["events"]

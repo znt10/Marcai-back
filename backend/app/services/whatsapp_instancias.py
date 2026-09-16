@@ -60,6 +60,12 @@ TIMEOUT_S = 5
 # la bate no 403 idempotente em vez de criar uma segunda instancia.
 TIMEOUT_CRIACAO_S = 15
 
+# Assinados em MAIUSCULO; chegam minusculos e com ponto. MESSAGES_UPSERT so'
+# entra com o bot ligado: barbearia sem bot nunca manda uma mensagem de
+# cliente para o Marcai (spec, secao 7).
+EVENTOS_SEM_BOT = ["CONNECTION_UPDATE", "QRCODE_UPDATED"]
+EVENTOS_COM_BOT = EVENTOS_SEM_BOT + ["MESSAGES_UPSERT"]
+
 
 def _config() -> dict[str, str]:
     """Lida a cada chamada, e nao no topo do modulo, pela mesma razao do
@@ -172,7 +178,7 @@ def garantir_instancia(barbearia) -> None:
         )
         return
 
-    if not _aplicar_webhook(cfg, linha.nome):
+    if not _aplicar_webhook(cfg, linha.nome, bot=linha.bot_ativo):
         # Instancia sem webhook e' pior que instancia nenhuma: ela conectaria
         # e nos nunca saberiamos. Fica `PENDENTE` para a conferencia tentar de
         # novo — e o `create` repetido cai no 403 idempotente acima.
@@ -184,7 +190,7 @@ def garantir_instancia(barbearia) -> None:
         )
 
 
-def _aplicar_webhook(cfg: dict[str, str], nome: str) -> bool:
+def _aplicar_webhook(cfg: dict[str, str], nome: str, *, bot: bool = False) -> bool:
     if not cfg["webhook_url"]:
         logger.error("[whatsapp-instancia] sem WHATSAPP_WEBHOOK_URL: %s ficaria surdo", nome)
         return False
@@ -198,14 +204,12 @@ def _aplicar_webhook(cfg: dict[str, str], nome: str) -> bool:
                     "url": cfg["webhook_url"],
                     "headers": _cabecalhos_do_webhook(cfg),
                     "byEvents": False,
-                    # O que traz o QR pronto para o `<img src>` do painel. Sem
-                    # isto o evento chega so' com o `code` cru, que ainda
-                    # precisaria virar imagem do nosso lado.
-                    "base64": True,
-                    # Assinados em MAIUSCULO; chegam minusculos e com ponto
-                    # (`connection.update`, `qrcode.updated`). Quem despacha do
-                    # outro lado tem que casar com a forma ENTREGUE.
-                    "events": ["CONNECTION_UPDATE", "QRCODE_UPDATED"],
+                    # O QR pronto para o `<img src>` precisa de `base64: true`.
+                    # Com o bot ligado ele vira `false`: a mesma opcao poria
+                    # cada foto e video recebido INTEIRO dentro do evento
+                    # (fatia 0). O QR segue chegando por `pedir_qr`.
+                    "base64": not bot,
+                    "events": EVENTOS_COM_BOT if bot else EVENTOS_SEM_BOT,
                 }
             },
             headers={"apikey": cfg["chave"]},
@@ -222,6 +226,17 @@ def _aplicar_webhook(cfg: dict[str, str], nome: str) -> bool:
         )
         return False
     return True
+
+
+def aplicar_assinatura(nome: str, *, bot: bool) -> bool:
+    """Reescreve a lista de eventos de uma instancia que ja existe. Medido na
+    fatia 0: `webhook/set` aceita isso com a instancia conectada, sem derrubar
+    a conexao."""
+    cfg = _config()
+    if not cfg["url"]:
+        logger.info("[whatsapp-instancia] sem EVOLUTION_API_URL: assinatura de %s nao muda", nome)
+        return False
+    return _aplicar_webhook(cfg, nome, bot=bot)
 
 
 def apagar_instancia(barbearia) -> None:
