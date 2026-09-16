@@ -397,6 +397,72 @@ def test_bot_desligado_ou_desconectado_nao_fala(cenario, campos):
     assert _linha(b) is None
 
 
+# ---- envio falho ----
+
+
+def test_envio_falho_no_perguntou_mantem_estado_anterior(cenario):
+    """Se o resumo 'Confere:' nao chega ao cliente (`_enviar` devolve None), o
+    estado NAO pode avancar para CONFIRMA: o cliente nunca leu o resumo, e um
+    '1' seguinte seria a opcao 1 do passo novo — 'Confirmar' — nao a dele."""
+    b, pedro, _ = _cenario_simples(cenario)
+    _cliente(b)
+    conversa = _Conversa(b)
+    conversa.diz("oi")
+    conversa.diz("1")
+    conversa.diz("1")
+    assert _linha(b).estado == "HORA"
+    opcoes_antes = _linha(b).opcoes
+
+    with patch("app.services.bot._enviar", return_value=None), patch(
+        "app.services.bot.enviar_a_equipe"
+    ):
+        resultado = processar(str(b.id), NUMERO, "1", "msg-falha", conversa.agora)
+    assert resultado == "perguntou"
+    linha = _linha(b)
+    assert linha.estado == "HORA"
+    assert linha.opcoes == opcoes_antes
+    assert linha.ultima_mensagem_id == "msg-falha"
+
+    # O cliente tenta de novo: o "1" e reinterpretado no estado HORA (escolhe
+    # o horario de novo, chegando em CONFIRMA), e nao marca nada sozinho.
+    assert conversa.diz("1") == "perguntou"
+    assert conversa.ultima.startswith("Confere:")
+    with com_barbearia(b.id):
+        assert Agendamento.objects.count() == 0
+
+
+def test_marcar_com_envio_de_confirmacao_falho_ainda_avanca_o_estado(cenario):
+    """O agendamento ja foi gravado antes do envio: falhar em mandar a
+    confirmacao nao pode travar a conversa em CONFIRMA, ou o cliente
+    tentaria marcar de novo por cima do que ja esta marcado."""
+    b, pedro, _ = _cenario_simples(cenario)
+    _cliente(b)
+    conversa = _Conversa(b)
+    conversa.diz("oi")
+    conversa.diz("1")
+    conversa.diz("1")
+    conversa.diz("1")
+    assert _linha(b).estado == "CONFIRMA"
+
+    with patch("app.services.bot._enviar", return_value=None), patch(
+        "app.services.bot.enviar_a_equipe"
+    ):
+        resultado = processar(str(b.id), NUMERO, "1", "msg-confirma-falha", conversa.agora)
+    assert resultado == "marcou"
+    linha = _linha(b)
+    assert linha.estado == "MENU"
+    assert linha.rascunho == {}
+
+    with com_barbearia(b.id):
+        assert Agendamento.objects.count() == 1
+
+    # Estado ja avancou pra MENU: um "1" seguinte inicia uma marcacao nova,
+    # nao tenta marcar o mesmo horario de novo.
+    conversa.diz("1")
+    with com_barbearia(b.id):
+        assert Agendamento.objects.count() == 1
+
+
 def test_guarda_o_id_de_cada_resposta(cenario):
     b, _, _ = _cenario_simples(cenario)
     conversa = _Conversa(b)

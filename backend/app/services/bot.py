@@ -157,19 +157,51 @@ def _estado_de(linha) -> c.Estado:
     )
 
 
+# Desfechos onde algo ja aconteceu (agendamento criado/cancelado, dono
+# avisado, desistencia avisada, lembrete confirmado) ANTES de qualquer envio
+# ao cliente, ou cujo efeito nao depende do envio. Para esses, o estado avanca
+# mesmo que o `_enviar` ao cliente falhe — nao ha o que "desfazer", e travar o
+# estado no passo anterior arriscaria uma segunda tentativa de marcar.
+_ACOES_JA_ACONTECERAM = frozenset({
+    "marcou", "cancelou", "humano", "desistencia_avisada", "lembrete_confirmado",
+})
+
+
 def _gravar(ctx: _Contexto, linha, saida: _Saida, mensagem_id: str, ids_novos: list) -> None:
     anteriores = list(linha.ids_do_bot or []) if linha is not None else []
-    campos = {
-        "estado": saida.passo,
-        "opcoes": saida.opcoes,
-        "rascunho": saida.rascunho,
-        "tentativas": saida.tentativas,
-        "pergunta": saida.pergunta,
-        "ultima_mensagem_id": mensagem_id,
-        "ids_do_bot": (anteriores + ids_novos)[-BOT_IDS_GUARDADOS:],
-        "mudo_ate": saida.mudo_ate,
-        "atualizado_em": ctx.agora,
-    }
+    sem_entrega = (
+        saida.textos and not ids_novos and saida.desfecho not in _ACOES_JA_ACONTECERAM
+    )
+    if sem_entrega:
+        # Nenhuma mensagem chegou ao cliente (recusa, timeout ou excecao no
+        # `_enviar`). Avancar o estado aqui deixaria uma pergunta — ou pior,
+        # o resumo de "Confere:" — respondivel sem o cliente ter lido: um "1"
+        # seguinte cairia na opcao 1 do passo NOVO, nao do que ele via na
+        # tela. Guarda so o id da mensagem recebida, para nao reprocessa-la,
+        # e mantem a conversa exatamente onde estava.
+        campos = {
+            "estado": linha.estado if linha is not None else c.MENU,
+            "opcoes": linha.opcoes if linha is not None else [],
+            "rascunho": linha.rascunho if linha is not None else {},
+            "tentativas": linha.tentativas if linha is not None else 0,
+            "pergunta": linha.pergunta if linha is not None else None,
+            "ultima_mensagem_id": mensagem_id,
+            "ids_do_bot": anteriores,
+            "mudo_ate": linha.mudo_ate if linha is not None else None,
+            "atualizado_em": ctx.agora,
+        }
+    else:
+        campos = {
+            "estado": saida.passo,
+            "opcoes": saida.opcoes,
+            "rascunho": saida.rascunho,
+            "tentativas": saida.tentativas,
+            "pergunta": saida.pergunta,
+            "ultima_mensagem_id": mensagem_id,
+            "ids_do_bot": (anteriores + ids_novos)[-BOT_IDS_GUARDADOS:],
+            "mudo_ate": saida.mudo_ate,
+            "atualizado_em": ctx.agora,
+        }
     with com_barbearia(ctx.bid):
         if linha is None:
             ConversaWhatsapp.objects.create(
