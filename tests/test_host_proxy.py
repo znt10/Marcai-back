@@ -11,6 +11,24 @@ RAILWAY = "marcai-back-production.up.railway.app"
 SEGREDO = "segredo-do-proxy-so-de-teste"
 
 
+@pytest.fixture(autouse=True)
+def _hosts_fixos(settings):
+    """Fixa `ALLOWED_HOSTS` em vez de herdar o do ambiente.
+
+    Metade dos testes daqui prova uma RECUSA: sem a troca de host, sobra o
+    Host do Railway, e a recusa e' um 400 vindo do `ALLOWED_HOSTS`. Isso
+    torna o resultado refem de uma configuracao que nem e' do teste — com
+    `TENANT_PADRAO` ligado (o modo barbearia-padrao da rede local) o Django
+    passa a `["*"]`, nada e' recusado, e os cinco viram 404 na maquina de
+    quem esta desenvolvendo, enquanto passam no CI. "Na minha maquina falha"
+    e o pior tipo de teste vermelho: ninguem sabe se e o codigo ou a casa.
+
+    O ponto na frente cobre brutus, dontony e admin de uma vez, e continua
+    recusando tanto o host do Railway quanto `brutus.malicioso.com`.
+    """
+    settings.ALLOWED_HOSTS = [".localhost"]
+
+
 @pytest.fixture
 def com_segredo(settings):
     settings.PROXY_SEGREDO = SEGREDO
