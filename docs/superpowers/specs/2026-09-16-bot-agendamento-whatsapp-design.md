@@ -390,3 +390,22 @@ Tres consequencias para o desenho:
 **As tres precisam de um NUMERO DE TESTE DEDICADO**, e nao do numero de uso
 real: medir exige capturar o trafego, e capturar o trafego de um numero real
 e' capturar conversa de gente que nao tem nada a ver com o teste.
+
+### Fatia 0b (numero dedicado, 16/09/2026)
+
+Chip de teste conectado a barbearia local `znt`, segundo celular como cliente,
+coletor descartavel so na instancia do chip. Lida so a estrutura dos eventos
+(chaves, ids, tamanhos); captura apagada com `shred` e webhook restaurado.
+
+| Portao | Pergunta | Resposta medida | Consequencia |
+|---|---|---|---|
+| **G1** | Mensagem de cliente chega com numero? | Sim. `remoteJid` `@s.whatsapp.net`, 12 digitos (sem o nono), `fromMe: false`. `key` traz tambem `remoteJidAlt`, `addressingMode`, `participant`. | Nada muda: `do_jid` le `remoteJid`. |
+| **G2** | Onde vem o texto de uma resposta citando? | Em `message.conversation`, como mensagem comum. A citacao vem a parte em `data.contextInfo` (`stanzaId`, `quotedMessage`). | Nada muda: `ler_mensagem` le `conversation` e, na falta, `extendedTextMessage.text`. |
+| **G3** | Envio pela API volta como `messages.upsert` `fromMe`? | **Nao.** `sendText` devolveu 201 com `key.id`, e nenhum evento chegou. | Nao ha eco: `ids_do_bot` vira so protecao. O 201 traz `key.id`, entao a regra "sem id, nao avanca o passo" nao trava o bot. |
+| **—** | Mensagem digitada no aparelho da barbearia chega? | Sim. `fromMe: true`, `source: "unknown"`, `message.conversation`, corpo ~0,7 KB. | O silencio de 4h funciona como desenhado. |
+| **G4** | `base64: false` tira a midia do evento? | **Nao.** Uma foto chegou com `message.base64` inline (~217 KB) mesmo com `base64: false`. | A protecao de corpo grande da Task 11 e' obrigatoria. `base64: false` nao ganha nada e arrisca o QR: **o webhook volta a `base64: true` sempre** (reverte a divergencia 5). |
+
+Outros: `data` e' objeto (nao lista); `source` presente (`ios`, `web`,
+`unknown`). Botoes interativos (`sendButtons`) sao aceitos pela Evolution (201)
+e entregues, mas o WhatsApp nao os mostra; `sendList` falha na 2.3.7. O bot
+fica no numero digitado.
