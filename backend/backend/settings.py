@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+from celery.schedules import crontab
 from corsheaders.defaults import default_headers
 
 from tenant.config import tenant_padrao
@@ -248,6 +249,10 @@ CELERY_BEAT_SCHEDULE = {
     # confirmacao.
     "whatsapp-healthcheck": {"task": "app.tasks.whatsapp_healthcheck", "schedule": 600.0},
     "conferir-instancias": {"task": "app.tasks.conferir_instancias", "schedule": 300.0},
+    # `crontab` e nao intervalo: esta tem HORA, e uma agenda por intervalo
+    # derivaria alguns minutos a cada reinicio do beat ate a lista do dia
+    # chegar as 07:20. O fuso vem do CELERY_TIMEZONE (America/Sao_Paulo).
+    "lista-do-dia": {"task": "app.tasks.lista_do_dia", "schedule": crontab(hour=7, minute=0)},
     "zelador": {"task": "app.tasks.zelador", "schedule": 3600.0},
 }
 

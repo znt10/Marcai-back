@@ -1,3 +1,4 @@
+import uuid
 from unittest.mock import Mock, patch
 
 import pytest
@@ -17,7 +18,7 @@ def test_sem_evolution_api_url_cai_no_log_e_nao_lanca(monkeypatch, caplog):
     `enviarTexto` do front."""
     monkeypatch.delenv("EVOLUTION_API_URL", raising=False)
     with caplog.at_level("INFO"):
-        whatsapp.enviar_texto("11977771234", "Lembrete: corte hoje")
+        whatsapp.enviar_a_equipe("11977771234", "Lembrete: corte hoje")
     assert "sem EVOLUTION_API_URL" in caplog.text
     assert "11977771234" in caplog.text
 
@@ -33,7 +34,7 @@ def test_falha_de_rede_nao_lanca(monkeypatch, caplog):
 
     with patch.object(whatsapp.requests, "post", side_effect=requests.ConnectionError("boom")):
         with caplog.at_level("ERROR"):
-            whatsapp.enviar_texto("11977771234", "oi")
+            whatsapp.enviar_a_equipe("11977771234", "oi")
     assert "falha ao enviar" in caplog.text
 
 
@@ -48,7 +49,7 @@ def test_resposta_recusada_e_logada_com_status_e_motivo(monkeypatch, caplog):
     resposta = Mock(ok=False, status_code=401, text="Unauthorized")
     with patch.object(whatsapp.requests, "post", return_value=resposta):
         with caplog.at_level("ERROR"):
-            whatsapp.enviar_texto("11977771234", "oi")
+            whatsapp.enviar_a_equipe("11977771234", "oi")
     assert "401" in caplog.text
     assert "Unauthorized" in caplog.text
 
@@ -65,12 +66,21 @@ def test_sucesso_e_registrado_com_jid_e_status(monkeypatch, caplog):
     }
     with patch.object(whatsapp.requests, "post", return_value=resposta):
         with caplog.at_level("INFO"):
-            whatsapp.enviar_texto("11977771234", "oi")
+            whatsapp.enviar_a_equipe("11977771234", "oi")
     assert "aceito" in caplog.text
     assert "5511977771234@s.whatsapp.net" in caplog.text
 
 
 # ------------------------------------------------------------- numero_existe
+#
+# Esta secao passou a precisar de BANCO, e a razao e a mesma que fez a pergunta
+# mudar de forma: quem responde "esse numero tem WhatsApp" e a instancia DA
+# BARBEARIA, entao e preciso existir uma barbearia com zap e com vinculo de pe.
+# Perguntar pela central seria perguntar a um numero que pode nem estar
+# conectado — e a resposta dela nao diz nada sobre o numero que vai mandar a
+# mensagem.
+
+pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
 
 def _config_evolution(monkeypatch):
@@ -79,45 +89,61 @@ def _config_evolution(monkeypatch):
     monkeypatch.setenv("EVOLUTION_INSTANCE", "brutus")
 
 
-def test_numero_existe_sem_url_e_indeterminado(monkeypatch):
+@pytest.fixture
+def com_zap(cenario):
+    """Uma barbearia com zap e CONECTADA — o unico estado em que a pergunta
+    chega a ser feita."""
+    from tenant.models import Barbearia, EstadoInstancia, WhatsappInstancia
+
+    b = cenario["brutus"]
+    Barbearia.objects.using("owner").filter(id=b.id).update(plano="COM_ZAP")
+    b.plano = "COM_ZAP"
+    WhatsappInstancia.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=b.id, nome=f"marcai-{b.id}",
+        estado=EstadoInstancia.CONECTADO,
+    )
+    return b
+
+
+def test_numero_existe_sem_url_e_indeterminado(com_zap, monkeypatch):
     monkeypatch.delenv("EVOLUTION_API_URL", raising=False)
-    assert whatsapp.numero_existe("11977771234", "1.1.1.1") == "indeterminado"
+    assert whatsapp.numero_existe(com_zap, "11977771234", "1.1.1.1") == "indeterminado"
 
 
-def test_numero_existe_true(monkeypatch):
+def test_numero_existe_true(com_zap, monkeypatch):
     _config_evolution(monkeypatch)
     resposta = Mock(ok=True)
     resposta.json.return_value = [{"exists": True, "jid": "5511977771234@s.whatsapp.net"}]
     with patch.object(whatsapp.requests, "post", return_value=resposta):
-        assert whatsapp.numero_existe("11977771234", "1.1.1.1") == "existe"
+        assert whatsapp.numero_existe(com_zap, "11977771234", "1.1.1.1") == "existe"
 
 
-def test_numero_existe_false_bloqueia(monkeypatch):
+def test_numero_existe_false_bloqueia(com_zap, monkeypatch):
     _config_evolution(monkeypatch)
     resposta = Mock(ok=True)
     resposta.json.return_value = [{"exists": False}]
     with patch.object(whatsapp.requests, "post", return_value=resposta):
-        assert whatsapp.numero_existe("11977771234", "1.1.1.1") == "nao_existe"
+        assert whatsapp.numero_existe(com_zap, "11977771234", "1.1.1.1") == "nao_existe"
 
 
-def test_numero_existe_falha_de_rede_e_indeterminado(monkeypatch, caplog):
+def test_numero_existe_falha_de_rede_e_indeterminado(com_zap, monkeypatch, caplog):
     _config_evolution(monkeypatch)
     import requests
 
     with patch.object(whatsapp.requests, "post", side_effect=requests.ConnectionError("boom")):
         with caplog.at_level("ERROR"):
-            assert whatsapp.numero_existe("11977771234", "1.1.1.1") == "indeterminado"
+            assert whatsapp.numero_existe(com_zap, "11977771234", "1.1.1.1") == "indeterminado"
     assert "falha ao verificar numero" in caplog.text
 
 
-def test_numero_existe_resposta_recusada_e_indeterminado(monkeypatch):
+def test_numero_existe_resposta_recusada_e_indeterminado(com_zap, monkeypatch):
     _config_evolution(monkeypatch)
     resposta = Mock(ok=False, status_code=401)
     with patch.object(whatsapp.requests, "post", return_value=resposta):
-        assert whatsapp.numero_existe("11977771234", "1.1.1.1") == "indeterminado"
+        assert whatsapp.numero_existe(com_zap, "11977771234", "1.1.1.1") == "indeterminado"
 
 
-def test_numero_existe_usa_cache_dentro_do_ttl(monkeypatch):
+def test_numero_existe_usa_cache_dentro_do_ttl(com_zap, monkeypatch):
     """Uma consulta so' por numero dentro do TTL — a segunda chamada nao
     bate na Evolution de novo."""
     _config_evolution(monkeypatch)
@@ -127,13 +153,13 @@ def test_numero_existe_usa_cache_dentro_do_ttl(monkeypatch):
     resposta = Mock(ok=True)
     resposta.json.return_value = [{"exists": True}]
     with patch.object(whatsapp.requests, "post", return_value=resposta) as mock_post:
-        assert whatsapp.numero_existe("11977771234", "1.1.1.1") == "existe"
+        assert whatsapp.numero_existe(com_zap, "11977771234", "1.1.1.1") == "existe"
         relogio["agora"] += 1_000  # bem dentro do TTL de 24h
-        assert whatsapp.numero_existe("11977771234", "1.1.1.1") == "existe"
+        assert whatsapp.numero_existe(com_zap, "11977771234", "1.1.1.1") == "existe"
     mock_post.assert_called_once()
 
 
-def test_numero_existe_expira_apos_o_ttl(monkeypatch):
+def test_numero_existe_expira_apos_o_ttl(com_zap, monkeypatch):
     _config_evolution(monkeypatch)
     relogio = {"agora": 0.0}
     monkeypatch.setattr(whatsapp, "_agora_ms", lambda: relogio["agora"])
@@ -141,13 +167,13 @@ def test_numero_existe_expira_apos_o_ttl(monkeypatch):
     resposta = Mock(ok=True)
     resposta.json.return_value = [{"exists": True}]
     with patch.object(whatsapp.requests, "post", return_value=resposta) as mock_post:
-        assert whatsapp.numero_existe("11977771234", "1.1.1.1") == "existe"
+        assert whatsapp.numero_existe(com_zap, "11977771234", "1.1.1.1") == "existe"
         relogio["agora"] += whatsapp.CHECK_NUMERO_TTL_MS + 1
-        assert whatsapp.numero_existe("11977771234", "1.1.1.1") == "existe"
+        assert whatsapp.numero_existe(com_zap, "11977771234", "1.1.1.1") == "existe"
     assert mock_post.call_count == 2
 
 
-def test_numero_existe_limite_por_ip_por_hora(monkeypatch):
+def test_numero_existe_limite_por_ip_por_hora(com_zap, monkeypatch):
     """Um formulario publico que responde 'esse numero tem WhatsApp' e' uma
     ferramenta de varredura — por isso o limite e' por IP, nao por numero."""
     _config_evolution(monkeypatch)
@@ -160,23 +186,23 @@ def test_numero_existe_limite_por_ip_por_hora(monkeypatch):
         for i in range(whatsapp.CHECK_NUMERO_LIMITE_POR_IP_HORA):
             # numero DIFERENTE a cada volta, senao o cache do numero (nao o
             # limite de IP) que evitaria a segunda consulta.
-            whatsapp.numero_existe(f"1197777000{i}", "2.2.2.2")
+            whatsapp.numero_existe(com_zap, f"1197777000{i}", "2.2.2.2")
         assert mock_post.call_count == whatsapp.CHECK_NUMERO_LIMITE_POR_IP_HORA
 
         # a proxima, do MESMO ip, estoura o limite — nem bate na Evolution.
-        resultado = whatsapp.numero_existe("11977779999", "2.2.2.2")
+        resultado = whatsapp.numero_existe(com_zap, "11977779999", "2.2.2.2")
     assert resultado == "indeterminado"
     assert mock_post.call_count == whatsapp.CHECK_NUMERO_LIMITE_POR_IP_HORA
 
 
-def test_numero_existe_ip_diferente_tem_janela_propria(monkeypatch):
+def test_numero_existe_ip_diferente_tem_janela_propria(com_zap, monkeypatch):
     _config_evolution(monkeypatch)
     resposta = Mock(ok=True)
     resposta.json.return_value = [{"exists": True}]
     with patch.object(whatsapp.requests, "post", return_value=resposta) as mock_post:
         for i in range(whatsapp.CHECK_NUMERO_LIMITE_POR_IP_HORA):
-            whatsapp.numero_existe(f"1197777000{i}", "3.3.3.3")
-        assert whatsapp.numero_existe("11977779999", "4.4.4.4") == "existe"
+            whatsapp.numero_existe(com_zap, f"1197777000{i}", "3.3.3.3")
+        assert whatsapp.numero_existe(com_zap, "11977779999", "4.4.4.4") == "existe"
     assert mock_post.call_count == whatsapp.CHECK_NUMERO_LIMITE_POR_IP_HORA + 1
 
 

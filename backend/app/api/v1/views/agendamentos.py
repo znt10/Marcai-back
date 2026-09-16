@@ -23,7 +23,8 @@ from app.services.mensagens import (
     msg_confirmacao,
 )
 from app.services.trava_ip import ip_de
-from app.services.whatsapp import enviar_texto, numero_existe
+from app.services.whatsapp import enviar_a_equipe, enviar_ao_cliente, numero_existe
+from tenant.models import TipoMensagem
 from tenant.telefone import formatar, normalizar
 
 NAO_ENCONTRADO = {"erro": "Agendamento não encontrado."}
@@ -49,7 +50,7 @@ class AgendamentosView(ExigeTenant, APIView):
             return Response({"erro": "Confere o WhatsApp — parece faltar dígito."}, status=422)
 
         ip = ip_de(request)
-        if numero_existe(whatsapp, ip) == "nao_existe":
+        if numero_existe(request.barbearia, whatsapp, ip) == "nao_existe":
             return Response(
                 {"erro": "Esse número não tem WhatsApp. Confere pra gente?"}, status=422
             )
@@ -72,18 +73,21 @@ class AgendamentosView(ExigeTenant, APIView):
 
         # Fire-and-forget, DEPOIS do commit: falha de WhatsApp nao desfaz nada.
         link = f"{request.headers.get('origin', '')}/agendamento/{criado['codigo']}"
-        enviar_texto(
+        enviar_ao_cliente(
+            request.barbearia,
             whatsapp,
             msg_confirmacao(
                 cliente_nome=d["nome"], barbeiro_nome=criado["barbeiro_nome"],
                 servico_nome=criado["servico_nome"], inicio=criado["inicio"],
                 endereco=request.barbearia.endereco, link=link,
             ),
+            tipo=TipoMensagem.CONFIRMACAO,
+            cliente_nome=d["nome"],
         )
         # E o barbeiro. Segundo envio, e nao um destinatario a mais no mesmo:
         # sao textos diferentes — o do cliente confirma e da o link de
         # cancelar; o do barbeiro so' avisa que entrou horario.
-        enviar_texto(
+        enviar_a_equipe(
             criado["barbeiro_whatsapp"],
             msg_barbeiro_novo(
                 cliente_nome=d["nome"], servico_nome=criado["servico_nome"],
@@ -124,16 +128,19 @@ class AgendamentoCancelarPublicoView(ExigeTenant, APIView):
                 status=422,
             )
         if resultado["tipo"] == "ok":
-            enviar_texto(
+            enviar_ao_cliente(
+                request.barbearia,
                 resultado["cliente_whatsapp"],
                 msg_cancelamento(
                     barbeiro_nome=resultado["barbeiro_nome"], inicio=resultado["inicio"],
                 ),
+                tipo=TipoMensagem.CANCELAMENTO,
+                cliente_nome=resultado["cliente_nome"],
             )
             # A vaga abriu: quem ia cortar precisa saber sem abrir o painel.
             # So' no `tipo == "ok"` — o `ja_cancelado` cai fora deste bloco de
             # proposito, senao dois toques no botao mandariam dois avisos.
-            enviar_texto(
+            enviar_a_equipe(
                 resultado["barbeiro_whatsapp"],
                 msg_barbeiro_cancelado(
                     cliente_nome=resultado["cliente_nome"],

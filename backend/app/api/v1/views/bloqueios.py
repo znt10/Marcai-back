@@ -11,7 +11,8 @@ from app.services.bloqueios import apagar_bloqueio, criar_bloqueio, folga_sobrep
 from app.services.conflitos import agendamentos_no_bloqueio
 from app.services.horarios import bloqueio_valido
 from app.services.mensagens import msg_cancelamento_pela_barbearia
-from app.services.whatsapp import enviar_texto
+from app.services.whatsapp import enviar_ao_cliente
+from tenant.models import TipoMensagem
 
 
 class BloqueiosView(ExigeSessao, APIView):
@@ -82,7 +83,8 @@ class BloqueiosView(ExigeSessao, APIView):
             cancelados += 1
             # Fire-and-forget, igual ao resto: WhatsApp fora do ar nao desfaz
             # um cancelamento que ja' valeu.
-            enviar_texto(
+            enviar_ao_cliente(
+                request.barbearia,
                 dados["cliente_whatsapp"],
                 msg_cancelamento_pela_barbearia(
                     cliente_nome=dados["cliente_nome"],
@@ -91,6 +93,8 @@ class BloqueiosView(ExigeSessao, APIView):
                     inicio=dados["inicio"],
                     endereco=request.barbearia.endereco,
                 ),
+                tipo=TipoMensagem.CANCELAMENTO,
+                cliente_nome=dados["cliente_nome"],
             )
         return Response({"id": novo_id, "cancelados": cancelados}, status=201)
 

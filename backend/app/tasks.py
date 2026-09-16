@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from celery import shared_task
 
 from app.services.lembrete import enviar_pendentes
+from app.services.lista_do_dia import enviar as enviar_lista_do_dia
 from app.services.whatsapp import estado_da_instancia
 from app.services.whatsapp_eventos import aplicar_estado
 from app.services.whatsapp_instancias import consultar_estado, garantir_instancia
@@ -41,6 +42,18 @@ def whatsapp_healthcheck() -> str:
             estado,
         )
     return estado
+
+
+@shared_task
+def lista_do_dia() -> int:
+    """As 07:00 de Sao Paulo (o `CELERY_TIMEZONE` ja e esse), pelo numero
+    CENTRAL, nos dois planos.
+
+    E a mensagem que faz o plano sem zap valer alguma coisa: la o cliente nao
+    recebe nada, e sem isto o barbeiro tambem nao saberia da agenda sem abrir
+    o painel.
+    """
+    return enviar_lista_do_dia(datetime.now(timezone.utc))
 
 
 @shared_task

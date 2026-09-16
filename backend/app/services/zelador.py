@@ -1,8 +1,12 @@
 import logging
+from datetime import timedelta
 
 from django.db import connections
+from django.utils import timezone
 
 from tenant.config import ZELADOR_DIAS_DE_HISTORICO
+from tenant.models import Barbearia, MensagemNaoEnviada
+from tenant.rls import com_barbearia
 
 logger = logging.getLogger(__name__)
 
@@ -69,4 +73,25 @@ def alarmar_e_podar() -> dict:
         "recusados": recusados,
         "podados_message_update": podados_message_update,
         "podados_message": podados_message,
+        "podadas_nao_enviadas": _podar_nao_enviadas(),
     }
+
+
+def _podar_nao_enviadas() -> int:
+    """As "N mensagens nao enviadas" do painel, depois de 7 dias.
+
+    Outro banco e outra logica do resto do zelador — este e o `brutus`, com
+    RLS, entao a poda e tenant a tenant. O prazo e o mesmo
+    (`ZELADOR_DIAS_DE_HISTORICO`) porque a razao e a mesma: passado o prazo, a
+    linha ja nao informa nada acionavel. Uma confirmacao que nao saiu ha dez
+    dias descreve um horario que ja aconteceu (ou nao) — o dono nao tem o que
+    fazer com ela, e o contador do painel viraria um numero que so cresce e que
+    ninguem consegue zerar.
+    """
+    limite = timezone.now() - timedelta(days=ZELADOR_DIAS_DE_HISTORICO)
+    podadas = 0
+    for b in Barbearia.objects.all():
+        with com_barbearia(b.id):
+            apagadas, _ = MensagemNaoEnviada.objects.filter(criado_em__lt=limite).delete()
+        podadas += apagadas
+    return podadas

@@ -237,7 +237,7 @@ def test_bloquear_confirmando_cancela_e_avisa_o_cliente(client, cenario):
 
     corpo = _bloqueio_de_uma_vez(inicio - timedelta(minutes=30), inicio + timedelta(hours=1))
     corpo["cancelarConflitos"] = True
-    with patch("app.api.v1.views.bloqueios.enviar_texto") as mock_envia:
+    with patch("app.api.v1.views.bloqueios.enviar_ao_cliente") as mock_envia:
         r = client.post(
             "/api/painel/bloqueios", corpo,
             content_type="application/json", headers={"host": host, **CABECALHO},
@@ -250,7 +250,7 @@ def test_bloquear_confirmando_cancela_e_avisa_o_cliente(client, cenario):
     assert Bloqueio.objects.using("owner").count() == 1
     assert Agendamento.objects.using("owner").get(id=a.id).status == "CANCELADO_BARBEIRO"
     mock_envia.assert_called_once()
-    assert "cancel" in mock_envia.call_args.args[1].lower()
+    assert "cancel" in mock_envia.call_args.args[2].lower()
 
 
 def test_bloqueio_sem_ninguem_dentro_continua_passando_direto(client, cenario):

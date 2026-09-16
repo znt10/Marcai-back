@@ -9,7 +9,8 @@ from app.api.v1.serializers.agendamentos import CriarAgendamentoSerializer
 from app.services.agendamentos import ErroCliente, cancelar, eh_sobreposicao, marcar
 from app.services.autorizacao import filtro_do_barbeiro
 from app.services.mensagens import msg_cancelamento_pela_barbearia, msg_confirmacao
-from app.services.whatsapp import enviar_texto
+from app.services.whatsapp import enviar_ao_cliente
+from tenant.models import TipoMensagem
 from tenant.telefone import normalizar
 from tenant.identidade import como_uuid
 
@@ -57,13 +58,16 @@ class AgendamentosPainelView(ExigeSessao, APIView):
 
         # Fire-and-forget, DEPOIS do commit: falha de WhatsApp nao desfaz nada.
         link = f"{request.headers.get('origin', '')}/agendamento/{criado['codigo']}"
-        enviar_texto(
+        enviar_ao_cliente(
+            request.barbearia,
             whatsapp,
             msg_confirmacao(
                 cliente_nome=d["nome"], barbeiro_nome=criado["barbeiro_nome"],
                 servico_nome=criado["servico_nome"], inicio=criado["inicio"],
                 endereco=request.barbearia.endereco, link=link,
             ),
+            tipo=TipoMensagem.CONFIRMACAO,
+            cliente_nome=d["nome"],
         )
         return Response({"codigo": criado["codigo"]}, status=201)
 
@@ -77,12 +81,15 @@ class AgendamentoCancelarView(ExigeSessao, APIView):
         if cancelado is None:
             return Response(NAO_ENCONTRADO, status=404)
 
-        enviar_texto(
+        enviar_ao_cliente(
+            request.barbearia,
             cancelado["cliente_whatsapp"],
             msg_cancelamento_pela_barbearia(
                 cliente_nome=cancelado["cliente_nome"], barbeiro_nome=cancelado["barbeiro_nome"],
                 servico_nome=cancelado["servico_nome"], inicio=cancelado["inicio"],
                 endereco=request.barbearia.endereco,
             ),
+            tipo=TipoMensagem.CANCELAMENTO,
+            cliente_nome=cancelado["cliente_nome"],
         )
         return Response({"ok": True})

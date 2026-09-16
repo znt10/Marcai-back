@@ -100,7 +100,7 @@ def test_envia_e_marca_o_pendente_dentro_da_janela(client, cenario):
     inicio = datetime.now(timezone.utc) + timedelta(minutes=30)
     a = _agendamento(b.id, barbeiro, inicio)
 
-    with patch("app.services.lembrete.enviar_texto") as mock_envia:
+    with patch("app.services.lembrete.enviar_ao_cliente") as mock_envia:
         r = client.post("/api/cron/lembretes", headers=_cabecalho())
     assert r.status_code == 200
     assert r.json() == {"enviados": 1}
@@ -118,7 +118,7 @@ def test_nao_manda_de_novo_o_ja_avisado(client, cenario):
     inicio = datetime.now(timezone.utc) + timedelta(minutes=30)
     _agendamento(b.id, barbeiro, inicio, lembrete_enviado_em=datetime.now(timezone.utc))
 
-    with patch("app.services.lembrete.enviar_texto") as mock_envia:
+    with patch("app.services.lembrete.enviar_ao_cliente") as mock_envia:
         r = client.post("/api/cron/lembretes", headers=_cabecalho())
     assert r.status_code == 200
     assert r.json() == {"enviados": 0}
@@ -132,7 +132,7 @@ def test_fora_da_janela_nao_e_pego(client, cenario):
     inicio = datetime.now(timezone.utc) + timedelta(hours=2)
     _agendamento(b.id, barbeiro, inicio)
 
-    with patch("app.services.lembrete.enviar_texto") as mock_envia:
+    with patch("app.services.lembrete.enviar_ao_cliente") as mock_envia:
         r = client.post("/api/cron/lembretes", headers=_cabecalho())
     assert r.json() == {"enviados": 0}
     mock_envia.assert_not_called()
@@ -179,7 +179,7 @@ def test_isola_por_barbearia_e_soma_o_total(client, cenario):
     _agendamento(b1.id, barbeiro1, inicio)
     _agendamento(b2.id, barbeiro2, inicio)
 
-    with patch("app.services.lembrete.enviar_texto") as mock_envia:
+    with patch("app.services.lembrete.enviar_ao_cliente") as mock_envia:
         r = client.post("/api/cron/lembretes", headers=_cabecalho())
     assert r.json() == {"enviados": 2}
     assert mock_envia.call_count == 2
