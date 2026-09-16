@@ -112,7 +112,7 @@ def _registrar_nao_enviada(barbearia, tipo: str, cliente_nome: str) -> None:
         logger.error("[whatsapp] falha ao registrar mensagem nao enviada: %s", e)
 
 
-def _enviar(instancia: str, whatsapp_digitos: str, mensagem: str) -> None:
+def _enviar(instancia: str, whatsapp_digitos: str, mensagem: str) -> str | None:
     """Fire-and-forget. Falha de WhatsApp NUNCA derruba um agendamento (§10.2).
 
     Porte fiel de `enviarTexto` (marcai-front/src/lib/whatsapp.ts): loga e
@@ -124,6 +124,8 @@ def _enviar(instancia: str, whatsapp_digitos: str, mensagem: str) -> None:
     A INSTANCIA virou parametro: era sempre a central, e agora e' a da
     barbearia quando o destinatario e' cliente. O resto do corpo nao mudou uma
     linha.
+
+    Devolve o id da mensagem aceita, ou None.
     """
     cfg = _config()
     if not cfg["url"]:
@@ -158,9 +160,13 @@ def _enviar(instancia: str, whatsapp_digitos: str, mensagem: str) -> None:
         corpo = r.json()
     except ValueError:
         pass
-    jid = (corpo or {}).get("key", {}).get("remoteJid", "?")
+    chave = (corpo or {}).get("key", {})
+    jid = chave.get("remoteJid", "?")
     status = (corpo or {}).get("status", "?")
     logger.info("[whatsapp] aceito para %s (jid %s, status %s)", whatsapp_digitos, jid, status)
+    # O id sobe para quem chamou. Os envios de sempre o ignoram; o bot o
+    # guarda para reconhecer o eco da propria mensagem no webhook.
+    return chave.get("id")
 
 
 def numero_existe(barbearia, whatsapp_digitos: str, ip: str) -> str:
