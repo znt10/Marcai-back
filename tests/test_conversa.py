@@ -71,6 +71,13 @@ def test_zero_chama_gente_em_qualquer_passo(passo):
     assert c.decidir(_estado(passo), "0", AGORA) == c.ChamarHumano()
 
 
+def test_zero_chama_gente_mesmo_com_conversa_expirada():
+    """"0" nao depende da conversa estar fresca: quem digita "0" numa
+    conversa de ontem ainda quer falar com alguem, nao recomecar o menu."""
+    estado = _estado(ha_min=21)
+    assert c.decidir(estado, "0", AGORA) == c.ChamarHumano()
+
+
 def test_zero_funciona_depois_de_um_beco_sem_opcoes():
     """Depois de "nao achei horario, responde 0", a conversa fica no MENU sem
     opcoes. O 0 tem que valer ali — foi o que a mensagem mandou fazer."""
@@ -166,6 +173,16 @@ def test_outro_dia_volta_para_os_dias_do_comeco():
     )
 
 
+@pytest.mark.parametrize("escolha", ["sem-pipe-aqui", "depois:"])
+def test_hora_malformada_volta_ao_menu_em_vez_de_estourar(escolha):
+    """Um id de HORA sem "|" (ou um "depois:" sem timestamp atras) nao e'
+    algo que a casca deveria mandar, mas a maquina nao pode estourar por
+    causa disso — volta ao menu, como qualquer escolha nao reconhecida."""
+    opcoes = [{"id": escolha, "rotulo": "x"}]
+    estado = _estado(c.HORA, opcoes, {"dia": "2026-09-17"})
+    assert c.decidir(estado, "1", AGORA) == c.Ir(c.MENU, {})
+
+
 def test_nome_valido_segue_para_confirmar_sem_espacos_sobrando():
     estado = _estado(c.NOME, opcoes=[], rascunho={"servico_id": "s1"})
     assert c.decidir(estado, "  João   da Silva ", AGORA) == c.Ir(
@@ -197,6 +214,13 @@ def test_confirmar_cancelamento():
                                          {"id": "nao", "rotulo": "Não"}], {"codigo": "cod1"})
     assert c.decidir(estado, "1", AGORA) == c.Cancelar("cod1")
     assert c.decidir(estado, "2", AGORA) == c.Ir(c.MENU, {})
+
+
+def test_confirmar_cancelamento_sem_codigo_no_rascunho_volta_ao_menu():
+    """Nao e' pra acontecer — QUAL_AGENDAMENTO e' quem grava o codigo — mas
+    se o rascunho chegar sem ele, a maquina nao pode estourar KeyError."""
+    estado = _estado(c.CONFIRMA_CANCEL, [{"id": "sim", "rotulo": "Sim"}], {})
+    assert c.decidir(estado, "1", AGORA) == c.Ir(c.MENU, {})
 
 
 def test_lembrete_confirma_ou_avisa_que_nao_vai():

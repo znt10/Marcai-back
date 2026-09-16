@@ -104,18 +104,20 @@ def expirou(estado: Estado, agora: datetime) -> bool:
 def decidir(estado: Estado, texto, agora: datetime):
     """A ordem das regras e' o que importa, e cada uma tem um motivo:
 
-    1. conversa velha recomeca ANTES de ler o numero — senao um "1" de ontem
-       seria obedecido;
-    2. o "0" vem antes de tudo o que sobrou, inclusive de "sem opcoes": e' a
-       saida que as mensagens de beco mandam usar;
+    1. o "0" vem antes de tudo o mais, inclusive da conversa velha: a spec
+       diz que "0" chama gente em qualquer passo, e isso nao pode depender
+       de a conversa ainda estar fresca — quem digita "0" numa conversa de
+       ontem ainda quer falar com alguem, nao recomecar o menu;
+    2. conversa velha recomeca ANTES de ler o resto do numero — senao um "1"
+       de ontem seria obedecido;
     3. NOME e' o unico passo de texto livre;
     4. sem opcoes guardadas nao ha o que entender, entao mostra o menu.
     """
-    if expirou(estado, agora):
-        return Ir(MENU, {})
     n = numero_escolhido(texto)
     if n == 0:
         return ChamarHumano()
+    if expirou(estado, agora):
+        return Ir(MENU, {})
     if estado.passo == NOME:
         nome = " ".join(texto.split()) if isinstance(texto, str) else ""
         if n is None and 2 <= len(nome) <= 60:
@@ -160,9 +162,16 @@ def _escolheu(passo: str, r: dict, escolha: str):
         if escolha == "outro_dia":
             return Ir(DIA, {**r, "de": None, "depois": None})
         depois = _apos(escolha, "depois:")
-        if depois:
-            return Ir(HORA, {**r, "depois": depois})
-        inicio, barbeiro_id = escolha.split("|", 1)
+        if depois is not None:
+            # "depois:" sem nada atras e' malformado — nao ha timestamp para
+            # continuar, e nao e' o "0" nem uma opcao reconhecida: volta ao menu.
+            return Ir(HORA, {**r, "depois": depois}) if depois else Ir(MENU, {})
+        partes = escolha.split("|", 1)
+        if len(partes) != 2 or not partes[0] or not partes[1]:
+            # Sem "|" (ou com um dos dois lados vazio) nao da' para separar
+            # inicio de barbeiro_id: em vez de estourar, volta ao menu.
+            return Ir(MENU, {})
+        inicio, barbeiro_id = partes
         novo = {**r, "inicio": inicio, "barbeiro_escolhido": barbeiro_id}
         return Ir(CONFIRMA if r.get("cliente_nome") else NOME, novo)
     elif passo == CONFIRMA:
@@ -172,7 +181,10 @@ def _escolheu(passo: str, r: dict, escolha: str):
         return Ir(CONFIRMA_CANCEL, {"codigo": escolha})
     elif passo == CONFIRMA_CANCEL:
         if escolha == "sim":
-            return Cancelar(r["codigo"])
+            codigo = r.get("codigo")
+            # Sem codigo no rascunho nao ha o que cancelar — nao e' pra
+            # acontecer, mas em vez de estourar KeyError, volta ao menu.
+            return Cancelar(codigo) if codigo else Ir(MENU, {})
     elif passo == AGUARDANDO_LEMBRETE:
         codigo = _apos(escolha, "confirmar:")
         if codigo:
