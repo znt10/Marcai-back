@@ -68,3 +68,77 @@ def test_aninhar_com_barbearia_falha_alto_em_vez_de_vazar(cenario):
         assert list(Barbeiro.objects.values_list("nome", flat=True)) == [
             "Barbeiro da Brutus"
         ]
+
+
+# ---- As duas tabelas da fatia 1 ----
+#
+# Elas nascem com politica na PROPRIA migration (0005), e nao por edicao da
+# 0002/0004. Estes casos existem para provar que a politica nova vale de
+# verdade, e nao so' que o `CREATE POLICY` rodou: uma tabela de tenant sem
+# politica nao da erro nenhum — ela simplesmente mostra tudo para todo mundo,
+# que e o defeito mais caro possivel num produto multi-barbearia.
+
+
+def _instancia(barbearia, nome):
+    from tenant.models import WhatsappInstancia
+
+    return WhatsappInstancia.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=barbearia.id, nome=nome,
+    )
+
+
+def _nao_enviada(barbearia, cliente_nome):
+    from tenant.models import MensagemNaoEnviada
+
+    return MensagemNaoEnviada.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=barbearia.id,
+        tipo="CONFIRMACAO", cliente_nome=cliente_nome,
+    )
+
+
+def test_instancia_de_whatsapp_nao_vaza_entre_barbearias(cenario):
+    from tenant.models import WhatsappInstancia
+
+    _instancia(cenario["brutus"], "marcai-da-brutus")
+    _instancia(cenario["dontony"], "marcai-da-dontony")
+
+    with com_barbearia(cenario["brutus"].id):
+        assert list(WhatsappInstancia.objects.values_list("nome", flat=True)) == [
+            "marcai-da-brutus"
+        ]
+    # Fora do wrapper, ZERO — o numero de WhatsApp de uma barbearia nao pode
+    # aparecer numa consulta que esqueceu o tenant.
+    assert WhatsappInstancia.objects.count() == 0
+
+
+def test_mensagens_nao_enviadas_nao_vazam_entre_barbearias(cenario):
+    from tenant.models import MensagemNaoEnviada
+
+    _nao_enviada(cenario["brutus"], "Cliente da Brutus")
+    _nao_enviada(cenario["dontony"], "Cliente da Dom Tony")
+
+    with com_barbearia(cenario["dontony"].id):
+        assert list(MensagemNaoEnviada.objects.values_list("cliente_nome", flat=True)) == [
+            "Cliente da Dom Tony"
+        ]
+    assert MensagemNaoEnviada.objects.count() == 0
+
+
+def test_escrever_para_a_barbearia_errada_e_recusado(cenario):
+    """O WITH CHECK, que o teste de leitura sozinho nao cobre: dentro do
+    tenant A, um INSERT carimbado com o id do tenant B tem que morrer no
+    banco. Sem ele, um bug de `barbearia_id` no webhook escreveria o estado do
+    WhatsApp de uma barbearia dentro de outra."""
+    from django.db.utils import ProgrammingError
+    from tenant.models import WhatsappInstancia
+
+    with com_barbearia(cenario["brutus"].id):
+        # O `match` prende o caso na POLITICA, e nao num erro qualquer: sem
+        # ele, uma coluna renomeada ou uma FK quebrada tambem levantaria
+        # ProgrammingError e o teste continuaria verde provando outra coisa.
+        with pytest.raises(ProgrammingError, match="row-level security policy"):
+            WhatsappInstancia.objects.create(
+                id=str(uuid.uuid4()),
+                barbearia_id=cenario["dontony"].id,
+                nome="marcai-contrabandeada",
+            )

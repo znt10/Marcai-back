@@ -44,6 +44,13 @@ x-django: &django
     EVOLUTION_API_URL: http://evolution:8080
     EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?}
     EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-Marcai}
+    # O par do webhook por barbearia. A Evolution bate de volta no Django pela
+    # rede interna, com `Host: admin.${DOMINIO_BASE}` — o mesmo truque do cron.
+    # O segredo leva `:?` porque vazio NEGA TUDO: subir sem ele nao quebraria
+    # nada visivelmente, so' deixaria todo evento de conexao cair no 401 e o
+    # painel mentindo "desconectado" para barbearia nenhuma.
+    WHATSAPP_WEBHOOK_SEGREDO: ${WHATSAPP_WEBHOOK_SEGREDO:?}
+    WHATSAPP_WEBHOOK_URL: http://api:8000/api/interno/whatsapp/evento
     URL_BASE: https://${DOMINIO_BASE}
 
 services:

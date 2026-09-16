@@ -37,6 +37,38 @@ class StatusAgendamento(models.TextChoices):
     CANCELADO_BARBEIRO = "CANCELADO_BARBEIRO"
 
 
+class PlanoBarbearia(models.TextChoices):
+    """O que a barbearia comprou. `SEM_ZAP` e o default porque e o plano mais
+    barato e porque errar para ele nao manda mensagem nenhuma de um numero
+    errado — errar para `COM_ZAP` mandaria.
+    """
+
+    SEM_ZAP = "SEM_ZAP"
+    COM_ZAP = "COM_ZAP"
+
+
+class EstadoInstancia(models.TextChoices):
+    """O ciclo de vida do vinculo com o WhatsApp da barbearia.
+
+    `PENDENTE` nao e "desconectado": e "a Evolution ainda nao sabe que esta
+    instancia existe". Os dois precisam ser distintos porque a conferencia
+    periodica age diferente em cada um — no `PENDENTE` ela CRIA a instancia,
+    no `DESCONECTADO` ela so confere. Colapsar os dois faria a conferencia
+    tentar recriar uma instancia viva a cada cinco minutos.
+    """
+
+    PENDENTE = "PENDENTE"
+    AGUARDANDO_QR = "AGUARDANDO_QR"
+    CONECTADO = "CONECTADO"
+    DESCONECTADO = "DESCONECTADO"
+
+
+class TipoMensagem(models.TextChoices):
+    CONFIRMACAO = "CONFIRMACAO"
+    CANCELAMENTO = "CANCELAMENTO"
+    LEMBRETE = "LEMBRETE"
+
+
 class Barbearia(models.Model):
     """A tabela de tenant. Unica sem barbearia_id e unica fora do RLS — ela e
     lida ANTES de existir tenant, para traduzir subdominio em id, e por isso e
@@ -63,6 +95,15 @@ class Barbearia(models.Model):
     # barbearia. Nulo e string vazia seriam dois jeitos de dizer a mesma coisa.
     horario_resumo = models.TextField(null=True)
     whatsapp_contato = models.TextField()
+    # QUEM VENDE decide isto, nao o dono da barbearia: a coluna vive numa
+    # tabela em que `brutus_app` nao tem UPDATE nenhum (o REVOKE da 0002), e
+    # so o alias `admin` (`brutus_admin`, GRANT da 0004) a escreve. Nao e
+    # zelo — e a razao de o estado da CONEXAO morar noutra tabela: guardar o
+    # QR aqui obrigaria a abrir aquele REVOKE para o runtime escrever, e com
+    # ele viria `slug` e `ativo` de brinde.
+    plano = models.CharField(
+        max_length=20, choices=PlanoBarbearia, default=PlanoBarbearia.SEM_ZAP,
+    )
     ativo = models.BooleanField(default=True)
     criado_em = models.DateTimeField(default=timezone.now)
 
@@ -359,3 +400,74 @@ class Agendamento(models.Model):
             # sempre entram por barbeiro E janela de tempo juntos.
             models.Index(fields=["barbeiro", "inicio"], name="agendamento_barbeiro_dia"),
         ]
+
+
+class WhatsappInstancia(models.Model):
+    """O numero da propria barbearia, do lado de ca da Evolution.
+
+    Uma linha por barbearia com zap. Tabela SEPARADA de `Barbearia`, e nao
+    colunas nela, pelo motivo escrito no campo `plano` la em cima: o runtime
+    escreve aqui a cada webhook (estado novo, QR novo), e `tenant_barbearia`
+    e' justamente a tabela que o runtime nao pode escrever.
+
+    O que ela guarda e' CACHE de um estado que mora na Evolution. A fonte da
+    verdade continua sendo o `connectionState` de la; esta tabela existe para
+    o painel poder responder sem uma chamada de rede por pedido, e para a
+    faixa de "desconectado" aparecer sem esperar ninguem perguntar.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    # OneToOne e nao ForeignKey: duas instancias para a mesma barbearia seriam
+    # dois numeros falando com o mesmo cliente, e nenhum codigo saberia qual e'
+    # o certo. O banco recusa antes de a pergunta existir.
+    barbearia = models.OneToOneField(
+        Barbearia, on_delete=models.RESTRICT, related_name="whatsapp",
+    )
+    # `marcai-<barbearia_id>`, e o nome e' a chave do lado da Evolution: e' por
+    # ele que o webhook descobre de quem e' o evento. UNIQUE aqui para que um
+    # nome repetido morra no INSERT, e nao mais tarde, com dois tenants
+    # disputando o mesmo vinculo na Evolution.
+    nome = models.TextField(unique=True)
+    estado = models.CharField(
+        max_length=20, choices=EstadoInstancia, default=EstadoInstancia.PENDENTE,
+    )
+    # O ultimo QR recebido, ja no formato `data:image/png;base64,...` que a
+    # Evolution manda (medido na 2.3.7) — o painel o joga direto no `<img
+    # src>`. Nulo fora de `AGUARDANDO_QR`: QR velho guardado depois de
+    # conectar e' um convite a escanear um codigo morto.
+    qr_base64 = models.TextField(null=True)
+    numero_conectado = models.TextField(null=True)
+    # Nulo enquanto conectado, preenchido na TRANSICAO para desconectado —
+    # nunca reescrito enquanto continua caido. E' isso que faz a faixa do
+    # painel dizer "desde 14:02" em vez de "desde agora" a cada conferencia.
+    desconectado_desde = models.DateTimeField(null=True)
+    atualizado_em = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return f"{self.nome} ({self.estado})"
+
+
+class MensagemNaoEnviada(models.Model):
+    """A mensagem que o cliente NAO recebeu porque o WhatsApp da barbearia
+    estava fora do ar.
+
+    Nao e' fila: nada aqui e' reenviado depois, e isso foi decidido. Uma
+    confirmacao que chega tres horas atrasada, depois que o cliente ja ligou
+    para perguntar, e' pior que nenhuma. O que a linha compra e' o painel
+    poder dizer "N mensagens nao enviadas" — o dono descobre a queda pelo
+    prejuizo, nao so pela faixa.
+
+    Sem `cliente_id`: guardar o NOME (o que o painel mostra) em vez da chave
+    evita segurar uma FK viva por um registro que o `zelador` apaga em 7 dias.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    barbearia = models.ForeignKey(
+        Barbearia, on_delete=models.RESTRICT, related_name="nao_enviadas",
+    )
+    tipo = models.CharField(max_length=20, choices=TipoMensagem)
+    cliente_nome = models.TextField()
+    criado_em = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return f"{self.tipo} para {self.cliente_nome}"
