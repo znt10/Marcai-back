@@ -204,11 +204,13 @@ def _aplicar_webhook(cfg: dict[str, str], nome: str, *, bot: bool = False) -> bo
                     "url": cfg["webhook_url"],
                     "headers": _cabecalhos_do_webhook(cfg),
                     "byEvents": False,
-                    # O QR pronto para o `<img src>` precisa de `base64: true`.
-                    # Com o bot ligado ele vira `false`: a mesma opcao poria
-                    # cada foto e video recebido INTEIRO dentro do evento
-                    # (fatia 0). O QR segue chegando por `pedir_qr`.
-                    "base64": not bot,
+                    # SEMPRE `true`. Medido na fatia 0b: mesmo com `false` a
+                    # Evolution mandou uma foto inteira (`message.base64`,
+                    # ~217 KB) dentro do evento — a opcao nao tira midia
+                    # nenhuma e so' arriscava o QR, que continua chegando por
+                    # `pedir_qr`. A protecao real contra corpo grande e' o
+                    # limite de tamanho do webhook (Task 11).
+                    "base64": True,
                     "events": EVENTOS_COM_BOT if bot else EVENTOS_SEM_BOT,
                 }
             },

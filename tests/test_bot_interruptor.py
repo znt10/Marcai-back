@@ -123,9 +123,7 @@ def test_instancia_pendente_nem_chama_a_evolution(client, cenario):
 
 def test_ligar_com_aparelho_nao_conectado_e_recusado(client, cenario):
     """Ligar sem ninguem conectado deixaria o bot 'ativo' respondendo para
-    ninguem — e pior, o QR que a Evolution manda depois vem sem base64
-    (assinatura com bot), entao o dono nem veria um QR novo para conectar.
-    So' vale a pena ligar com o aparelho ja CONECTADO."""
+    ninguem. So' vale a pena ligar com o aparelho ja CONECTADO."""
     b = cenario["brutus"]
     _com_zap(b, estado=EstadoInstancia.AGUARDANDO_QR)
     host = _logar(client, _barbeiro(b, "DONO"), b)

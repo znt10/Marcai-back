@@ -298,15 +298,15 @@ def test_a_criacao_espera_mais_que_o_resto(cenario):
 # ---- aplicar_assinatura ----
 
 
-def test_assinatura_com_bot_pede_mensagens_e_tira_a_midia():
-    """`base64: false` com o bot ligado: com `true`, cada foto, audio e video
-    que chega no numero viria inteiro dentro do evento (fatia 0). O QR continua
-    chegando pela busca do painel (`pedir_qr`)."""
+def test_assinatura_com_bot_pede_mensagens():
+    """`base64: true` mesmo com o bot ligado: medido na fatia 0b que `false`
+    nao tira a midia do evento (uma foto chegou inteira do mesmo jeito) e so'
+    arriscava o QR. O QR continua chegando pela busca do painel (`pedir_qr`)."""
     with patch.object(wi.requests, "post", return_value=Mock(ok=True, status_code=201)) as post:
         assert wi.aplicar_assinatura("marcai-x", bot=True) is True
     corpo = post.call_args.kwargs["json"]["webhook"]
     assert sorted(corpo["events"]) == ["CONNECTION_UPDATE", "MESSAGES_UPSERT", "QRCODE_UPDATED"]
-    assert corpo["base64"] is False
+    assert corpo["base64"] is True
 
 
 def test_assinatura_sem_bot_volta_ao_de_sempre():
