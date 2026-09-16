@@ -57,3 +57,11 @@ def _base_valida() -> tuple[str, str]:
 def link_do_convite(slug: str, token: str) -> str:
     esquema, host = _base_valida()
     return f"{esquema}://{slug}.{host}/convite/{token}"
+
+
+def link_do_agendamento(slug: str, codigo: str) -> str:
+    """O link de cancelar da confirmacao que o BOT manda. A rota publica monta
+    o seu a partir do `Origin` do navegador; o bot nao tem navegador nenhum,
+    entao usa a mesma base do convite."""
+    esquema, host = _base_valida()
+    return f"{esquema}://{slug}.{host}/agendamento/{codigo}"
