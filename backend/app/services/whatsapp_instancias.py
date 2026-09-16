@@ -250,6 +250,38 @@ def apagar_instancia(barbearia) -> None:
         WhatsappInstancia.objects.filter(barbearia_id=barbearia.id).delete()
 
 
+def desconectar_aparelho(nome: str) -> bool:
+    """Logout SEM delete: a instancia continua existindo do lado de la e volta
+    a gerar QR. E o "trocar de celular" do painel.
+
+    A diferenca para `apagar_instancia` e' a intencao: la o vinculo acaba (a
+    barbearia saiu do plano), aqui ele so troca de aparelho. Apagar a
+    instancia neste caminho custaria uma recriacao e um nome novo para
+    resolver o que um logout resolve.
+    """
+    cfg = _config()
+    if not cfg["url"]:
+        return False
+
+    try:
+        r = requests.delete(
+            f"{cfg['url']}/instance/logout/{nome}",
+            headers={"apikey": cfg["chave"]},
+            timeout=TIMEOUT_S,
+        )
+    except requests.RequestException as e:
+        logger.error("[whatsapp-instancia] falha ao deslogar %s: %s", nome, e)
+        return False
+
+    if not r.ok:
+        logger.error(
+            "[whatsapp-instancia] logout recusado (%s) para %s: %s",
+            r.status_code, nome, r.text[:300],
+        )
+        return False
+    return True
+
+
 def consultar_estado(nome: str) -> str | None:
     """Como a Evolution ve a instancia, em `EstadoInstancia`. `None` quer dizer
     "nao sei" — e quem chama tem que tratar isso como "nao mude nada".

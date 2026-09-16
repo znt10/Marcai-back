@@ -242,7 +242,12 @@ CELERY_TIMEZONE = "America/Sao_Paulo"
 # urgente sendo relida seis vezes na mesma hora).
 CELERY_BEAT_SCHEDULE = {
     "lembretes": {"task": "app.tasks.lembretes", "schedule": 600.0},
+    # So a instancia CENTRAL, a que fala com a equipe. As das barbearias tem
+    # tarefa propria logo abaixo, com periodo menor: um numero central caido e
+    # um aviso que atrasa, um numero de barbearia caido e o cliente sem
+    # confirmacao.
     "whatsapp-healthcheck": {"task": "app.tasks.whatsapp_healthcheck", "schedule": 600.0},
+    "conferir-instancias": {"task": "app.tasks.conferir_instancias", "schedule": 300.0},
     "zelador": {"task": "app.tasks.zelador", "schedule": 3600.0},
 }
 

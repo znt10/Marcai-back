@@ -33,9 +33,11 @@ from .views.equipe import (
 from .views.foto import FotoView
 from .views.expediente import ExpedienteView
 from .views.horarios import DiasComVagaView, HorariosView
+from .views.interno import WhatsappEventoView
 from .views.resumo import ResumoView
 from .views.servicos import ServicosView
 from .views.servicos_painel import ServicoPainelDetalheView, ServicosPainelView
+from .views.whatsapp_painel import WhatsappDesconectarView, WhatsappPainelView
 
 # SEM DefaultRouter, e isso e uma decisao, nao esquecimento.
 #
@@ -188,8 +190,23 @@ urlpatterns = [
         AdminBarbeariaConviteView.as_view(),
         name="admin-barbearias-convite",
     ),
+    path("painel/whatsapp", WhatsappPainelView.as_view(), name="painel-whatsapp"),
+    path(
+        "painel/whatsapp/desconectar",
+        WhatsappDesconectarView.as_view(),
+        name="painel-whatsapp-desconectar",
+    ),
     # Bloco D — o motor do agendador. Fora de `/painel` e de `/admin`, entao
     # nenhum dos dois crivos posicionais mexe aqui; a credencial e' so' o
     # bearer contra CRON_SECRET, conferido dentro da propria view.
     path("cron/lembretes", LembretesView.as_view(), name="cron-lembretes"),
+    # Bloco E — o que bate de VOLTA de dentro da rede. Mesma posicao do bloco
+    # D (fora de `/painel` e de `/admin`, sem crivo posicional) e pela mesma
+    # razao: a Evolution nao tem sessao e nao fala de dentro de uma barbearia.
+    # A credencial e o cabecalho `x-marcai-webhook`, conferido na view.
+    path(
+        "interno/whatsapp/evento",
+        WhatsappEventoView.as_view(),
+        name="interno-whatsapp-evento",
+    ),
 ]
