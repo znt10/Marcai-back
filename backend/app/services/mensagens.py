@@ -233,6 +233,16 @@ def msg_bot_nao_entendi(*, pergunta: str, mostrar_zero: bool) -> str:
     return texto
 
 
+def msg_bot_nao_entendi_nome(*, mostrar_zero: bool) -> str:
+    """NOME e' o unico passo de texto livre (ver `conversa.decidir`): pedir
+    'responde so com o numero' ali contradiz a pergunta seguinte, que pede
+    exatamente o contrario."""
+    texto = "Não entendi. Me diz seu nome (só letras, pelo menos 2)."
+    if mostrar_zero:
+        texto += f"\n{FALAR_COM_A_BARBEARIA}"
+    return texto
+
+
 def msg_bot_chamou_humano() -> str:
     return "Beleza, já chamei alguém da barbearia. Te respondem por aqui."
 

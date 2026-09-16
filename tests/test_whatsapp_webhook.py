@@ -196,6 +196,28 @@ def test_qr_substitui_o_anterior(client, cenario):
     assert _recarregar(b).qr_base64 == "data:image/png;base64,novo"
 
 
+def test_qr_sem_base64_limpa_o_guardado_em_vez_de_ignorar(client, cenario):
+    """Com o bot ligado a assinatura pede `base64: false` (fatia dos textos):
+    o QR chega SEM base64. Se o corpo fosse so ignorado, o painel continuaria
+    mostrando o QR antigo enquanto a Evolution ja girou para outro — o dono
+    veria um codigo morto e nunca conseguiria reconectar. Limpar o campo faz
+    o proximo `ver()` pedir um QR novo de verdade."""
+    b = cenario["brutus"]
+    _instancia(b, estado=EstadoInstancia.AGUARDANDO_QR, qr_base64="data:image/png;base64,velho")
+
+    corpo = {
+        "event": "qrcode.updated",
+        "instance": nome_da_instancia(b.id),
+        "data": {"qrcode": {"instance": nome_da_instancia(b.id)}},
+    }
+    r = _bater(client, corpo)
+
+    assert r.status_code == 200
+    linha = _recarregar(b)
+    assert linha.qr_base64 is None
+    assert linha.estado == EstadoInstancia.AGUARDANDO_QR
+
+
 # ---- o que nao e para ca ----
 
 

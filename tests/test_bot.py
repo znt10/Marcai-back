@@ -360,6 +360,25 @@ def test_fora_da_lista_repete_e_na_terceira_oferece_o_zero(cenario):
     assert _linha(b).estado == "SERVICO"
 
 
+def test_nome_invalido_nao_pede_numero(cenario):
+    """A mensagem generica de 'nao entendi' diz 'Responde so com o numero' —
+    faz sentido nos passos de escolha, mas NOME e' texto livre. Repetir esse
+    texto ali contradiz a propria pergunta seguinte ('me diz seu nome')."""
+    b, pedro, _ = _cenario_simples(cenario)
+    conversa = _Conversa(b)
+    conversa.diz("oi")
+    conversa.diz("1")
+    conversa.diz("1")
+    conversa.diz("1")
+    assert conversa.ultima == "Pra marcar, me diz seu nome:"
+
+    assert conversa.diz("99") == "repetiu"
+    assert "Responde só com o número" not in conversa.ultima
+    assert "número" not in conversa.ultima.lower()
+    assert "nome" in conversa.ultima.lower()
+    assert _linha(b).estado == "NOME"
+
+
 def test_zero_chama_o_dono_e_cala_o_bot(cenario):
     b, _, _ = _cenario_simples(cenario)
     dono = _barbeiro(b, nome="Dono", papel="DONO")

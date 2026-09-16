@@ -121,6 +121,34 @@ def test_instancia_pendente_nem_chama_a_evolution(client, cenario):
     assinar.assert_not_called()
 
 
+def test_ligar_com_aparelho_nao_conectado_e_recusado(client, cenario):
+    """Ligar sem ninguem conectado deixaria o bot 'ativo' respondendo para
+    ninguem — e pior, o QR que a Evolution manda depois vem sem base64
+    (assinatura com bot), entao o dono nem veria um QR novo para conectar.
+    So' vale a pena ligar com o aparelho ja CONECTADO."""
+    b = cenario["brutus"]
+    _com_zap(b, estado=EstadoInstancia.AGUARDANDO_QR)
+    host = _logar(client, _barbeiro(b, "DONO"), b)
+    with patch(ASSINAR) as assinar:
+        r = _post(client, host, {"ativo": True})
+    assert r.status_code == 422
+    assinar.assert_not_called()
+    assert _bot_ativo(b) is False
+
+
+def test_desligar_com_aparelho_nao_conectado_continua_permitido(client, cenario):
+    """Desligar nunca deveria ficar mais dificil so' porque o aparelho caiu —
+    e o caminho contrario do refinamento acima."""
+    b = cenario["brutus"]
+    _com_zap(b, estado=EstadoInstancia.DESCONECTADO, bot_ativo=True)
+    host = _logar(client, _barbeiro(b, "DONO"), b)
+    with patch(ASSINAR, return_value=True) as assinar:
+        r = _post(client, host, {"ativo": False})
+    assert r.status_code == 200
+    assinar.assert_called_once_with(nome_da_instancia(b.id), bot=False)
+    assert _bot_ativo(b) is False
+
+
 @pytest.mark.parametrize("corpo", [{}, {"ativo": "sim"}, {"ativo": 1}, {"ativo": None}])
 def test_ativo_precisa_ser_booleano(client, cenario, corpo):
     b = cenario["brutus"]

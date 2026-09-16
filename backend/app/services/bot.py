@@ -57,6 +57,7 @@ from .mensagens import (
     msg_bot_lembrete_confirmado,
     msg_bot_nao_achei_agendamento,
     msg_bot_nao_entendi,
+    msg_bot_nao_entendi_nome,
     msg_bot_pediu_humano,
     msg_bot_pergunta,
     msg_bot_sem_opcoes,
@@ -216,10 +217,15 @@ def _gravar(ctx: _Contexto, linha, saida: _Saida, mensagem_id: str, ids_novos: l
 
 def _executar(ctx: _Contexto, estado: c.Estado, pergunta_anterior, decisao) -> _Saida:
     if isinstance(decisao, c.Repetir):
-        texto = msg_bot_nao_entendi(
-            pergunta=pergunta_anterior or "",
-            mostrar_zero=decisao.tentativas >= BOT_TENTATIVAS_ANTES_DO_ZERO,
-        )
+        mostrar_zero = decisao.tentativas >= BOT_TENTATIVAS_ANTES_DO_ZERO
+        if estado.passo == c.NOME:
+            # NOME e' texto livre: "responde so com o numero" contradiria a
+            # propria pergunta que se repete logo depois.
+            texto = msg_bot_nao_entendi_nome(mostrar_zero=mostrar_zero)
+        else:
+            texto = msg_bot_nao_entendi(
+                pergunta=pergunta_anterior or "", mostrar_zero=mostrar_zero,
+            )
         return _Saida(
             "repetiu", estado.passo, [texto], estado.opcoes, estado.rascunho,
             decisao.tentativas, pergunta_anterior,
