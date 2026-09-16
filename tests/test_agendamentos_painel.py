@@ -71,7 +71,7 @@ def test_marca_e_manda_confirmacao(client, cenario):
     servico = _servico_vinculado(b.id, barbeiro, duracao_min=30)
     inicio = _proximo_slot_livre(barbeiro, servico)
 
-    with patch("app.api.v1.views.agendamentos_painel.enviar_texto") as mock_envia:
+    with patch("app.api.v1.views.agendamentos_painel.enviar_ao_cliente") as mock_envia:
         r = client.post(
             "/api/painel/agendamentos",
             {
@@ -103,7 +103,7 @@ def test_marcar_no_balcao_tambem_snapshota_o_preco(client, cenario):
     servico = _servico_vinculado(b.id, barbeiro, preco_centavos=3500)
     inicio = _proximo_slot_livre(barbeiro, servico)
 
-    with patch("app.api.v1.views.agendamentos_painel.enviar_texto"):
+    with patch("app.api.v1.views.agendamentos_painel.enviar_ao_cliente"):
         r = client.post(
             "/api/painel/agendamentos",
             {
@@ -204,7 +204,7 @@ def test_cancelar_muda_status_e_avisa_o_cliente(client, cenario):
         duracao_min=30, status="CONFIRMADO",
     )
 
-    with patch("app.api.v1.views.agendamentos_painel.enviar_texto") as mock_envia:
+    with patch("app.api.v1.views.agendamentos_painel.enviar_ao_cliente") as mock_envia:
         r = client.post(
             f"/api/painel/agendamentos/{a.id}/cancelar",
             headers={"host": host, **CABECALHO},

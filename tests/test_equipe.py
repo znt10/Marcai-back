@@ -95,7 +95,7 @@ def test_post_cria_e_manda_convite(client, cenario):
     dono = _barbeiro(b.id, papel="DONO")
     host = _logar(client, dono, b.id)
 
-    with patch("app.api.v1.views.equipe.enviar_texto") as mock_envia:
+    with patch("app.api.v1.views.equipe.enviar_a_equipe") as mock_envia:
         r = client.post(
             "/api/painel/equipe",
             {"nome": "Novo Barbeiro", "whatsapp": "11977776666", "papel": "BARBEIRO"},
@@ -345,7 +345,7 @@ def test_reconvidar_reseta_a_senha_e_manda_whatsapp(client, cenario):
     host = _logar(client, dono, b.id)
     alvo = _barbeiro(b.id, "Alvo", senha_hash=gerar("velha"))
 
-    with patch("app.api.v1.views.equipe.enviar_texto") as mock_envia:
+    with patch("app.api.v1.views.equipe.enviar_a_equipe") as mock_envia:
         r = client.post(
             f"/api/painel/equipe/{alvo.id}/convite",
             headers={"host": host, **CABECALHO},

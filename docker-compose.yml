@@ -58,6 +58,12 @@ services:
       EVOLUTION_API_URL: http://evolution:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
       EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-brutus}
+      # O webhook por barbearia (fatia 1). Em dev o segredo tem default: o
+      # ambiente de desenvolvimento ja e fechado, e exigir a variavel aqui
+      # quebraria o `up` de quem so quer mexer em agenda. Em producao ele leva
+      # `:?` — la, vazio nega tudo e ninguem descobriria.
+      WHATSAPP_WEBHOOK_SEGREDO: ${WHATSAPP_WEBHOOK_SEGREDO:-segredo-de-dev}
+      WHATSAPP_WEBHOOK_URL: http://api:8000/api/interno/whatsapp/evento
       # Onde o link do convite abre — o FRONT, nunca o Django. Espelha
       # NEXT_PUBLIC_URL_BASE do outro lado; as duas tem que apontar para a
       # mesma origem, senao o convite emitido por um lado leva a um link que
@@ -194,6 +200,12 @@ services:
       EVOLUTION_API_URL: http://evolution:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
       EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-brutus}
+      # O webhook por barbearia (fatia 1). Em dev o segredo tem default: o
+      # ambiente de desenvolvimento ja e fechado, e exigir a variavel aqui
+      # quebraria o `up` de quem so quer mexer em agenda. Em producao ele leva
+      # `:?` — la, vazio nega tudo e ninguem descobriria.
+      WHATSAPP_WEBHOOK_SEGREDO: ${WHATSAPP_WEBHOOK_SEGREDO:-segredo-de-dev}
+      WHATSAPP_WEBHOOK_URL: http://api:8000/api/interno/whatsapp/evento
     volumes: [".:/app"]
     depends_on:
       db: { condition: service_healthy }

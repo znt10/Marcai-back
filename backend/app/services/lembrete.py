@@ -3,11 +3,11 @@ from datetime import datetime, timedelta
 from django.utils import timezone
 
 from tenant.config import LEMBRETE_ANTECEDENCIA_MIN
-from tenant.models import Agendamento, Barbearia
+from tenant.models import Agendamento, Barbearia, TipoMensagem
 from tenant.rls import com_barbearia
 
 from .mensagens import msg_lembrete
-from .whatsapp import enviar_texto
+from .whatsapp import enviar_ao_cliente
 
 
 def lembrete_ao_criar(inicio: datetime, agora: datetime) -> datetime | None:
@@ -56,12 +56,15 @@ def enviar_pendentes(agora: datetime) -> int:
             # commit correspondente nunca chegar a acontecer.
             with com_barbearia(b.id):
                 Agendamento.objects.filter(id=a.id).update(lembrete_enviado_em=timezone.now())
-            enviar_texto(
+            enviar_ao_cliente(
+                b,
                 a.cliente.whatsapp,
                 msg_lembrete(
                     servico_nome=a.servico_nome, barbeiro_nome=a.barbeiro.nome,
                     inicio=a.inicio, endereco=b.endereco,
                 ),
+                tipo=TipoMensagem.LEMBRETE,
+                cliente_nome=a.cliente.nome,
             )
             enviados += 1
 

@@ -5,13 +5,14 @@ from app.api.v1.mixins import ExigeAdmin
 from app.api.v1.serializers.admin_barbearias import AtualizarBarbeariaSerializer
 from app.services.admin_barbearias import (
     atualizar_ativo,
+    atualizar_plano,
     criar,
     listar_com_contagem,
     reemitir_convite,
 )
 from app.services.convite import link_do_convite
 from app.services.mensagens import msg_convite
-from app.services.whatsapp import enviar_texto
+from app.services.whatsapp import enviar_a_equipe
 
 NAO_ENCONTRADA = {"erro": "Barbearia não encontrada."}
 
@@ -29,6 +30,8 @@ class AdminBarbeariasView(ExigeAdmin, APIView):
             return Response({"erro": "Slug inválido ou reservado."}, status=422)
         if resultado["tipo"] == "faltou_campo":
             return Response({"erro": "Faltou preencher algum campo."}, status=422)
+        if resultado["tipo"] == "plano_invalido":
+            return Response({"erro": "Plano inválido."}, status=422)
         if resultado["tipo"] == "slug_duplicado":
             # Nao e' evasivo como no login: quem le esta resposta e' o dono
             # do site, nao um estranho tentando descobrir slug alheio.
@@ -40,7 +43,7 @@ class AdminBarbeariasView(ExigeAdmin, APIView):
         # Fire-and-forget, DEPOIS do commit (a transacao ja fechou dentro de
         # `criar()`). O link tambem volta no corpo porque o banco so guarda o
         # hash — perdido ali, nao ha como recuperar, so' reemitir.
-        enviar_texto(
+        enviar_a_equipe(
             resultado["contato"],
             msg_convite(
                 nome=resultado["dono_nome"], barbearia_nome=resultado["nome"], link=link
@@ -58,9 +61,19 @@ class AdminBarbeariaDetalheView(ExigeAdmin, APIView):
     def patch(self, request, id):
         entrada = AtualizarBarbeariaSerializer(data=request.data)
         if not entrada.is_valid():
-            return Response({"erro": "Informe ativo: true ou false."}, status=422)
+            return Response(
+                {"erro": "Informe ativo: true ou false, ou plano."}, status=422
+            )
 
-        if not atualizar_ativo(id, entrada.validated_data["ativo"]):
+        # Um campo por chamada, na ordem em que vieram — e nao um so' pedido
+        # que faz as duas coisas. Trocar de plano e desativar no mesmo PATCH
+        # mandaria criar e apagar a instancia na mesma requisicao; a ordem
+        # entre as duas decidiria o resultado, e nenhuma das duas ordens e
+        # obviamente certa. O painel do admin manda um campo de cada vez.
+        dados = entrada.validated_data
+        if "plano" in dados and not atualizar_plano(id, dados["plano"]):
+            return Response(NAO_ENCONTRADA, status=404)
+        if "ativo" in dados and not atualizar_ativo(id, dados["ativo"]):
             return Response(NAO_ENCONTRADA, status=404)
         return Response({"ok": True})
 
@@ -80,7 +93,7 @@ class AdminBarbeariaConviteView(ExigeAdmin, APIView):
         # Reemitir ja apagou a senha do dono neste ponto — se o link so
         # existisse na tela do admin e ela fechasse, o dono ficava de fora
         # sem caminho de volta. Duas vias, como o convite de barbeiro.
-        enviar_texto(
+        enviar_a_equipe(
             resultado["dono_whatsapp"],
             msg_convite(
                 nome=resultado["dono_nome"], barbearia_nome=resultado["nome"], link=link

@@ -83,9 +83,16 @@ def limpar_banco(request):
     ):
         with connections["owner"].cursor() as cur:
             cur.execute(
+                # As duas ultimas entraram na fatia do WhatsApp por
+                # barbearia. O CASCADE ja as levaria junto (as duas tem FK
+                # para `tenant_barbearia`), mas escritas aqui a limpeza
+                # continua dizendo em voz alta o que ela limpa — e uma tabela
+                # nova que alguem esqueca nesta lista vira sobra silenciosa
+                # entre casos, que e' o pior jeito de um teste mentir.
                 "TRUNCATE TABLE tenant_agendamento, tenant_cliente, "
                 "tenant_bloqueio, tenant_horariotrabalho, "
                 "tenant_barbeiroservico, tenant_servico, tenant_barbeiro, "
+                "tenant_whatsappinstancia, tenant_mensagemnaoenviada, "
                 "tenant_barbearia RESTART IDENTITY CASCADE"
             )
 

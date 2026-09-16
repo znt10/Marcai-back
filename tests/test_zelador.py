@@ -7,11 +7,18 @@ from django.db import connections
 from app.services.zelador import alarmar_e_podar
 from tenant.config import ZELADOR_DIAS_DE_HISTORICO
 
-# "owner" entra so' porque o `limpar_banco` autouse do conftest.py (TRUNCATE
-# das tabelas de tenant) roda pra' todo teste com `django_db` — este arquivo
-# nao toca brutus/owner, mas precisa da databases dele liberada pra' aquele
-# fixture nao estourar `DatabaseOperationForbidden`.
-pytestmark = pytest.mark.django_db(databases=["owner", "evolution"], transaction=True)
+# "owner" entrava so' porque o `limpar_banco` autouse do conftest.py (TRUNCATE
+# das tabelas de tenant) roda pra' todo teste com `django_db`, e a databases
+# dele precisa estar liberada pra' aquele fixture nao estourar
+# `DatabaseOperationForbidden`.
+#
+# "default" e novidade, e nao e' detalhe de teste: o zelador PASSOU a tocar o
+# `brutus` de verdade. Alem do historico da Evolution, ele agora poda as
+# "mensagens nao enviadas" do painel — tabela de tenant, com RLS, lida pela
+# conexao de runtime.
+pytestmark = pytest.mark.django_db(
+    databases=["default", "owner", "evolution"], transaction=True,
+)
 
 _DDL = """
 DROP TABLE IF EXISTS "MessageUpdate";
@@ -147,3 +154,36 @@ def test_loga_info_quando_nao_ha_recusado(caplog):
         alarmar_e_podar()
 
     assert "nenhum envio recusado" in caplog.text
+
+
+# ------------------------------------------------- as "nao enviadas" do painel
+
+
+def test_poda_nao_enviadas_antigas_e_preserva_as_recentes(cenario):
+    """O contador do painel precisa poder voltar a zero. Sem poda ele so
+    cresceria, e um numero que nunca zera deixa de ser informacao."""
+    import uuid
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from app.services.zelador import _podar_nao_enviadas
+    from tenant.config import ZELADOR_DIAS_DE_HISTORICO
+    from tenant.models import MensagemNaoEnviada
+    from tenant.rls import com_barbearia
+
+    b = cenario["brutus"]
+    agora = timezone.now()
+    for nome, quando in (
+        ("Velha", agora - timedelta(days=ZELADOR_DIAS_DE_HISTORICO + 1)),
+        ("Nova", agora - timedelta(hours=1)),
+    ):
+        MensagemNaoEnviada.objects.using("owner").create(
+            id=str(uuid.uuid4()), barbearia_id=b.id, tipo="CONFIRMACAO",
+            cliente_nome=nome, criado_em=quando,
+        )
+
+    assert _podar_nao_enviadas() == 1
+
+    with com_barbearia(b.id):
+        assert [m.cliente_nome for m in MensagemNaoEnviada.objects.all()] == ["Nova"]

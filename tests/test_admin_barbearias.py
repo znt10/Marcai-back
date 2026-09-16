@@ -77,7 +77,7 @@ def _corpo_valido(slug="nova-barbearia"):
 def test_post_cria_barbearia_e_dono_e_manda_convite(client):
     _logar_admin(client)
 
-    with patch("app.api.v1.views.admin_barbearias.enviar_texto") as mock_envia:
+    with patch("app.api.v1.views.admin_barbearias.enviar_a_equipe") as mock_envia:
         r = client.post(
             "/api/admin/barbearias", _corpo_valido(),
             content_type="application/json", headers={"host": HOST, **CABECALHO},
@@ -234,7 +234,7 @@ def test_convite_reseta_senha_e_deriva_o_token_version(client, cenario):
     b = cenario["brutus"]
     dono = _barbeiro(b.id, papel="DONO", senha_hash="algum-hash")
 
-    with patch("app.api.v1.views.admin_barbearias.enviar_texto") as mock_envia:
+    with patch("app.api.v1.views.admin_barbearias.enviar_a_equipe") as mock_envia:
         r = client.post(
             f"/api/admin/barbearias/{b.id}/convite", headers={"host": HOST, **CABECALHO},
         )
@@ -261,7 +261,7 @@ def test_convite_escolhe_o_dono_ativo_mais_antigo(client, cenario):
         b.id, nome="Dono Antigo", papel="DONO", criado_em="2026-08-01T10:00:00Z",
     )
 
-    with patch("app.api.v1.views.admin_barbearias.enviar_texto") as mock_envia:
+    with patch("app.api.v1.views.admin_barbearias.enviar_a_equipe") as mock_envia:
         r = client.post(
             f"/api/admin/barbearias/{b.id}/convite", headers={"host": HOST, **CABECALHO},
         )
@@ -292,3 +292,184 @@ def test_convite_sem_dono_ativo_da_404(client, cenario):
     )
     assert r.status_code == 404
     assert r.json()["erro"] == "Essa barbearia não tem dono ativo."
+
+
+# ------------------------------------------------------- plano com/sem zap
+#
+# A instancia da Evolution e' simulada nos DOIS pontos de entrada
+# (`garantir_instancia`, `apagar_instancia`) porque o que esta sob teste aqui
+# nao e' a conversa com a Evolution — essa e' de `test_whatsapp_instancias.py`
+# — e sim QUANDO cada uma delas e' chamada. Sao gatilhos: cadastrar, trocar de
+# plano, desativar, reativar. Errar um deles nao quebra nada visivelmente; so'
+# deixa uma barbearia pagando por um numero que nunca foi criado, ou um numero
+# vivo de uma barbearia que saiu.
+
+
+@pytest.fixture
+def evolution_simulada():
+    with patch("app.services.admin_barbearias.garantir_instancia") as garantir, patch(
+        "app.services.admin_barbearias.apagar_instancia"
+    ) as apagar:
+        yield {"garantir": garantir, "apagar": apagar}
+
+
+def _criar_barbearia(client, slug="nova", **extra):
+    corpo = {
+        "slug": slug, "nome": "Nova", "endereco": "Rua A, 1",
+        "whatsappContato": "11999990000", "donoNome": "Dona",
+        **extra,
+    }
+    return client.post(
+        "/api/admin/barbearias", corpo,
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+
+
+def _instancia_de(barbearia_id):
+    from tenant.models import WhatsappInstancia
+
+    return WhatsappInstancia.objects.using("owner").filter(barbearia_id=barbearia_id).first()
+
+
+def test_criar_com_zap_deixa_a_instancia_pendente_e_chama_a_evolution(client, evolution_simulada):
+    from tenant.models import Barbearia, EstadoInstancia
+
+    _logar_admin(client)
+    r = _criar_barbearia(client, plano="COM_ZAP")
+    assert r.status_code == 201
+
+    b = Barbearia.objects.using("owner").get(id=r.json()["id"])
+    assert b.plano == "COM_ZAP"
+
+    linha = _instancia_de(b.id)
+    # A LINHA nasce na transacao do cadastro; a instancia na Evolution nasce
+    # depois do commit. E' por isso que ela comeca `PENDENTE`: se a Evolution
+    # estiver fora do ar, a barbearia existe do mesmo jeito e a conferencia
+    # periodica termina o servico depois.
+    assert linha is not None
+    assert linha.estado == EstadoInstancia.PENDENTE
+    assert linha.nome == f"marcai-{b.id}"
+    assert evolution_simulada["garantir"].call_count == 1
+
+
+def test_criar_sem_plano_nasce_sem_zap_e_nao_fala_com_a_evolution(client, evolution_simulada):
+    from tenant.models import Barbearia
+
+    _logar_admin(client)
+    r = _criar_barbearia(client)
+    assert r.status_code == 201
+
+    b = Barbearia.objects.using("owner").get(id=r.json()["id"])
+    assert b.plano == "SEM_ZAP"
+    assert _instancia_de(b.id) is None
+    assert evolution_simulada["garantir"].call_count == 0
+
+
+def test_criar_com_plano_inventado_da_422(client, evolution_simulada):
+    """Plano vem do corpo JSON do admin, como o resto: valor fora da lista e'
+    recusado aqui, e nao guardado para virar um `if` perdido mais tarde."""
+    _logar_admin(client)
+    r = _criar_barbearia(client, plano="COM_POMBO_CORREIO")
+    assert r.status_code == 422
+    assert evolution_simulada["garantir"].call_count == 0
+
+
+def test_patch_sobe_para_com_zap(client, cenario, evolution_simulada):
+    from tenant.models import Barbearia, EstadoInstancia
+
+    _logar_admin(client)
+    b = cenario["brutus"]
+    r = client.patch(
+        f"/api/admin/barbearias/{b.id}", {"plano": "COM_ZAP"},
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+    assert r.status_code == 200
+    assert Barbearia.objects.using("owner").get(id=b.id).plano == "COM_ZAP"
+    assert _instancia_de(b.id).estado == EstadoInstancia.PENDENTE
+    assert evolution_simulada["garantir"].call_count == 1
+
+
+def test_patch_desce_para_sem_zap_apaga_a_instancia(client, cenario, evolution_simulada):
+    from tenant.models import Barbearia
+
+    _logar_admin(client)
+    b = cenario["brutus"]
+    Barbearia.objects.using("owner").filter(id=b.id).update(plano="COM_ZAP")
+
+    r = client.patch(
+        f"/api/admin/barbearias/{b.id}", {"plano": "SEM_ZAP"},
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+    assert r.status_code == 200
+    assert Barbearia.objects.using("owner").get(id=b.id).plano == "SEM_ZAP"
+    assert evolution_simulada["apagar"].call_count == 1
+
+
+def test_patch_para_o_mesmo_plano_nao_mexe_na_evolution(client, cenario, evolution_simulada):
+    """Repetir o plano que ja vale nao pode derrubar e recriar o vinculo: o
+    dono teria que escanear o QR de novo porque alguem clicou duas vezes."""
+    _logar_admin(client)
+    b = cenario["brutus"]
+    r = client.patch(
+        f"/api/admin/barbearias/{b.id}", {"plano": "SEM_ZAP"},
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+    assert r.status_code == 200
+    assert evolution_simulada["garantir"].call_count == 0
+    assert evolution_simulada["apagar"].call_count == 0
+
+
+def test_desativar_barbearia_com_zap_desliga_o_numero(client, cenario, evolution_simulada):
+    """Barbearia desativada com o WhatsApp de pe continuaria respondendo por um
+    numero que o Marcai ainda paga — e pior, continuaria conectada ao celular
+    de um ex-cliente."""
+    from tenant.models import Barbearia
+
+    _logar_admin(client)
+    b = cenario["brutus"]
+    Barbearia.objects.using("owner").filter(id=b.id).update(plano="COM_ZAP")
+
+    r = client.patch(
+        f"/api/admin/barbearias/{b.id}", {"ativo": False},
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+    assert r.status_code == 200
+    assert evolution_simulada["apagar"].call_count == 1
+
+
+def test_reativar_barbearia_com_zap_recria_o_numero(client, cenario, evolution_simulada):
+    from tenant.models import Barbearia, EstadoInstancia
+
+    _logar_admin(client)
+    b = cenario["brutus"]
+    Barbearia.objects.using("owner").filter(id=b.id).update(plano="COM_ZAP", ativo=False)
+
+    r = client.patch(
+        f"/api/admin/barbearias/{b.id}", {"ativo": True},
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+    assert r.status_code == 200
+    assert _instancia_de(b.id).estado == EstadoInstancia.PENDENTE
+    assert evolution_simulada["garantir"].call_count == 1
+
+
+def test_desativar_barbearia_sem_zap_nao_fala_com_a_evolution(client, cenario, evolution_simulada):
+    _logar_admin(client)
+    r = client.patch(
+        f"/api/admin/barbearias/{cenario['brutus'].id}", {"ativo": False},
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+    assert r.status_code == 200
+    assert evolution_simulada["apagar"].call_count == 0
+
+
+def test_listagem_mostra_o_plano(client, cenario, evolution_simulada):
+    """A lista do admin e o unico lugar onde se ve quem comprou o que."""
+    from tenant.models import Barbearia
+
+    _logar_admin(client)
+    Barbearia.objects.using("owner").filter(id=cenario["brutus"].id).update(plano="COM_ZAP")
+
+    r = client.get("/api/admin/barbearias", headers={"host": HOST})
+    planos = {b["slug"]: b["plano"] for b in r.json()["barbearias"]}
+    assert planos == {"brutus": "COM_ZAP", "dontony": "SEM_ZAP"}

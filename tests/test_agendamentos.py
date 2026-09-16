@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
@@ -7,6 +8,52 @@ import pytest
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
 CABECALHO = {"x-brutus-cliente": "web"}
+
+
+@contextmanager
+def _envios():
+    """Os DOIS caminhos de envio de uma vez, normalizados em pares
+    `(numero, texto)`.
+
+    Um mock so' deixou de contar a historia quando cliente e equipe passaram a
+    sair por numeros diferentes: `enviar_ao_cliente` recebe a barbearia na
+    frente e `enviar_a_equipe` nao, entao `c.args[0]` quer dizer coisas
+    diferentes nos dois. Estes casos sempre leram envio como "para quem, o
+    que" — o ajudante preserva essa leitura.
+
+    O que ele NAO prova, e nao deve provar: que a mensagem saiu de verdade.
+    Com o envio simulado, `enviar_ao_cliente` e' chamado ate numa barbearia
+    sem zap. Quem cobre isso e' `test_envio_por_plano.py`, que exercita a
+    funcao de verdade.
+    """
+    with patch("app.api.v1.views.agendamentos.enviar_ao_cliente") as ao_cliente, patch(
+        "app.api.v1.views.agendamentos.enviar_a_equipe"
+    ) as a_equipe:
+
+        class Envios:
+            @property
+            def pares(self):
+                return [(c.args[1], c.args[2]) for c in ao_cliente.call_args_list] + [
+                    (c.args[0], c.args[1]) for c in a_equipe.call_args_list
+                ]
+
+            @property
+            def destinos(self):
+                return [numero for numero, _ in self.pares]
+
+            @property
+            def call_count(self):
+                return ao_cliente.call_count + a_equipe.call_count
+
+            def texto_para(self, numero):
+                return next(texto for n, texto in self.pares if n == numero)
+
+            def assert_not_called(self):
+                assert self.call_count == 0, self.pares
+
+        yield Envios()
+
+
 HOST = "brutus.localhost"
 
 
@@ -93,7 +140,7 @@ def test_marca_sem_sessao_e_manda_confirmacao(client, cenario):
     servico = _servico_vinculado(b.id, barbeiro)
     inicio = _proximo_slot_livre(barbeiro, servico)
 
-    with patch("app.api.v1.views.agendamentos.enviar_texto") as mock_envia:
+    with _envios() as mock_envia:
         r = client.post(
             "/api/agendamentos",
             {
@@ -109,7 +156,7 @@ def test_marca_sem_sessao_e_manda_confirmacao(client, cenario):
     # (`test_marcar_avisa_o_barbeiro_alem_do_cliente`). O que ESTE teste
     # garante e' que o do cliente continua saindo.
     assert mock_envia.call_count == 2
-    confirmacao = next(c.args[1] for c in mock_envia.call_args_list if c.args[0] == "11977778888")
+    confirmacao = mock_envia.texto_para("11977778888")
     assert confirmacao.startswith("Fechou,")
 
     from tenant.models import Agendamento
@@ -124,7 +171,7 @@ def test_marcar_com_preco_definido_grava_o_snapshot(client, cenario):
     servico = _servico_vinculado(b.id, barbeiro, preco_centavos=4500)
     inicio = _proximo_slot_livre(barbeiro, servico)
 
-    with patch("app.api.v1.views.agendamentos.enviar_texto"):
+    with _envios():
         r = client.post(
             "/api/agendamentos",
             {
@@ -150,7 +197,7 @@ def test_marcar_sem_preco_definido_continua_funcionando(client, cenario):
     servico = _servico_vinculado(b.id, barbeiro)  # preco_centavos=None
     inicio = _proximo_slot_livre(barbeiro, servico)
 
-    with patch("app.api.v1.views.agendamentos.enviar_texto"):
+    with _envios():
         r = client.post(
             "/api/agendamentos",
             {
@@ -175,7 +222,7 @@ def test_numero_sem_whatsapp_e_recusado_antes_da_transacao(client, cenario, monk
     inicio = _proximo_slot_livre(barbeiro, servico)
 
     monkeypatch.setattr(
-        "app.api.v1.views.agendamentos.numero_existe", lambda whatsapp, ip: "nao_existe"
+        "app.api.v1.views.agendamentos.numero_existe", lambda barbearia, whatsapp, ip: "nao_existe"
     )
 
     r = client.post(
@@ -203,10 +250,10 @@ def test_numero_indeterminado_deixa_passar(client, cenario, monkeypatch):
     inicio = _proximo_slot_livre(barbeiro, servico)
 
     monkeypatch.setattr(
-        "app.api.v1.views.agendamentos.numero_existe", lambda whatsapp, ip: "indeterminado"
+        "app.api.v1.views.agendamentos.numero_existe", lambda barbearia, whatsapp, ip: "indeterminado"
     )
 
-    with patch("app.api.v1.views.agendamentos.enviar_texto"):
+    with _envios():
         r = client.post(
             "/api/agendamentos",
             {
@@ -370,7 +417,7 @@ def test_cancelar_dentro_do_prazo_ok_e_avisa(client, cenario):
     inicio = datetime.now(timezone.utc) + timedelta(hours=3)
     a = _agendamento(b.id, barbeiro, inicio)
 
-    with patch("app.api.v1.views.agendamentos.enviar_texto") as mock_envia:
+    with _envios() as mock_envia:
         r = client.post(
             f"/api/agendamentos/{a.codigo}/cancelar", headers={"host": HOST, **CABECALHO},
         )
@@ -379,7 +426,7 @@ def test_cancelar_dentro_do_prazo_ok_e_avisa(client, cenario):
     # Idem: o cliente e o barbeiro. Aqui interessa o aviso do CLIENTE.
     assert mock_envia.call_count == 2
     do_cliente = next(
-        c.args[1] for c in mock_envia.call_args_list if c.args[0] != barbeiro.whatsapp
+        texto for numero, texto in mock_envia.pares if numero != barbeiro.whatsapp
     )
     assert "cancel" in do_cliente.lower()
 
@@ -411,7 +458,7 @@ def test_cancelar_ja_cancelado_e_idempotente(client, cenario):
     inicio = datetime.now(timezone.utc) + timedelta(hours=3)
     a = _agendamento(b.id, barbeiro, inicio, status="CANCELADO_CLIENTE")
 
-    with patch("app.api.v1.views.agendamentos.enviar_texto") as mock_envia:
+    with _envios() as mock_envia:
         r = client.post(
             f"/api/agendamentos/{a.codigo}/cancelar", headers={"host": HOST, **CABECALHO},
         )
@@ -441,7 +488,7 @@ def test_marcar_avisa_o_barbeiro_alem_do_cliente(client, cenario):
     servico = _servico_vinculado(b.id, barbeiro)
     inicio = _proximo_slot_livre(barbeiro, servico)
 
-    with patch("app.api.v1.views.agendamentos.enviar_texto") as mock_envia:
+    with _envios() as mock_envia:
         r = client.post(
             "/api/agendamentos",
             {
@@ -453,11 +500,11 @@ def test_marcar_avisa_o_barbeiro_alem_do_cliente(client, cenario):
         )
     assert r.status_code == 201
 
-    destinos = [c.args[0] for c in mock_envia.call_args_list]
+    destinos = mock_envia.destinos
     assert "11977778888" in destinos, "o cliente continua recebendo a confirmacao"
     assert barbeiro.whatsapp in destinos, "o barbeiro precisa saber que entrou horario"
 
-    aviso = next(c.args[1] for c in mock_envia.call_args_list if c.args[0] == barbeiro.whatsapp)
+    aviso = mock_envia.texto_para(barbeiro.whatsapp)
     assert aviso.startswith("Novo horário")
     assert "José Neto" in aviso
     # Endereco e' coisa do cliente: o barbeiro trabalha la.
@@ -471,14 +518,14 @@ def test_cliente_cancelando_avisa_o_barbeiro(client, cenario):
     inicio = _proximo_slot_livre(barbeiro, servico, daqui_a_min=180)
     a = _agendamento(b.id, barbeiro, inicio)  # noqa: F841 — o codigo dele e' o alvo
 
-    with patch("app.api.v1.views.agendamentos.enviar_texto") as mock_envia:
+    with _envios() as mock_envia:
         r = client.post(
             f"/api/agendamentos/{a.codigo}/cancelar",
             content_type="application/json", headers={"host": HOST, **CABECALHO},
         )
     assert r.status_code == 200
 
-    destinos = [c.args[0] for c in mock_envia.call_args_list]
+    destinos = mock_envia.destinos
     assert barbeiro.whatsapp in destinos, "a vaga abriu e o barbeiro nao ficou sabendo"
-    aviso = next(c.args[1] for c in mock_envia.call_args_list if c.args[0] == barbeiro.whatsapp)
+    aviso = mock_envia.texto_para(barbeiro.whatsapp)
     assert aviso.startswith("Cancelou")

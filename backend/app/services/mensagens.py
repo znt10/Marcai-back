@@ -139,3 +139,25 @@ def msg_barbeiro_cancelado(*, cliente_nome: str, servico_nome: str, inicio, agor
     return "Cancelou\n" + _linha_do_horario(
         cliente_nome=cliente_nome, servico_nome=servico_nome, inicio=inicio, agora=agora,
     )
+
+
+def msg_lista_do_dia(*, barbeiro_nome: str, agendamentos: list[dict], agora) -> str:
+    """A agenda do dia, uma linha por horario, na MESMA forma do aviso de
+    horario novo (`_linha_do_horario`).
+
+    Reaproveitar aquela linha nao e economia de codigo: o barbeiro le as duas
+    mensagens no mesmo lugar, e duas formas diferentes de escrever a mesma
+    informacao obrigariam a reaprender a leitura toda manha.
+
+    So o primeiro nome no cabecalho ("Bom dia, Zeca"), e o nome INTEIRO do
+    cliente em cada linha — e quem separa dois Joses da agenda do dia.
+    """
+    cabecalho = f"Bom dia, {barbeiro_nome.split()[0]}! Hoje você tem:"
+    linhas = [
+        _linha_do_horario(
+            cliente_nome=a["cliente_nome"], servico_nome=a["servico_nome"],
+            inicio=a["inicio"], agora=agora,
+        )
+        for a in agendamentos
+    ]
+    return cabecalho + "\n" + "\n".join(linhas)
