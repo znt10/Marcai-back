@@ -34,6 +34,32 @@ def normalizar(entrada: str | None) -> str | None:
     return d
 
 
+_SUFIXO_DE_PESSOA = "@s.whatsapp.net"
+
+
+def do_jid(jid: str | None) -> str | None:
+    """O numero de quem escreveu, na MESMA forma de `Cliente.whatsapp`.
+
+    O WhatsApp guarda celular brasileiro antigo SEM o nono digito
+    (`558382217869`, medido na fatia 0). Sem recolocar o 9, `normalizar`
+    devolveria um fixo de 10 digitos e o bot nunca acharia o cliente que ja
+    marcou pela vitrine.
+
+    Celular e' o assinante que comeca de 6 a 9; fixo comeca de 2 a 5 e fica
+    como esta. Grupo, `@lid` e numero de fora do Brasil viram `None` — quem
+    chama descarta.
+    """
+    if not isinstance(jid, str) or not jid.endswith(_SUFIXO_DE_PESSOA):
+        return None
+    digitos = jid[: -len(_SUFIXO_DE_PESSOA)]
+    if not digitos.isdigit() or not digitos.startswith("55"):
+        return None
+    nacional = digitos[2:]
+    if len(nacional) == 10 and nacional[2] in "6789":
+        nacional = f"{nacional[:2]}9{nacional[2:]}"
+    return normalizar(nacional)
+
+
 def formatar(digitos: str) -> str:
     if len(digitos) == 11:
         return f"({digitos[:2]}) {digitos[2]} {digitos[3:7]}-{digitos[7:]}"
