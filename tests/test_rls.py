@@ -142,3 +142,26 @@ def test_escrever_para_a_barbearia_errada_e_recusado(cenario):
                 barbearia_id=cenario["dontony"].id,
                 nome="marcai-contrabandeada",
             )
+
+
+def _conversa(barbearia, whatsapp):
+    from tenant.models import ConversaWhatsapp
+
+    return ConversaWhatsapp.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=barbearia.id, whatsapp=whatsapp,
+    )
+
+
+def test_conversa_do_bot_nao_vaza_entre_barbearias(cenario):
+    from tenant.models import ConversaWhatsapp
+
+    _conversa(cenario["brutus"], "83911110000")
+    _conversa(cenario["dontony"], "83922220000")
+
+    with com_barbearia(cenario["brutus"].id):
+        assert list(ConversaWhatsapp.objects.values_list("whatsapp", flat=True)) == [
+            "83911110000"
+        ]
+    # Fora do wrapper, ZERO: o numero de quem conversa com uma barbearia nao
+    # pode aparecer numa consulta que esqueceu o tenant.
+    assert ConversaWhatsapp.objects.count() == 0
