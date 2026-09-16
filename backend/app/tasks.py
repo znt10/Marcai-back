@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from celery import shared_task
 
+from app.services.bot import processar as processar_mensagem_do_bot
 from app.services.lembrete import enviar_pendentes
 from app.services.lista_do_dia import enviar as enviar_lista_do_dia
 from app.services.whatsapp import estado_da_instancia
@@ -111,3 +112,17 @@ def conferir_instancias() -> dict:
 def zelador() -> dict:
     """Substitui o `while true` de `docker/zelador.sh`."""
     return alarmar_e_podar()
+
+
+@shared_task(ignore_result=True)
+def tratar_mensagem(barbearia_id: str, numero: str, texto: str, mensagem_id: str) -> str:
+    """Uma mensagem de cliente para o bot.
+
+    NAO RETENTA, de proposito. Retentar rodaria a maquina de novo, e no passo
+    de confirmar isso e' uma segunda tentativa de marcar: o banco recusaria a
+    sobreposicao, e o cliente leria "nao deu certo" depois de ter dado. Mesma
+    escolha de `MensagemNaoEnviada`: nada aqui e' reenviado depois.
+    """
+    return processar_mensagem_do_bot(
+        barbearia_id, numero, texto, mensagem_id, datetime.now(timezone.utc),
+    )

@@ -16,10 +16,11 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from django.db import IntegrityError
+from django.db import IntegrityError, OperationalError
 
 from tenant.config import (
     BOT_DIAS_OFERECIDOS,
+    BOT_ESPERA_TRAVA_S,
     BOT_HORAS_OFERECIDAS,
     BOT_IDS_GUARDADOS,
     BOT_JANELA_DIAS,
@@ -480,3 +481,34 @@ def _avisar_donos(ctx: _Contexto) -> None:
     texto = msg_bot_pediu_humano(cliente=nome or formatar(ctx.numero))
     for whatsapp in donos:
         enviar_a_equipe(whatsapp, texto)
+
+
+def silenciar(barbearia_id: str, numero: str, mensagem_id: str, agora: datetime) -> str:
+    """Alguem da barbearia respondeu pelo celular: o bot fica quieto nessa
+    conversa por BOT_MUDO_HORAS.
+
+    Espera a MESMA trava da conversa. O eco de uma resposta do bot pode chegar
+    ao webhook antes de `processar` gravar o id dela; esperando a trava, o id
+    ja esta gravado quando esta funcao olha, e o bot nao se cala sozinho.
+
+    Uma conversa presa alem do limite nao pode segurar o webhook: devolve
+    "ignorado:trava" e segue.
+    """
+    try:
+        with trava_da_conversa(barbearia_id, numero, espera_s=BOT_ESPERA_TRAVA_S):
+            with com_barbearia(barbearia_id):
+                linha = ConversaWhatsapp.objects.filter(whatsapp=numero).first()
+                if linha is not None and mensagem_id in (linha.ids_do_bot or []):
+                    return "eco"
+                ate = agora + timedelta(hours=BOT_MUDO_HORAS)
+                if linha is None:
+                    ConversaWhatsapp.objects.create(
+                        id=str(uuid.uuid4()), barbearia_id=barbearia_id, whatsapp=numero,
+                        mudo_ate=ate, atualizado_em=agora,
+                    )
+                else:
+                    ConversaWhatsapp.objects.filter(id=linha.id).update(mudo_ate=ate)
+    except OperationalError:
+        logger.warning("[bot] conversa de %s presa demais para silenciar", numero)
+        return "ignorado:trava"
+    return "silenciado"
