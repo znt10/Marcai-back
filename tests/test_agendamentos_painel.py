@@ -5,6 +5,17 @@ from unittest.mock import patch
 import pytest
 
 from app.services.sessao import COOKIE_SESSAO, emitir
+from tenant.datas import dia_semana_de, utc_para_local
+
+
+def _dia_semana(momento):
+    """O dia da semana que o MOTOR procura para este instante.
+
+    A explicacao inteira esta em `tests/test_agendamentos.py`.
+    """
+    dia, _ = utc_para_local(momento)
+    return dia_semana_de(dia)
+
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
@@ -55,7 +66,7 @@ def _proximo_slot_livre(barbeiro, servico):
     agora = datetime.now(timezone.utc)
     minuto = (agora.minute // 30 + 1) * 30
     base = agora.replace(second=0, microsecond=0, minute=0) + timedelta(minutes=minuto)
-    _expediente_aberto_24h(barbeiro.barbearia_id, barbeiro, ((base.date().isoweekday()) % 7))
+    _expediente_aberto_24h(barbeiro.barbearia_id, barbeiro, _dia_semana(base))
     return base
 
 

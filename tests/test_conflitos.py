@@ -4,6 +4,17 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.services.sessao import COOKIE_SESSAO, emitir
+from tenant.datas import dia_semana_de, utc_para_local
+
+
+def _dia_semana(momento):
+    """O dia da semana que o MOTOR procura para este instante.
+
+    A explicacao inteira esta em `tests/test_agendamentos.py`.
+    """
+    dia, _ = utc_para_local(momento)
+    return dia_semana_de(dia)
+
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
@@ -64,7 +75,7 @@ def test_agendamento_dentro_da_jornada_sem_bloqueio_nao_e_conflito(client, cenar
     futuro = datetime.now(timezone.utc) + timedelta(days=2)
     from tenant.models import HorarioTrabalho
 
-    dia_semana = ((futuro.date().isoweekday()) % 7)
+    dia_semana = _dia_semana(futuro)
     HorarioTrabalho.objects.using("owner").create(
         id=str(uuid.uuid4()), barbearia_id=b.id, barbeiro_id=barbeiro.id,
         dia_semana=dia_semana, minutos_inicio=0, minutos_fim=1440,

@@ -4,6 +4,25 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
+from tenant.datas import dia_semana_de, utc_para_local
+
+
+def _dia_semana(momento):
+    """O dia da semana que o MOTOR vai procurar para este instante.
+
+    Pelas funcoes do proprio motor, e nao por `momento.date()`, porque as
+    duas coisas nao sao a mesma: `marcar()` faz `utc_para_local(inicio)`
+    antes de olhar o expediente, entao quem manda e' o calendario de SAO
+    PAULO, nao o de UTC. Entre 00:00 e 03:00 UTC os dois calendarios estao
+    em dias diferentes — e era exatamente ali que estes testes caiam,
+    cadastrando jornada numa quinta que o motor procurava na quarta.
+
+    Derivar daqui garante que teste e motor nao possam divergir de novo:
+    se a regra de fuso mudar, muda para os dois no mesmo commit.
+    """
+    dia, _ = utc_para_local(momento)
+    return dia_semana_de(dia)
+
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
@@ -96,7 +115,7 @@ def _proximo_slot_livre(barbeiro, servico, daqui_a_min=30):
     passo = 30
     minuto = ((agora.minute + daqui_a_min) // passo + 1) * passo
     base = agora.replace(second=0, microsecond=0, minute=0) + timedelta(minutes=minuto)
-    _expediente_aberto_24h(barbeiro.barbearia_id, barbeiro, (base.date().isoweekday() % 7))
+    _expediente_aberto_24h(barbeiro.barbearia_id, barbeiro, _dia_semana(base))
     return base
 
 
