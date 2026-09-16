@@ -1,0 +1,79 @@
+# Roda a suite em todo PR para a `main`, e na propria `main` depois do merge.
+#
+# POR QUE UM POSTGRES DE VERDADE, e nao sqlite nem `--no-migrations`: a suite
+# roda COM as migrations de proposito (o `pytest.ini` explica), porque sao
+# elas que criam o RLS, a restricao de EXCLUDE e os GRANTs. Rodar sem isso
+# testaria um banco que nenhum ambiente tem — e o `test_rls.py` provaria um
+# isolamento entre barbearias que na verdade nao existiria.
+#
+# Os TRES papeis (`brutus_owner`, `brutus_app`, `brutus_admin`) tambem nao sao
+# detalhe: metade do valor da suite esta em provar o que o papel do runtime
+# NAO consegue fazer. Com um usuario unico e superpoderes, esses testes
+# passariam sem provar nada.
+#
+# `docker/init-db.sh` e' o MESMO script do compose de desenvolvimento. Aqui
+# ele e' chamado direto, sem Docker — e' shell puro sobre `psql`. Reusa-lo em
+# vez de reescrever o SQL aqui e' o que impede o CI de testar um banco
+# diferente do que as pessoas tem na maquina.
+name: testes
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+
+    services:
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        # Sem o healthcheck o primeiro `psql` corre contra um Postgres que
+        # ainda esta subindo, e o CI falha por corrida, nao por codigo.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGHOST: localhost
+      # 5432 e obrigatorio aqui: o `pytest.ini` traz 5433 como PADRAO (a porta
+      # que o compose publica no host de quem desenvolve), e padrao so vale se
+      # ninguem definiu. Sem esta linha, a suite procuraria o banco na porta
+      # errada.
+      PGPORT: "5432"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Cliente do Postgres
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Papeis e bancos
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          PGPASSWORD: postgres
+        run: sh docker/init-db.sh
+
+      - name: Dependencias
+        run: pip install -r requirements.txt
+
+      # TENANT_PADRAO fica DE FORA, e isso importa: ligado, ele leva o Django
+      # a `ALLOWED_HOSTS = ["*"]`, e os testes de recusa de host param de
+      # provar recusa nenhuma.
+      - name: Suite
+        run: pytest -q
