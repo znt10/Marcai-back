@@ -30,7 +30,7 @@
 2. **Trava consultiva no lugar de `select_for_update`.** A trava de linha morre no fim da transação, e a conversa atravessa várias (`marcar` abre a própria). `pg_advisory_lock` vive na conexão e segura ler → decidir → marcar → responder → gravar.
 3. **Eco das mensagens do próprio bot.** As respostas do bot saem do número da barbearia; se a Evolution devolver cada uma como `fromMe`, o bot se calaria sozinho a cada resposta. O bot guarda os ids do que mandou e `silenciar` ignora esses ids, esperando a mesma trava da conversa para não correr contra a gravação. A tarefa 10 mede se o eco existe e se os ids batem.
 4. **O lembrete oferece "Não vou conseguir ir", e não "Cancelar".** O lembrete sai `LEMBRETE_ANTECEDENCIA_MIN = 60` minutos antes, e o cliente só cancela com mais de `PRAZO_CANCELAMENTO_MIN = 60`: um "cancelar" no lembrete daria SEMPRE "fora do prazo". A opção avisa o barbeiro, que desmarca pelo painel (onde não há prazo), e a regra de prazo continua intocada. **Decisão de produto a confirmar com o José antes da tarefa 12.**
-5. **`base64: false` quando o bot está ligado.** A fatia 0 viu mídia inteira dentro dos eventos por causa do `base64: true` que o QR usa. Com o bot ligado, o QR ainda chega pela busca de `pedir_qr` no painel. A tarefa 10 confirma.
+5. **(Revertida depois da fatia 0b: `base64` é sempre `true`, com ou sem bot.)** **`base64: false` quando o bot está ligado.** A fatia 0 viu mídia inteira dentro dos eventos por causa do `base64: true` que o QR usa. Com o bot ligado, o QR ainda chega pela busca de `pedir_qr` no painel. A tarefa 10 confirma.
 
 ## Mapa de arquivos
 

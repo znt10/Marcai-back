@@ -157,13 +157,13 @@ def aplicar_evento(corpo: dict) -> str:
     if evento == EVENTO_QR:
         base64 = (data.get("qrcode") or {}).get("base64")
         if not isinstance(base64, str) or not base64:
-            # Sem base64 e' o que a Evolution manda quando o bot esta ligado
-            # (a assinatura pede `base64: false` de proposito, ver
-            # `_aplicar_webhook`). Ignorar em silencio deixaria o painel
-            # preso no QR anterior enquanto a Evolution ja girou para outro,
-            # e o dono nunca conseguiria reconectar depois de "Trocar de
-            # celular". Limpar o campo faz o proximo `ver()` pedir um QR
-            # novo de verdade via `pedir_qr`.
+            # Um evento de QR sem base64 (por exemplo quando a Evolution
+            # bate o limite de QRs) nao traz codigo novo. Ignorar em silencio
+            # deixaria o painel preso no QR anterior, que ja morreu, e o dono
+            # nunca conseguiria reconectar depois de "Trocar de celular".
+            # Limpar o campo faz o proximo `ver()` pedir um QR novo de
+            # verdade via `pedir_qr`. (A assinatura pede `base64: true`
+            # sempre, com ou sem bot.)
             _gravar(barbearia_id, nome, qr_base64=None)
             return "qr_sem_base64"
         marcar_qr(barbearia_id, nome, base64)

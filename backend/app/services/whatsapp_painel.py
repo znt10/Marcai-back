@@ -142,10 +142,8 @@ def ligar_bot(barbearia, ativo: bool) -> bool:
         return False
 
     # Ligar exige o aparelho CONECTADO: sem isso o bot ficaria "ativo"
-    # respondendo para ninguem, e a assinatura com bot pede `base64: false`
-    # na Evolution — o QR que viria depois chegaria surdo e o dono nem veria
-    # como reconectar. Desligar continua permitido em qualquer estado que ja
-    # passava por aqui.
+    # respondendo para ninguem enquanto o dono ainda nem leu o QR. Desligar
+    # continua permitido em qualquer estado que ja passava por aqui.
     if ativo and linha.estado != EstadoInstancia.CONECTADO:
         return False
 
