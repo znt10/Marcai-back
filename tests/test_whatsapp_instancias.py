@@ -247,6 +247,46 @@ def test_consultar_estado_com_falha_de_rede_nao_decide_nada(caplog):
             assert wi.consultar_estado("marcai-x") is None
 
 
+# ---- consultar_dono ----
+
+
+def _instancias(corpo, ok=True, status=200):
+    resposta = Mock(ok=ok, status_code=status)
+    resposta.json.return_value = corpo
+    return resposta
+
+
+def test_consultar_dono_le_o_owner_jid_do_fetch_instances():
+    """Formato medido na 2.3.7: lista com um objeto por instancia, e o numero
+    do aparelho conectado em `ownerJid`."""
+    corpo = [{"name": "marcai-x", "connectionStatus": "open",
+              "ownerJid": "558399990000@s.whatsapp.net"}]
+    with patch.object(wi.requests, "get", return_value=_instancias(corpo)) as get:
+        assert wi.consultar_dono("marcai-x") == "558399990000@s.whatsapp.net"
+    assert get.call_args.args[0] == "http://evolution:8080/instance/fetchInstances"
+    assert get.call_args.kwargs["params"] == {"instanceName": "marcai-x"}
+
+
+@pytest.mark.parametrize(
+    "resposta",
+    [
+        _instancias([]),
+        _instancias([{"name": "marcai-x", "ownerJid": None}]),
+        _instancias({"status": 404}, ok=False, status=404),
+        _instancias({"inesperado": True}),
+    ],
+)
+def test_consultar_dono_sem_resposta_util_devolve_none(resposta):
+    with patch.object(wi.requests, "get", return_value=resposta):
+        assert wi.consultar_dono("marcai-x") is None
+
+
+def test_consultar_dono_com_falha_de_rede_devolve_none(caplog):
+    with patch.object(wi.requests, "get", side_effect=requests_lib.ConnectionError("boom")):
+        with caplog.at_level("ERROR"):
+            assert wi.consultar_dono("marcai-x") is None
+
+
 # ---- pedir_qr ----
 
 

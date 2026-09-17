@@ -1,6 +1,6 @@
 import pytest
 
-from tenant.telefone import do_jid, formas_gravadas, nacional_canonico
+from tenant.telefone import canonico, do_jid, formas_gravadas, nacional_canonico
 
 
 @pytest.mark.parametrize(
@@ -64,3 +64,23 @@ def test_nacional_canonico(numero, esperado):
 )
 def test_formas_gravadas(numero, esperado):
     assert formas_gravadas(numero) == esperado
+
+
+@pytest.mark.parametrize(
+    "valor, esperado",
+    [
+        # As tres formas em que o MESMO celular aparece: JID sem o nono digito
+        # (como o WhatsApp guarda conta antiga), com 55 na frente e nacional.
+        ("558382217869@s.whatsapp.net", "83982217869"),
+        ("558382217869", "83982217869"),
+        ("5583982217869", "83982217869"),
+        ("8382217869", "83982217869"),
+        ("83982217869", "83982217869"),
+        ("1133334444", "1133334444"),
+        (None, None),
+        ("123456@lid", None),
+        ("nada", None),
+    ],
+)
+def test_canonico_junta_as_formas_do_mesmo_numero(valor, esperado):
+    assert canonico(valor) == esperado

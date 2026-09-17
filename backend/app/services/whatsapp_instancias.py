@@ -363,6 +363,47 @@ def consultar_estado(nome: str) -> str | None:
     return None
 
 
+def consultar_dono(nome: str) -> str | None:
+    """O JID do aparelho conectado agora (`ownerJid` do `fetchInstances`), ou
+    `None` quando nao se sabe.
+
+    E' a fonte da verdade do numero. `connectionState` so' diz o estado, e o
+    `wuid` do webhook so' chega no `open` — quando esse evento se perde, este
+    e' o unico lugar que ainda sabe qual celular leu o QR. Formato medido na
+    2.3.7: lista com um objeto por instancia.
+    """
+    cfg = _config()
+    if not cfg["url"]:
+        return None
+
+    try:
+        r = requests.get(
+            f"{cfg['url']}/instance/fetchInstances",
+            params={"instanceName": nome},
+            headers={"apikey": cfg["chave"]},
+            timeout=TIMEOUT_S,
+        )
+    except requests.RequestException as e:
+        logger.error("[whatsapp-instancia] falha ao consultar o aparelho de %s: %s", nome, e)
+        return None
+
+    if not r.ok:
+        logger.error(
+            "[whatsapp-instancia] consulta do aparelho recusada (%s) para %s",
+            r.status_code, nome,
+        )
+        return None
+
+    try:
+        corpo = r.json()
+    except ValueError:
+        return None
+    if not isinstance(corpo, list) or not corpo or not isinstance(corpo[0], dict):
+        return None
+    dono = corpo[0].get("ownerJid")
+    return dono if isinstance(dono, str) and dono else None
+
+
 def pedir_qr(nome: str) -> str | None:
     """Pede um QR novo. Usado quando o dono abre a tela e nao ha QR guardado —
     o caminho normal e' o webhook trazer o QR sozinho, e este aqui e' a saida

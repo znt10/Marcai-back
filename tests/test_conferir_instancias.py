@@ -33,14 +33,15 @@ def _recarregar(barbearia):
         return WhatsappInstancia.objects.get(barbearia_id=barbearia.id)
 
 
-def _rodar(estado_lido=None):
-    """`consultar_estado` e `garantir_instancia` simulados: o que esta sob
-    teste e' a DECISAO da tarefa, nao a conversa com a Evolution."""
+def _rodar(estado_lido=None, dono=None):
+    """`consultar_estado`, `consultar_dono` e `garantir_instancia` simulados: o
+    que esta sob teste e' a DECISAO da tarefa, nao a conversa com a Evolution."""
     from app import tasks
+    from app.services import whatsapp_eventos
 
     with patch.object(tasks, "consultar_estado", return_value=estado_lido) as consultar, patch.object(
         tasks, "garantir_instancia"
-    ) as garantir:
+    ) as garantir, patch.object(whatsapp_eventos, "consultar_dono", return_value=dono):
         resultado = tasks.conferir_instancias()
     return resultado, consultar, garantir
 
@@ -146,3 +147,54 @@ def test_confere_cada_barbearia_no_proprio_tenant(cenario):
 
     assert _recarregar(b).estado == EstadoInstancia.DESCONECTADO
     assert _recarregar(outra).estado == EstadoInstancia.DESCONECTADO
+
+
+# ---- o numero do aparelho ----
+
+
+def test_reconexao_vista_pela_conferencia_traz_o_numero_novo(cenario):
+    """Regressao do numero preso: o `open` do celular novo se perdeu (Django
+    reiniciando) e a conferencia viu `CONECTADO`. Antes ela regravava o numero
+    que ja estava na linha — o do celular ANTERIOR — e ninguem o corrigia."""
+    b = cenario["brutus"]
+    _com_zap(b, estado=EstadoInstancia.DESCONECTADO, numero_conectado="5583911112222")
+
+    _rodar(estado_lido=EstadoInstancia.CONECTADO, dono="558399990000@s.whatsapp.net")
+
+    linha = _recarregar(b)
+    assert linha.estado == EstadoInstancia.CONECTADO
+    assert linha.numero_conectado == "83999990000"
+
+
+def test_conectado_com_numero_velho_e_corrigido(cenario):
+    """O estado nao mudou, mas o aparelho sim. Sem isto uma linha que ja
+    ficou com o numero errado nunca sairia dele."""
+    b = cenario["brutus"]
+    _com_zap(b, estado=EstadoInstancia.CONECTADO, numero_conectado="5583911112222")
+
+    resultado, _, _ = _rodar(estado_lido=EstadoInstancia.CONECTADO, dono="5583999990000@s.whatsapp.net")
+
+    assert _recarregar(b).numero_conectado == "83999990000"
+    assert resultado["corrigidas"] == 1
+
+
+def test_conectado_com_numero_certo_nao_reescreve(cenario):
+    b = cenario["brutus"]
+    _com_zap(b, estado=EstadoInstancia.CONECTADO, numero_conectado="83999990000")
+    antes = _recarregar(b).atualizado_em
+
+    resultado, _, _ = _rodar(estado_lido=EstadoInstancia.CONECTADO, dono="558399990000@s.whatsapp.net")
+
+    assert resultado["corrigidas"] == 0
+    assert _recarregar(b).atualizado_em == antes
+
+
+def test_dono_desconhecido_nao_apaga_o_numero(cenario):
+    """`None` e' "nao sei" (rede fora): nao vira numero apagado."""
+    b = cenario["brutus"]
+    _com_zap(b, estado=EstadoInstancia.CONECTADO, numero_conectado="83999990000")
+
+    resultado, _, _ = _rodar(estado_lido=EstadoInstancia.CONECTADO, dono=None)
+
+    assert _recarregar(b).numero_conectado == "83999990000"
+    assert resultado["corrigidas"] == 0

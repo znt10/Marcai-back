@@ -69,6 +69,21 @@ def nacional_canonico(nacional: str) -> str:
     return nacional
 
 
+def canonico(valor: str | None) -> str | None:
+    """A forma de COMPARAR telefone: nacional, com o nono digito do celular.
+
+    O mesmo aparelho aparece em tres formas pelo sistema — JID do WhatsApp
+    (conta antiga vem SEM o nono digito), digitos com 55 na frente e os 10/11
+    nacionais de `Barbeiro.whatsapp`. Comparar as formas cruas diria que o
+    dono nao e' o dono. `None` para o que nao for telefone brasileiro."""
+    if not isinstance(valor, str):
+        return None
+    if "@" in valor:
+        return do_jid(valor)
+    nacional = normalizar(valor)
+    return nacional_canonico(nacional) if nacional else None
+
+
 def formas_gravadas(numero: str) -> list[str]:
     """As formas em que o MESMO celular pode estar em `Cliente.whatsapp`.
 
