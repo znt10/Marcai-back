@@ -61,9 +61,11 @@ from .mensagens import (
     msg_bot_nao_entendi_nome,
     msg_bot_pediu_humano,
     msg_bot_pergunta,
+    msg_bot_pergunta_do_lembrete,
     msg_bot_sem_opcoes,
     msg_cancelamento,
     msg_confirmacao,
+    msg_lembrete_com_opcoes,
     rotulo_da_hora,
     rotulo_do_agendamento,
 )
@@ -514,3 +516,80 @@ def silenciar(barbearia_id: str, numero: str, mensagem_id: str, agora: datetime)
         )
         return "ignorado:trava"
     return "silenciado"
+
+
+def enviar_lembrete_pelo_bot(
+    barbearia_id: str, instancia_nome: str, numero: str, codigo: str,
+    lembrete: str, agora: datetime,
+) -> None:
+    """O lembrete de sempre, com as respostas que o bot entende.
+
+    Dentro da trava da conversa, pelas mesmas duas razoes de `silenciar`: nao
+    atropelar uma conversa que acontece agora, e gravar o id do lembrete antes
+    de o eco dele chegar — senao o bot se calaria justo quando o cliente vai
+    responder.
+
+    Conversa ocupada (escolhendo horario, ou muda porque alguem da barbearia
+    esta falando) recebe o lembrete SEM opcoes, e o estado dela fica.
+    """
+    enviado = False
+    try:
+        with trava_da_conversa(barbearia_id, numero, espera_s=BOT_ESPERA_TRAVA_S):
+            linha = _conversa(barbearia_id, numero)
+            ocupada = linha is not None and (
+                (linha.mudo_ate is not None and como_utc(linha.mudo_ate) > agora)
+                or (bool(linha.opcoes) and not c.expirou(_estado_de(linha), agora))
+            )
+            texto = lembrete if ocupada else msg_lembrete_com_opcoes(lembrete=lembrete)
+            mensagem_id = _enviar(instancia_nome, numero, texto)
+            enviado = True
+            _registrar_lembrete(
+                barbearia_id, numero, linha, mensagem_id, None if ocupada else codigo, agora,
+            )
+    except OperationalError:
+        if enviado:
+            logger.error(
+                "[bot] lembrete de %s saiu, mas a conversa nao foi gravada (agendamento=%s)",
+                barbearia_id, codigo,
+            )
+            return
+        logger.warning(
+            "[bot] conversa de %s presa: lembrete sai sem opcoes (agendamento=%s)",
+            barbearia_id, codigo,
+        )
+        _enviar(instancia_nome, numero, lembrete)
+
+
+def _registrar_lembrete(barbearia_id, numero, linha, mensagem_id, codigo, agora) -> None:
+    """Grava o id do lembrete e, se ele tinha opcoes (`codigo` presente), o
+    estado `AGUARDANDO_LEMBRETE`.
+
+    Se `_enviar` nao devolveu id, a mensagem nao chegou ao cliente — nao ha
+    opcoes na tela dele para responder, e avancar o estado aqui deixaria a
+    conversa esperando um "1"/"2" que nunca vai fazer sentido (mesma regra de
+    `_gravar`, Tarefa 6: sem entrega, o estado nao avanca). Sem id e sem linha
+    anterior tambem nao ha o que gravar.
+    """
+    if not mensagem_id:
+        return
+    ids = list(linha.ids_do_bot or []) if linha is not None else []
+    ids = (ids + [mensagem_id])[-BOT_IDS_GUARDADOS:]
+    campos = {"ids_do_bot": ids}
+    if codigo is not None:
+        campos.update(
+            estado=c.AGUARDANDO_LEMBRETE,
+            opcoes=[
+                {"id": f"confirmar:{codigo}", "rotulo": "Confirmar"},
+                {"id": f"nao_vou:{codigo}", "rotulo": "Não vou conseguir ir"},
+            ],
+            rascunho={}, tentativas=0,
+            pergunta=msg_bot_pergunta_do_lembrete(),
+            atualizado_em=agora,
+        )
+    with com_barbearia(barbearia_id):
+        if linha is None:
+            ConversaWhatsapp.objects.create(
+                id=str(uuid.uuid4()), barbearia_id=barbearia_id, whatsapp=numero, **campos,
+            )
+        else:
+            ConversaWhatsapp.objects.filter(id=linha.id).update(**campos)

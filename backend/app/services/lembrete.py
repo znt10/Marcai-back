@@ -3,7 +3,14 @@ from datetime import datetime, timedelta
 from django.utils import timezone
 
 from tenant.config import LEMBRETE_ANTECEDENCIA_MIN
-from tenant.models import Agendamento, Barbearia, TipoMensagem
+from tenant.models import (
+    Agendamento,
+    Barbearia,
+    EstadoInstancia,
+    PlanoBarbearia,
+    TipoMensagem,
+    WhatsappInstancia,
+)
 from tenant.rls import com_barbearia
 
 from .mensagens import msg_lembrete
@@ -44,6 +51,17 @@ def enviar_pendentes(agora: datetime) -> int:
                     inicio__gt=agora, inicio__lte=limite,
                 ).select_related("barbeiro", "cliente")
             )
+            instancia = WhatsappInstancia.objects.filter(barbearia_id=b.id).first()
+
+        # Pelo bot so' com tudo de pe: plano com zap, bot ligado e conectado.
+        # Qualquer outro caso segue `enviar_ao_cliente`, que ja sabe registrar
+        # a "nao enviada" quando o numero esta fora do ar.
+        pelo_bot = (
+            b.plano == PlanoBarbearia.COM_ZAP
+            and instancia is not None
+            and instancia.bot_ativo
+            and instancia.estado == EstadoInstancia.CONECTADO
+        )
 
         for a in pendentes:
             # MARCA antes de mandar, numa transacao PROPRIA por agendamento —
@@ -56,16 +74,22 @@ def enviar_pendentes(agora: datetime) -> int:
             # commit correspondente nunca chegar a acontecer.
             with com_barbearia(b.id):
                 Agendamento.objects.filter(id=a.id).update(lembrete_enviado_em=timezone.now())
-            enviar_ao_cliente(
-                b,
-                a.cliente.whatsapp,
-                msg_lembrete(
-                    servico_nome=a.servico_nome, barbeiro_nome=a.barbeiro.nome,
-                    inicio=a.inicio, endereco=b.endereco,
-                ),
-                tipo=TipoMensagem.LEMBRETE,
-                cliente_nome=a.cliente.nome,
+            texto = msg_lembrete(
+                servico_nome=a.servico_nome, barbeiro_nome=a.barbeiro.nome,
+                inicio=a.inicio, endereco=b.endereco,
             )
+            if pelo_bot:
+                # Import tardio: bot -> agendamentos -> lembrete.
+                from .bot import enviar_lembrete_pelo_bot
+
+                enviar_lembrete_pelo_bot(
+                    str(b.id), instancia.nome, a.cliente.whatsapp, a.codigo, texto, agora,
+                )
+            else:
+                enviar_ao_cliente(
+                    b, a.cliente.whatsapp, texto,
+                    tipo=TipoMensagem.LEMBRETE, cliente_nome=a.cliente.nome,
+                )
             enviados += 1
 
     return enviados
