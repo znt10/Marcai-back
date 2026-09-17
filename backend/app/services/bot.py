@@ -244,7 +244,7 @@ def _executar(ctx: _Contexto, estado: c.Estado, pergunta_anterior, decisao) -> _
     if isinstance(decisao, c.Cancelar):
         return _cancelar(ctx, decisao.codigo)
     if isinstance(decisao, c.ConfirmarLembrete):
-        return _Saida("lembrete_confirmado", c.MENU, [msg_bot_lembrete_confirmado()])
+        return _confirmar_lembrete(ctx, decisao.codigo)
     if isinstance(decisao, c.NaoVou):
         return _nao_vou(ctx, decisao.codigo)
     return _ir(ctx, decisao.passo, decisao.rascunho)
@@ -474,6 +474,16 @@ def _cancelar(ctx: _Contexto, codigo: str) -> _Saida:
     )
     texto = msg_cancelamento(barbeiro_nome=resultado["barbeiro_nome"], inicio=resultado["inicio"])
     return _Saida("cancelou", c.MENU, [texto])
+
+
+def _confirmar_lembrete(ctx: _Contexto, codigo: str) -> _Saida:
+    """Mesma conferencia de `_nao_vou`: entre o lembrete e a resposta o
+    horario pode ter sido desmarcado pelo painel, e opcao guardada nao e'
+    autoridade — "Combinado" mandaria o cliente para uma cadeira que nao e'
+    mais dele."""
+    if _agendamento_do_numero(ctx, codigo) is None:
+        return _Saida("nao_e_seu", c.MENU, [msg_bot_nao_achei_agendamento()])
+    return _Saida("lembrete_confirmado", c.MENU, [msg_bot_lembrete_confirmado()])
 
 
 def _nao_vou(ctx: _Contexto, codigo: str) -> _Saida:

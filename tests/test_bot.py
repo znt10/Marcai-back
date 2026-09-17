@@ -344,6 +344,32 @@ def test_confirmar_o_lembrete_so_responde(cenario):
     assert conversa.equipe_leu == []
 
 
+def test_confirmar_lembrete_de_horario_cancelado_no_painel_nao_diz_combinado(cenario):
+    """O barbeiro desmarcou pelo painel depois do lembrete: "Combinado, te
+    esperamos!" mandaria o cliente para uma cadeira que nao e' mais dele."""
+    b, pedro, servico = _cenario_simples(cenario)
+    agora = datetime.now(timezone.utc)
+    ag = _agendamento(b, pedro, servico, _cliente(b), agora + timedelta(minutes=50))
+    _parado_no_lembrete(b, ag, agora)
+    Agendamento.objects.using("owner").filter(id=ag.id).update(status="CANCELADO_BARBEIRO")
+    conversa = _Conversa(b, agora=agora)
+    assert conversa.diz("1") == "nao_e_seu"
+    assert conversa.ultima == "Não achei esse horário marcado neste número."
+
+
+def test_confirmar_lembrete_com_codigo_de_outro_numero_nao_diz_combinado(cenario):
+    b, pedro, servico = _cenario_simples(cenario)
+    agora = datetime.now(timezone.utc)
+    alheio = _agendamento(
+        b, pedro, servico, _cliente(b, "Outra Pessoa", "83911112222"),
+        agora + timedelta(minutes=50),
+    )
+    _parado_no_lembrete(b, alheio, agora)
+    conversa = _Conversa(b, agora=agora)
+    assert conversa.diz("1") == "nao_e_seu"
+    assert conversa.ultima == "Não achei esse horário marcado neste número."
+
+
 def test_nao_vou_avisa_o_barbeiro_e_nao_cancela(cenario):
     """Cancelar ficaria fora do prazo; quem desmarca e' o barbeiro, pelo
     painel. O que importa e' ele saber antes da cadeira ficar vazia."""

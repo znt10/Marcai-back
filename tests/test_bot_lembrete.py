@@ -130,6 +130,43 @@ def test_conversa_em_andamento_recebe_o_lembrete_sem_opcoes(cenario):
     assert linha.ids_do_bot == ["3EB0-LEMBRETE"]
 
 
+def test_conversa_muda_recebe_o_lembrete_sem_opcoes(cenario):
+    """Alguem da barbearia esta falando com o cliente: o lembrete sai puro e
+    o bot continua calado."""
+    b, _, agora = _cenario(cenario)
+    mudo_ate = agora + timedelta(hours=2)
+    ConversaWhatsapp.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=b.id, whatsapp=NUMERO, mudo_ate=mudo_ate,
+        atualizado_em=agora - timedelta(minutes=30),
+    )
+    with patch(ENVIAR, return_value="3EB0-LEMBRETE") as enviar:
+        enviar_pendentes(agora)
+    texto = enviar.call_args.args[2]
+    assert texto.startswith("Lembrete:")
+    assert "1 - Confirmar" not in texto
+    linha = _linha(b)
+    assert linha.estado == "MENU"
+    assert linha.opcoes == []
+    assert linha.mudo_ate == mudo_ate
+    assert linha.ids_do_bot == ["3EB0-LEMBRETE"]
+
+
+def test_conversa_expirada_recebe_o_lembrete_com_opcoes(cenario):
+    """Opcoes velhas de uma conversa abandonada nao seguram o lembrete."""
+    b, ag, agora = _cenario(cenario)
+    ConversaWhatsapp.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=b.id, whatsapp=NUMERO, estado="HORA",
+        opcoes=[{"id": "outro_dia", "rotulo": "Outro dia"}],
+        atualizado_em=agora - timedelta(hours=2),
+    )
+    with patch(ENVIAR, return_value="3EB0-LEMBRETE") as enviar:
+        enviar_pendentes(agora)
+    assert enviar.call_args.args[2].endswith("1 - Confirmar\n2 - Não vou conseguir ir")
+    linha = _linha(b)
+    assert linha.estado == "AGUARDANDO_LEMBRETE"
+    assert [o["id"] for o in linha.opcoes] == [f"confirmar:{ag.codigo}", f"nao_vou:{ag.codigo}"]
+
+
 def test_sem_bot_o_lembrete_segue_o_caminho_de_sempre(cenario):
     b, _, agora = _cenario(cenario, bot_ativo=False)
     with patch("app.services.lembrete.enviar_ao_cliente") as ao_cliente, patch(ENVIAR) as enviar:
