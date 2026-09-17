@@ -69,6 +69,25 @@ class TipoMensagem(models.TextChoices):
     LEMBRETE = "LEMBRETE"
 
 
+class EstadoConversa(models.TextChoices):
+    """Em que pergunta a conversa do bot esta parada.
+
+    NAO existe estado "mudo". O silencio e' a coluna `mudo_ate`: entrar em mudo
+    nao pode apagar onde a conversa estava (spec, secao 3).
+    """
+
+    MENU = "MENU"
+    SERVICO = "SERVICO"
+    BARBEIRO = "BARBEIRO"
+    DIA = "DIA"
+    HORA = "HORA"
+    NOME = "NOME"
+    CONFIRMA = "CONFIRMA"
+    QUAL_AGENDAMENTO = "QUAL_AGENDAMENTO"
+    CONFIRMA_CANCEL = "CONFIRMA_CANCEL"
+    AGUARDANDO_LEMBRETE = "AGUARDANDO_LEMBRETE"
+
+
 class Barbearia(models.Model):
     """A tabela de tenant. Unica sem barbearia_id e unica fora do RLS — ela e
     lida ANTES de existir tenant, para traduzir subdominio em id, e por isso e
@@ -441,6 +460,10 @@ class WhatsappInstancia(models.Model):
     # nunca reescrito enquanto continua caido. E' isso que faz a faixa do
     # painel dizer "desde 14:02" em vez de "desde agora" a cada conferencia.
     desconectado_desde = models.DateTimeField(null=True)
+    # O interruptor do bot. Mora AQUI e nao em `Barbearia` porque quem liga e'
+    # o dono, pelo painel, e o runtime (`brutus_app`) nao tem UPDATE em
+    # `tenant_barbearia` (0002_rls.py). Nasce desligado.
+    bot_ativo = models.BooleanField(default=False)
     atualizado_em = models.DateTimeField(default=timezone.now)
 
     def __str__(self):
@@ -471,3 +494,49 @@ class MensagemNaoEnviada(models.Model):
 
     def __str__(self):
         return f"{self.tipo} para {self.cliente_nome}"
+
+
+class ConversaWhatsapp(models.Model):
+    """Onde a conversa do bot com UM numero esta parada.
+
+    Uma linha por conversa, sobrescrita a cada passo, e NAO uma por mensagem:
+    uma tabela que crescesse por mensagem seria ilimitada e cheia de texto de
+    cliente, e o Marcai nao guarda o que foi conversado (spec, secao 2).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    barbearia = models.ForeignKey(
+        Barbearia, on_delete=models.RESTRICT, related_name="conversas",
+    )
+    # 10 ou 11 digitos nacionais, na MESMA forma de `Cliente.whatsapp` — e'
+    # por essa igualdade que o bot acha o cliente.
+    whatsapp = models.TextField()
+    estado = models.CharField(
+        max_length=24, choices=EstadoConversa, default=EstadoConversa.MENU,
+    )
+    # O que o bot OFERECEU: [{"id": ..., "rotulo": ...}]. Entender "2" e'
+    # `opcoes[1]`, sem consultar o banco.
+    opcoes = models.JSONField(default=list)
+    # O que ja foi decidido: servico_id, barbeiro_id, dia, inicio...
+    rascunho = models.JSONField(default=dict)
+    tentativas = models.IntegerField(default=0)
+    # O texto da ultima pergunta. "Nao entendi" repete ESTE texto, com as MESMAS
+    # opcoes — refazer a lista do banco podia mudar a numeracao embaixo do
+    # cliente.
+    pergunta = models.TextField(null=True)
+    ultima_mensagem_id = models.TextField(null=True)
+    # Os ids das mensagens que o bot mandou. O webhook devolve cada uma como
+    # `fromMe`; sem reconhecer o proprio eco, o bot se calaria a cada resposta.
+    ids_do_bot = models.JSONField(default=list)
+    mudo_ate = models.DateTimeField(null=True)
+    atualizado_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["barbearia", "whatsapp"], name="conversa_por_numero",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.whatsapp} ({self.estado})"

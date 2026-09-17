@@ -250,3 +250,27 @@ def test_estado_da_instancia_resposta_recusada_e_erro(monkeypatch, caplog):
         with caplog.at_level("ERROR"):
             assert whatsapp.estado_da_instancia() == "erro"
     assert "401" in caplog.text
+
+
+# ------------------------------------------------------------------ _enviar
+
+
+def test_enviar_devolve_o_id_que_a_evolution_deu(monkeypatch):
+    """O bot guarda este id para reconhecer o eco da propria resposta quando
+    ele volta pelo webhook como `fromMe`."""
+    monkeypatch.setenv("EVOLUTION_API_URL", "http://evolution:8080")
+    monkeypatch.setenv("EVOLUTION_API_KEY", "chave")
+    resposta = Mock(ok=True, status_code=201)
+    resposta.json.return_value = {
+        "key": {"id": "3EB0ABC123", "remoteJid": "5583988887777@s.whatsapp.net"},
+        "status": "PENDING",
+    }
+    with patch.object(whatsapp.requests, "post", return_value=resposta):
+        assert whatsapp._enviar("marcai-x", "83988887777", "oi") == "3EB0ABC123"
+
+
+def test_enviar_recusado_devolve_none(monkeypatch):
+    monkeypatch.setenv("EVOLUTION_API_URL", "http://evolution:8080")
+    monkeypatch.setenv("EVOLUTION_API_KEY", "chave")
+    with patch.object(whatsapp.requests, "post", return_value=Mock(ok=False, status_code=400, text="x")):
+        assert whatsapp._enviar("marcai-x", "83988887777", "oi") is None

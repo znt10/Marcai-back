@@ -161,3 +161,141 @@ def msg_lista_do_dia(*, barbeiro_nome: str, agendamentos: list[dict], agora) -> 
         for a in agendamentos
     ]
     return cabecalho + "\n" + "\n".join(linhas)
+
+
+# ---- O bot de agendamento -------------------------------------------------
+#
+# Menu NUMERADO, e o numero sozinho e' a unica coisa que o bot entende (spec,
+# secao 2). Toda pergunta termina numa lista "1 - ...", e o "0" e' sempre a
+# saida para gente de verdade.
+
+FALAR_COM_A_BARBEARIA = "0 - Falar com a barbearia"
+
+_CABECALHO_DO_PASSO = {
+    "SERVICO": "Qual serviço?",
+    "BARBEIRO": "Com quem?",
+    "DIA": "Qual dia?",
+    "QUAL_AGENDAMENTO": "Qual horário você quer cancelar?",
+}
+
+_OPCOES_DO_LEMBRETE = "1 - Confirmar\n2 - Não vou conseguir ir"
+
+
+def _numerada(opcoes: list[dict]) -> str:
+    return "\n".join(f"{i} - {o['rotulo']}" for i, o in enumerate(opcoes, start=1))
+
+
+def rotulo_do_agendamento(*, barbeiro_nome: str, inicio) -> str:
+    return (
+        f"{barbeiro_nome}, {formatar_dia_com_semana(inicio)} "
+        f"às {formatar_hora_falada(inicio)}"
+    )
+
+
+def rotulo_da_hora(*, inicio, barbeiro_nome: str | None) -> str:
+    """O barbeiro so' aparece quando o cliente escolheu "tanto faz": ai' e' a
+    unica forma de ele saber com quem vai cortar."""
+    hora = formatar_hora_falada(inicio)
+    return f"{hora} com {barbeiro_nome}" if barbeiro_nome else hora
+
+
+def msg_bot_pergunta(*, passo: str, opcoes: list[dict], contexto: dict) -> str:
+    lista = _numerada(opcoes)
+    if passo == "MENU":
+        partes = [f"Oi! Aqui é o atendimento da {contexto['barbearia_nome']}."]
+        marcados = contexto.get("agendamentos") or []
+        if len(marcados) == 1:
+            partes.append(f"Você tem: {marcados[0]}.")
+        elif marcados:
+            partes.append("Você tem:\n" + "\n".join(marcados))
+        partes.append(f"{lista}\n{FALAR_COM_A_BARBEARIA}")
+        return "\n\n".join(partes)
+    if passo == "NOME":
+        return "Pra marcar, me diz seu nome:"
+    if passo == "HORA":
+        return f"Horários de {contexto['dia_rotulo']}:\n\n{lista}"
+    if passo == "CONFIRMA":
+        inicio = contexto["inicio"]
+        return (
+            f"Confere:\n{_capitalizar(contexto['servico_nome'])} com "
+            f"{contexto['barbeiro_nome']}, {formatar_dia_com_semana(inicio)} "
+            f"às {formatar_hora_falada(inicio)}.\n\n{lista}"
+        )
+    if passo == "CONFIRMA_CANCEL":
+        return f"Cancelar {contexto['agendamento_rotulo']}?\n\n{lista}"
+    return f"{_CABECALHO_DO_PASSO[passo]}\n\n{lista}"
+
+
+def msg_bot_nao_entendi(*, pergunta: str, mostrar_zero: bool) -> str:
+    texto = f"Não entendi. Responde só com o número.\n\n{pergunta}"
+    if mostrar_zero and FALAR_COM_A_BARBEARIA not in pergunta:
+        texto += f"\n{FALAR_COM_A_BARBEARIA}"
+    return texto
+
+
+def msg_bot_nao_entendi_nome(*, mostrar_zero: bool) -> str:
+    """NOME e' o unico passo de texto livre (ver `conversa.decidir`): pedir
+    'responde so com o numero' ali contradiz a pergunta seguinte, que pede
+    exatamente o contrario."""
+    texto = "Não entendi. Me diz seu nome (só letras, pelo menos 2)."
+    if mostrar_zero:
+        texto += f"\n{FALAR_COM_A_BARBEARIA}"
+    return texto
+
+
+def msg_bot_chamou_humano() -> str:
+    return "Beleza, já chamei alguém da barbearia. Te respondem por aqui."
+
+
+def msg_bot_pediu_humano(*, cliente: str) -> str:
+    """Para o DONO, pelo numero da barbearia (ou o central, sem aparelho conectado)."""
+    return f"Cliente pediu atendimento no WhatsApp da barbearia\n{cliente}"
+
+
+def msg_bot_sem_opcoes(*, passo: str) -> str:
+    if passo in ("QUAL_AGENDAMENTO", "CONFIRMA_CANCEL"):
+        return (
+            "Não achei horário marcado neste número. "
+            "Responde 0 que alguém da barbearia te atende."
+        )
+    return (
+        "Não achei horário livre nos próximos dias. "
+        "Responde 0 que alguém da barbearia te atende."
+    )
+
+
+def msg_bot_fora_do_prazo() -> str:
+    return (
+        "Faltando menos de 1h não dá pra cancelar por aqui. "
+        "Responde 0 que alguém da barbearia te atende."
+    )
+
+
+def msg_bot_nao_achei_agendamento() -> str:
+    return "Não achei esse horário marcado neste número."
+
+
+def msg_bot_lembrete_confirmado() -> str:
+    return "Combinado, te esperamos!"
+
+
+def msg_bot_desistencia_avisada() -> str:
+    return "Tudo bem, avisei a barbearia. Obrigado por avisar!"
+
+
+def msg_barbeiro_desistiu(*, cliente_nome: str, servico_nome: str, inicio, agora) -> str:
+    return "Avisou que não vem\n" + _linha_do_horario(
+        cliente_nome=cliente_nome, servico_nome=servico_nome, inicio=inicio, agora=agora,
+    )
+
+
+def msg_lembrete_com_opcoes(*, lembrete: str) -> str:
+    """O lembrete de sempre, com as duas respostas que o bot entende. "Nao vou
+    conseguir ir" e nao "cancelar": o lembrete sai 60 minutos antes, e o
+    cliente so' cancela com mais de 60 — um "cancelar" aqui daria sempre fora
+    do prazo."""
+    return f"{lembrete}\n\n{_OPCOES_DO_LEMBRETE}"
+
+
+def msg_bot_pergunta_do_lembrete() -> str:
+    return f"Responde 1 pra confirmar ou 2 se não for conseguir ir.\n\n{_OPCOES_DO_LEMBRETE}"

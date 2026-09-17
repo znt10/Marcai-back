@@ -259,3 +259,33 @@ FOTO_MIMES = ("image/webp", "image/jpeg", "image/png")
 # 366 dias, e recusar exatamente esse caso seria a regra falhando na unica
 # vez em que ela nao deveria.
 RESUMO_JANELA_MAXIMA_DIAS = 366
+
+# ---- Bot de agendamento pelo WhatsApp ------------------------------------
+# docs/superpowers/specs/2026-09-16-bot-agendamento-whatsapp-design.md
+
+# Conversa parada ha mais que isto recomeca do menu: um "2" digitado amanha
+# nao pode confirmar o horario escolhido hoje.
+BOT_CONVERSA_EXPIRA_MIN = 20
+# A resposta ao lembrete vale enquanto o lembrete vale: ele sai
+# LEMBRETE_ANTECEDENCIA_MIN antes do horario, e depois disso nao ha o que
+# responder.
+BOT_LEMBRETE_VALE_MIN = LEMBRETE_ANTECEDENCIA_MIN
+# Quanto o bot fica quieto numa conversa em que alguem da barbearia respondeu
+# pelo celular, ou em que o cliente pediu gente ("0").
+BOT_MUDO_HORAS = 4
+# Na terceira resposta que nao e' numero da lista, o bot oferece o "0" em vez
+# de repetir o mesmo menu para sempre.
+BOT_TENTATIVAS_ANTES_DO_ZERO = 3
+BOT_DIAS_OFERECIDOS = 5
+BOT_HORAS_OFERECIDAS = 6
+# Quantos dias a frente o bot procura vaga antes de dizer que nao ha.
+BOT_JANELA_DIAS = 21
+# Os ids das ultimas respostas do bot, para reconhecer o eco delas no webhook.
+BOT_IDS_GUARDADOS = 20
+BOT_ESPERA_TRAVA_S = 10
+# Mensagem enviada ha mais que isto (reconexao do aparelho, fila reenviada
+# pela Evolution) e' ignorada: nem resposta, nem silencio do bot.
+BOT_MENSAGEM_VELHA_MIN = 10
+# Conversa e' estado de minutos. Passados estes dias sem mexer, a linha so'
+# guardaria o numero de alguem sem motivo.
+BOT_CONVERSA_GUARDADA_DIAS = 2

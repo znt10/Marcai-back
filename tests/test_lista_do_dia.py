@@ -58,9 +58,22 @@ def _agendamento(barbearia, barbeiro, minutos_do_dia, cliente_nome="Ana", status
 
 
 def _rodar():
-    with patch.object(lista_do_dia, "enviar_a_equipe") as envia:
+    with patch.object(lista_do_dia, "enviar_a_equipe_da") as envia:
         enviados = lista_do_dia.enviar(AGORA)
-    return enviados, {c.args[0]: c.args[1] for c in envia.call_args_list}
+    return enviados, {c.args[1]: c.args[2] for c in envia.call_args_list}
+
+
+def test_a_lista_sai_pela_equipe_da_propria_barbearia(cenario):
+    """A barbearia vai junto: e' ela que decide se o aviso sai pelo numero
+    dela (barbeiro que e' o proprio numero) ou pelo central."""
+    b = cenario["brutus"]
+    zeca = _barbeiro(b, "Zeca Silva")
+    _agendamento(b, zeca, 9 * 60)
+
+    with patch.object(lista_do_dia, "enviar_a_equipe_da") as envia:
+        lista_do_dia.enviar(AGORA)
+
+    assert [(str(c.args[0]), c.args[1]) for c in envia.call_args_list] == [(str(b.id), zeca.whatsapp)]
 
 
 def test_cada_barbeiro_recebe_so_os_proprios_horarios(cenario):

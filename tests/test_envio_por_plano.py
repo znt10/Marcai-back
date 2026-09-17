@@ -1,8 +1,9 @@
 """Quem fala com quem, por qual numero.
 
 A regra inteira da fatia cabe em duas linhas, e e' por isso que ela precisa de
-teste proprio: **cliente ← numero da barbearia; equipe ← numero central.** O
-central nunca fala com cliente, porque um bloqueio de WhatsApp causado por UMA
+teste proprio: **cliente ← numero da barbearia; equipe ← numero da barbearia
+quando ela esta conectada, central quando nao.** O central nunca fala com
+cliente, porque um bloqueio de WhatsApp causado por UMA
 barbearia derrubaria todas de uma vez — que e' exatamente o que a instancia por
 barbearia existe para isolar.
 
@@ -36,12 +37,12 @@ def _evolution(monkeypatch):
     whatsapp.limpar_caches_numero()
 
 
-def _com_zap(barbearia, estado=EstadoInstancia.CONECTADO):
+def _com_zap(barbearia, estado=EstadoInstancia.CONECTADO, numero_conectado=None):
     Barbearia.objects.using("owner").filter(id=barbearia.id).update(plano="COM_ZAP")
     barbearia.plano = "COM_ZAP"
     WhatsappInstancia.objects.using("owner").create(
         id=str(uuid.uuid4()), barbearia_id=barbearia.id,
-        nome=f"marcai-{barbearia.id}", estado=estado,
+        nome=f"marcai-{barbearia.id}", estado=estado, numero_conectado=numero_conectado,
     )
     return barbearia
 
@@ -165,8 +166,8 @@ def test_equipe_sai_sempre_pelo_central(cenario):
     with patch.object(whatsapp.requests, "post", return_value=_ok()) as post:
         whatsapp.enviar_a_equipe("11911112222", "Novo horário")
 
-    # Mesmo com a barbearia tendo numero proprio: o aviso ao barbeiro sai do
-    # Marcai, porque quem tem relacao com o Marcai e' o barbeiro.
+    # `enviar_a_equipe` e' o central, sempre. Quem escolhe o numero da
+    # barbearia e' `enviar_a_equipe_da`, logo abaixo.
     assert _instancia_usada(post) == "central-do-marcai"
 
 
@@ -176,6 +177,62 @@ def test_equipe_e_avisada_tambem_no_plano_sem_zap(cenario):
     with patch.object(whatsapp.requests, "post", return_value=_ok()) as post:
         whatsapp.enviar_a_equipe("11911112222", "Novo horário")
     assert post.call_count == 1
+
+
+# ---- equipe pelo numero da barbearia ----
+
+NUMERO_DA_BARBEARIA = "83999990000"
+
+
+def _para_a_equipe_da(barbearia, destino, texto="Novo horário"):
+    with patch.object(whatsapp.requests, "post", return_value=_ok()) as post:
+        whatsapp.enviar_a_equipe_da(barbearia.id, destino, texto)
+    assert post.call_count == 1
+    return _instancia_usada(post)
+
+
+@pytest.mark.parametrize("destino", ["83988887777", NUMERO_DA_BARBEARIA, "8399990000"])
+def test_com_zap_conectado_toda_a_equipe_recebe_pelo_numero_da_barbearia(cenario, destino):
+    """Qualquer membro, e nao so' quem e' o proprio numero: o numero da
+    barbearia e' o que os barbeiros ja conhecem e tem salvo, e uma queda do
+    central nao cala mais a equipe."""
+    b = _com_zap(cenario["brutus"], numero_conectado=NUMERO_DA_BARBEARIA)
+    assert _para_a_equipe_da(b, destino) == f"marcai-{b.id}"
+
+
+def test_com_zap_conectado_sem_numero_guardado_ainda_usa_a_barbearia(cenario):
+    """O numero guardado e' enfeite para esta decisao: quem decide e' o estado."""
+    b = _com_zap(cenario["brutus"], numero_conectado=None)
+    assert _para_a_equipe_da(b, "83988887777") == f"marcai-{b.id}"
+
+
+@pytest.mark.parametrize(
+    "estado",
+    [EstadoInstancia.DESCONECTADO, EstadoInstancia.AGUARDANDO_QR, EstadoInstancia.PENDENTE],
+)
+def test_barbearia_fora_do_ar_manda_pelo_central(cenario, estado):
+    """Aviso de equipe nao e' mensagem de cliente: com o aparelho fora, o
+    central ainda entrega, e o barbeiro nao fica sem saber do horario."""
+    b = _com_zap(cenario["brutus"], estado=estado, numero_conectado=NUMERO_DA_BARBEARIA)
+    assert _para_a_equipe_da(b, NUMERO_DA_BARBEARIA) == "central-do-marcai"
+
+
+def test_sem_zap_manda_pelo_central(cenario):
+    b = _com_zap(cenario["brutus"], numero_conectado=NUMERO_DA_BARBEARIA)
+    Barbearia.objects.using("owner").filter(id=b.id).update(plano="SEM_ZAP")
+    assert _para_a_equipe_da(b, NUMERO_DA_BARBEARIA) == "central-do-marcai"
+
+
+def test_barbearia_desativada_manda_pelo_central(cenario):
+    b = _com_zap(cenario["brutus"], numero_conectado=NUMERO_DA_BARBEARIA)
+    Barbearia.objects.using("owner").filter(id=b.id).update(ativo=False)
+    assert _para_a_equipe_da(b, NUMERO_DA_BARBEARIA) == "central-do-marcai"
+
+
+def test_barbearia_sem_instancia_manda_pelo_central(cenario):
+    """O convite do dono no cadastro de uma barbearia nova: ainda nao existe
+    instancia conectada nenhuma."""
+    assert _para_a_equipe_da(cenario["brutus"], NUMERO_DA_BARBEARIA) == "central-do-marcai"
 
 
 # ---- a checagem do numero ----

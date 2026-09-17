@@ -77,7 +77,7 @@ def _corpo_valido(slug="nova-barbearia"):
 def test_post_cria_barbearia_e_dono_e_manda_convite(client):
     _logar_admin(client)
 
-    with patch("app.api.v1.views.admin_barbearias.enviar_a_equipe") as mock_envia:
+    with patch("app.api.v1.views.admin_barbearias.enviar_a_equipe_da") as mock_envia:
         r = client.post(
             "/api/admin/barbearias", _corpo_valido(),
             content_type="application/json", headers={"host": HOST, **CABECALHO},
@@ -234,14 +234,15 @@ def test_convite_reseta_senha_e_deriva_o_token_version(client, cenario):
     b = cenario["brutus"]
     dono = _barbeiro(b.id, papel="DONO", senha_hash="algum-hash")
 
-    with patch("app.api.v1.views.admin_barbearias.enviar_a_equipe") as mock_envia:
+    with patch("app.api.v1.views.admin_barbearias.enviar_a_equipe_da") as mock_envia:
         r = client.post(
             f"/api/admin/barbearias/{b.id}/convite", headers={"host": HOST, **CABECALHO},
         )
     assert r.status_code == 200
     assert "linkConvite" in r.json()
     mock_envia.assert_called_once()
-    assert mock_envia.call_args.args[0] == dono.whatsapp
+    assert mock_envia.call_args.args[1:2] == (dono.whatsapp,)
+    assert str(mock_envia.call_args.args[0]) == str(b.id)
 
     from tenant.models import Barbeiro
 
@@ -261,12 +262,12 @@ def test_convite_escolhe_o_dono_ativo_mais_antigo(client, cenario):
         b.id, nome="Dono Antigo", papel="DONO", criado_em="2026-08-01T10:00:00Z",
     )
 
-    with patch("app.api.v1.views.admin_barbearias.enviar_a_equipe") as mock_envia:
+    with patch("app.api.v1.views.admin_barbearias.enviar_a_equipe_da") as mock_envia:
         r = client.post(
             f"/api/admin/barbearias/{b.id}/convite", headers={"host": HOST, **CABECALHO},
         )
     assert r.status_code == 200
-    assert mock_envia.call_args.args[0] == mais_antigo.whatsapp
+    assert mock_envia.call_args.args[1] == mais_antigo.whatsapp
 
     from tenant.models import Barbeiro
 

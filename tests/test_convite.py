@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from django.utils import timezone
 
-from app.services.convite import gerar_convite, link_do_convite
+from app.services.convite import gerar_convite, link_do_agendamento, link_do_convite
 from app.services.senha import hash_de_convite
 
 
@@ -37,3 +37,11 @@ def test_link_do_convite_sem_esquema_assume_https(monkeypatch):
     monkeypatch.setenv("URL_BASE", "marcai.app")
     link = link_do_convite("brutus", "token-123")
     assert link == "https://brutus.marcai.app/convite/token-123"
+
+
+def test_link_do_agendamento_usa_a_mesma_base_do_convite(monkeypatch):
+    monkeypatch.setenv("URL_BASE", "https://usemarcai.online")
+    assert (
+        link_do_agendamento("brutus", "abc123defg")
+        == "https://brutus.usemarcai.online/agendamento/abc123defg"
+    )

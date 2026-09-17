@@ -37,7 +37,7 @@ from .views.interno import WhatsappEventoView
 from .views.resumo import ResumoView
 from .views.servicos import ServicosView
 from .views.servicos_painel import ServicoPainelDetalheView, ServicosPainelView
-from .views.whatsapp_painel import WhatsappDesconectarView, WhatsappPainelView
+from .views.whatsapp_painel import WhatsappBotView, WhatsappDesconectarView, WhatsappPainelView
 
 # SEM DefaultRouter, e isso e uma decisao, nao esquecimento.
 #
@@ -196,6 +196,7 @@ urlpatterns = [
         WhatsappDesconectarView.as_view(),
         name="painel-whatsapp-desconectar",
     ),
+    path("painel/whatsapp/bot", WhatsappBotView.as_view(), name="painel-whatsapp-bot"),
     # Bloco D — o motor do agendador. Fora de `/painel` e de `/admin`, entao
     # nenhum dos dois crivos posicionais mexe aqui; a credencial e' so' o
     # bearer contra CRON_SECRET, conferido dentro da propria view.

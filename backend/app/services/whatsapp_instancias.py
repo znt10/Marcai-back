@@ -60,6 +60,12 @@ TIMEOUT_S = 5
 # la bate no 403 idempotente em vez de criar uma segunda instancia.
 TIMEOUT_CRIACAO_S = 15
 
+# Assinados em MAIUSCULO; chegam minusculos e com ponto. MESSAGES_UPSERT so'
+# entra com o bot ligado: barbearia sem bot nunca manda uma mensagem de
+# cliente para o Marcai (spec, secao 7).
+EVENTOS_SEM_BOT = ["CONNECTION_UPDATE", "QRCODE_UPDATED"]
+EVENTOS_COM_BOT = EVENTOS_SEM_BOT + ["MESSAGES_UPSERT"]
+
 
 def _config() -> dict[str, str]:
     """Lida a cada chamada, e nao no topo do modulo, pela mesma razao do
@@ -172,7 +178,7 @@ def garantir_instancia(barbearia) -> None:
         )
         return
 
-    if not _aplicar_webhook(cfg, linha.nome):
+    if not _aplicar_webhook(cfg, linha.nome, bot=linha.bot_ativo):
         # Instancia sem webhook e' pior que instancia nenhuma: ela conectaria
         # e nos nunca saberiamos. Fica `PENDENTE` para a conferencia tentar de
         # novo — e o `create` repetido cai no 403 idempotente acima.
@@ -184,7 +190,7 @@ def garantir_instancia(barbearia) -> None:
         )
 
 
-def _aplicar_webhook(cfg: dict[str, str], nome: str) -> bool:
+def _aplicar_webhook(cfg: dict[str, str], nome: str, *, bot: bool = False) -> bool:
     if not cfg["webhook_url"]:
         logger.error("[whatsapp-instancia] sem WHATSAPP_WEBHOOK_URL: %s ficaria surdo", nome)
         return False
@@ -198,14 +204,14 @@ def _aplicar_webhook(cfg: dict[str, str], nome: str) -> bool:
                     "url": cfg["webhook_url"],
                     "headers": _cabecalhos_do_webhook(cfg),
                     "byEvents": False,
-                    # O que traz o QR pronto para o `<img src>` do painel. Sem
-                    # isto o evento chega so' com o `code` cru, que ainda
-                    # precisaria virar imagem do nosso lado.
+                    # SEMPRE `true`. Medido na fatia 0b: mesmo com `false` a
+                    # Evolution mandou uma foto inteira (`message.base64`,
+                    # ~217 KB) dentro do evento — a opcao nao tira midia
+                    # nenhuma e so' arriscava o QR, que continua chegando por
+                    # `pedir_qr`. A protecao real contra corpo grande e' o
+                    # limite de tamanho do webhook (Task 11).
                     "base64": True,
-                    # Assinados em MAIUSCULO; chegam minusculos e com ponto
-                    # (`connection.update`, `qrcode.updated`). Quem despacha do
-                    # outro lado tem que casar com a forma ENTREGUE.
-                    "events": ["CONNECTION_UPDATE", "QRCODE_UPDATED"],
+                    "events": EVENTOS_COM_BOT if bot else EVENTOS_SEM_BOT,
                 }
             },
             headers={"apikey": cfg["chave"]},
@@ -222,6 +228,17 @@ def _aplicar_webhook(cfg: dict[str, str], nome: str) -> bool:
         )
         return False
     return True
+
+
+def aplicar_assinatura(nome: str, *, bot: bool) -> bool:
+    """Reescreve a lista de eventos de uma instancia que ja existe. Medido na
+    fatia 0: `webhook/set` aceita isso com a instancia conectada, sem derrubar
+    a conexao."""
+    cfg = _config()
+    if not cfg["url"]:
+        logger.info("[whatsapp-instancia] sem EVOLUTION_API_URL: assinatura de %s nao muda", nome)
+        return False
+    return _aplicar_webhook(cfg, nome, bot=bot)
 
 
 def apagar_instancia(barbearia) -> None:
@@ -344,6 +361,47 @@ def consultar_estado(nome: str) -> str | None:
     if '"state":"close"' in r.text or '"state":"refused"' in r.text:
         return EstadoInstancia.DESCONECTADO
     return None
+
+
+def consultar_dono(nome: str) -> str | None:
+    """O JID do aparelho conectado agora (`ownerJid` do `fetchInstances`), ou
+    `None` quando nao se sabe.
+
+    E' a fonte da verdade do numero. `connectionState` so' diz o estado, e o
+    `wuid` do webhook so' chega no `open` — quando esse evento se perde, este
+    e' o unico lugar que ainda sabe qual celular leu o QR. Formato medido na
+    2.3.7: lista com um objeto por instancia.
+    """
+    cfg = _config()
+    if not cfg["url"]:
+        return None
+
+    try:
+        r = requests.get(
+            f"{cfg['url']}/instance/fetchInstances",
+            params={"instanceName": nome},
+            headers={"apikey": cfg["chave"]},
+            timeout=TIMEOUT_S,
+        )
+    except requests.RequestException as e:
+        logger.error("[whatsapp-instancia] falha ao consultar o aparelho de %s: %s", nome, e)
+        return None
+
+    if not r.ok:
+        logger.error(
+            "[whatsapp-instancia] consulta do aparelho recusada (%s) para %s",
+            r.status_code, nome,
+        )
+        return None
+
+    try:
+        corpo = r.json()
+    except ValueError:
+        return None
+    if not isinstance(corpo, list) or not corpo or not isinstance(corpo[0], dict):
+        return None
+    dono = corpo[0].get("ownerJid")
+    return dono if isinstance(dono, str) and dono else None
 
 
 def pedir_qr(nome: str) -> str | None:

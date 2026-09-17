@@ -11,6 +11,7 @@ from tenant.config import (
     CHECK_NUMERO_TTL_MS,
 )
 from tenant.models import (
+    Barbearia,
     EstadoInstancia,
     MensagemNaoEnviada,
     PlanoBarbearia,
@@ -48,7 +49,9 @@ def _config() -> dict[str, str]:
 
 
 def enviar_a_equipe(whatsapp_digitos: str, mensagem: str) -> None:
-    """Manda pela instancia CENTRAL do Marcai — barbeiro, dono, convite.
+    """Manda pela instancia CENTRAL do Marcai — barbeiro, dono, convite. Quem
+    conhece a barbearia chama `enviar_a_equipe_da`, que so' cai aqui quando a
+    barbearia nao tem aparelho conectado.
 
     O par disto e `enviar_ao_cliente`, e a diferenca nao e de estilo: **o
     numero central nunca fala com cliente.** Se falasse, um bloqueio do
@@ -61,6 +64,43 @@ def enviar_a_equipe(whatsapp_digitos: str, mensagem: str) -> None:
     ela so nao fala com o cliente.
     """
     _enviar(_config()["instancia"], whatsapp_digitos, mensagem)
+
+
+def enviar_a_equipe_da(barbearia_id, whatsapp_digitos: str, mensagem: str) -> None:
+    """O aviso de equipe de UMA barbearia: lista do dia, novo horario,
+    cancelamento, desistencia, pedido de humano, convite.
+
+    Com zap, ativa e CONECTADA, sai pela instancia DA BARBEARIA para qualquer
+    membro da equipe. Decisao do dono, por duas razoes:
+
+    - o numero da barbearia e' o que os barbeiros ja conhecem e tem salvo; o
+      central e' um numero do Marcai que ninguem ali reconhece;
+    - uma queda local do central deixa de calar a equipe — cada barbearia
+      conectada avisa os seus pelo proprio aparelho.
+
+    Quando o destinatario e' o proprio numero conectado, a mensagem cai no
+    "conversar comigo mesmo" (medido: `sendText` para o proprio numero responde
+    201), e `bot_entrada` ignora o eco dela.
+
+    O central vira so' o recurso: sem zap, desativada, sem instancia ou com o
+    aparelho fora do ar — ai ele ainda entrega, e o barbeiro nao fica sem saber
+    do horario. A leitura e' curta e o envio fica fora dela: `com_barbearia`
+    nao aninha, e segurar transacao durante uma chamada de rede nao ajuda
+    ninguem.
+    """
+    instancia = None
+    if Barbearia.objects.filter(
+        id=barbearia_id, ativo=True, plano=PlanoBarbearia.COM_ZAP,
+    ).exists():
+        with com_barbearia(barbearia_id):
+            linha = WhatsappInstancia.objects.filter(barbearia_id=barbearia_id).first()
+        if linha is not None and linha.estado == EstadoInstancia.CONECTADO:
+            instancia = linha.nome
+
+    if instancia is None:
+        enviar_a_equipe(whatsapp_digitos, mensagem)
+        return
+    _enviar(instancia, whatsapp_digitos, mensagem)
 
 
 def enviar_ao_cliente(
@@ -112,7 +152,7 @@ def _registrar_nao_enviada(barbearia, tipo: str, cliente_nome: str) -> None:
         logger.error("[whatsapp] falha ao registrar mensagem nao enviada: %s", e)
 
 
-def _enviar(instancia: str, whatsapp_digitos: str, mensagem: str) -> None:
+def _enviar(instancia: str, whatsapp_digitos: str, mensagem: str) -> str | None:
     """Fire-and-forget. Falha de WhatsApp NUNCA derruba um agendamento (§10.2).
 
     Porte fiel de `enviarTexto` (marcai-front/src/lib/whatsapp.ts): loga e
@@ -124,6 +164,8 @@ def _enviar(instancia: str, whatsapp_digitos: str, mensagem: str) -> None:
     A INSTANCIA virou parametro: era sempre a central, e agora e' a da
     barbearia quando o destinatario e' cliente. O resto do corpo nao mudou uma
     linha.
+
+    Devolve o id da mensagem aceita, ou None.
     """
     cfg = _config()
     if not cfg["url"]:
@@ -158,9 +200,13 @@ def _enviar(instancia: str, whatsapp_digitos: str, mensagem: str) -> None:
         corpo = r.json()
     except ValueError:
         pass
-    jid = (corpo or {}).get("key", {}).get("remoteJid", "?")
+    chave = (corpo or {}).get("key", {})
+    jid = chave.get("remoteJid", "?")
     status = (corpo or {}).get("status", "?")
     logger.info("[whatsapp] aceito para %s (jid %s, status %s)", whatsapp_digitos, jid, status)
+    # O id sobe para quem chamou. Os envios de sempre o ignoram; o bot o
+    # guarda para reconhecer o eco da propria mensagem no webhook.
+    return chave.get("id")
 
 
 def numero_existe(barbearia, whatsapp_digitos: str, ip: str) -> str:

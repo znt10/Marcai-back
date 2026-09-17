@@ -16,8 +16,9 @@ from django.utils import timezone
 
 from tenant.models import EstadoInstancia, WhatsappInstancia
 from tenant.rls import com_barbearia
+from tenant.telefone import canonico
 
-from .whatsapp_instancias import barbearia_id_do_nome
+from .whatsapp_instancias import barbearia_id_do_nome, consultar_dono
 
 logger = logging.getLogger(__name__)
 
@@ -90,14 +91,24 @@ def aplicar_estado(barbearia_id, linha, estado: str | None) -> bool:
     `None` quer dizer "nao sei" (rede fora, resposta estranha, `connecting`) e
     nao muda nada — indisponibilidade nao e' resposta. Devolve se mexeu.
     """
-    if estado is None or estado == linha.estado:
+    if estado is None:
         return False
 
     if estado == EstadoInstancia.CONECTADO:
-        # Sem numero: quem tem o `wuid` e o evento de conexao, nao o
-        # `connectionState`. O numero que ja estava guardado permanece.
-        marcar_conectado(barbearia_id, linha.nome, linha.numero_conectado)
-    elif estado == EstadoInstancia.DESCONECTADO:
+        # O numero vem da Evolution a cada conferencia, e nao da linha. Reusar
+        # o `numero_conectado` guardado era o bug: quando o `open` do celular
+        # novo se perdia, a conferencia regravava o numero do ANTERIOR, e o
+        # "estado igual, nao mexe" o mantinha ali para sempre. Sem resposta
+        # (rede fora) fica o que ja estava — indisponibilidade nao e' resposta.
+        numero = _numero_do_jid(consultar_dono(linha.nome)) or linha.numero_conectado
+        if linha.estado == EstadoInstancia.CONECTADO and numero == linha.numero_conectado:
+            return False
+        marcar_conectado(barbearia_id, linha.nome, numero)
+        return True
+
+    if estado == linha.estado:
+        return False
+    if estado == EstadoInstancia.DESCONECTADO:
         marcar_desconectado(barbearia_id, linha.nome, linha.estado)
     elif estado == EstadoInstancia.PENDENTE:
         marcar_pendente(barbearia_id, linha.nome)
@@ -106,8 +117,19 @@ def aplicar_estado(barbearia_id, linha, estado: str | None) -> bool:
     return True
 
 
+def _numero_do_jid(bruto) -> str | None:
+    """`558399990000@s.whatsapp.net` -> `83999990000`: a forma nacional
+    canonica, a mesma de `Barbeiro.whatsapp`. Guardar o JID cru fazia o painel
+    mostrar a conta antiga sem o nono digito — um numero que o dono nao
+    reconhece — e impedia comparar com o cadastro da equipe. Numero de fora do
+    Brasil fica nos digitos crus: o painel ainda consegue mostra-lo."""
+    if not isinstance(bruto, str) or not bruto:
+        return None
+    return canonico(bruto) or bruto.split("@")[0] or None
+
+
 def _numero_do_wuid(data: dict) -> str | None:
-    """`5583999990000@s.whatsapp.net` -> `5583999990000`.
+    """`5583999990000@s.whatsapp.net` -> `83999990000` (ver `_numero_do_jid`).
 
     Este e o UNICO campo do webhook que a fatia 0 nao conseguiu medir: o
     `open` so acontece com um celular de verdade escaneando o QR. Por isso a
@@ -115,10 +137,7 @@ def _numero_do_wuid(data: dict) -> str | None:
     estado da conexao (que e' o que decide se a mensagem sai) nao depende
     disto.
     """
-    bruto = data.get("wuid")
-    if not isinstance(bruto, str) or not bruto:
-        return None
-    return bruto.split("@")[0] or None
+    return _numero_do_jid(data.get("wuid"))
 
 
 def aplicar_evento(corpo: dict) -> str:
@@ -157,7 +176,15 @@ def aplicar_evento(corpo: dict) -> str:
     if evento == EVENTO_QR:
         base64 = (data.get("qrcode") or {}).get("base64")
         if not isinstance(base64, str) or not base64:
-            return "ignorado"
+            # Um evento de QR sem base64 (por exemplo quando a Evolution
+            # bate o limite de QRs) nao traz codigo novo. Ignorar em silencio
+            # deixaria o painel preso no QR anterior, que ja morreu, e o dono
+            # nunca conseguiria reconectar depois de "Trocar de celular".
+            # Limpar o campo faz o proximo `ver()` pedir um QR novo de
+            # verdade via `pedir_qr`. (A assinatura pede `base64: true`
+            # sempre, com ou sem bot.)
+            _gravar(barbearia_id, nome, qr_base64=None)
+            return "qr_sem_base64"
         marcar_qr(barbearia_id, nome, base64)
         return "qr"
 

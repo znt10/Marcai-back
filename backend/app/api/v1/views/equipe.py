@@ -12,7 +12,7 @@ from app.api.v1.serializers.equipe import (
 from app.services.convite import link_do_convite
 from app.services.equipe import atualizar, criar, desativar, listar, reativar, reconvidar
 from app.services.mensagens import msg_convite
-from app.services.whatsapp import enviar_a_equipe
+from app.services.whatsapp import enviar_a_equipe_da
 from tenant.telefone import normalizar
 
 MENSAGEM_SO_DONO = "Só o dono mexe na equipe."
@@ -56,7 +56,8 @@ class EquipeView(ExigeDono, APIView):
         link = link_do_convite(request.barbearia.slug, resultado["convite"]["token"])
         # Fire-and-forget, depois do commit: WhatsApp fora do ar nao derruba
         # o cadastro. E' por isso que o link tambem volta na resposta.
-        enviar_a_equipe(
+        enviar_a_equipe_da(
+            self.barbearia_id,
             whatsapp,
             msg_convite(nome=d["nome"], barbearia_nome=request.barbearia.nome, link=link),
         )
@@ -138,7 +139,8 @@ class EquipeConviteView(ExigeDono, APIView):
             )
 
         link = link_do_convite(request.barbearia.slug, resultado["convite"]["token"])
-        enviar_a_equipe(
+        enviar_a_equipe_da(
+            self.barbearia_id,
             resultado["whatsapp"],
             msg_convite(nome=resultado["nome"], barbearia_nome=request.barbearia.nome, link=link),
         )

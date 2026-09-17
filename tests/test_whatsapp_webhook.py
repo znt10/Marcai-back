@@ -116,10 +116,24 @@ def test_open_conecta_e_limpa_o_qr(client, cenario):
 
     linha = _recarregar(b)
     assert linha.estado == EstadoInstancia.CONECTADO
-    assert linha.numero_conectado == "5583999990000"
+    # Gravado na forma nacional canonica, a mesma de `Barbeiro.whatsapp`.
+    assert linha.numero_conectado == "83999990000"
     # QR guardado depois de conectar e' um convite a escanear codigo morto.
     assert linha.qr_base64 is None
     assert linha.desconectado_desde is None
+
+
+def test_open_de_outro_celular_troca_o_numero_guardado(client, cenario):
+    """Regressao: "Trocar de celular" com o aparelho novo. O numero do open
+    substitui o antigo, e o `wuid` de conta antiga (sem o nono digito) vira a
+    forma de 11 digitos — sem isso o painel mostrava `(83) 9999-0000`, que o
+    dono nao reconhece como o celular dele."""
+    b = cenario["brutus"]
+    _instancia(b, estado=EstadoInstancia.DESCONECTADO, numero_conectado="5583911112222")
+
+    _bater(client, _conexao(b, "open", wuid="558399990000@s.whatsapp.net"))
+
+    assert _recarregar(b).numero_conectado == "83999990000"
 
 
 def test_open_sem_wuid_conecta_do_mesmo_jeito(client, cenario):
@@ -194,6 +208,28 @@ def test_qr_substitui_o_anterior(client, cenario):
 
     _bater(client, _qr(b, "data:image/png;base64,novo"))
     assert _recarregar(b).qr_base64 == "data:image/png;base64,novo"
+
+
+def test_qr_sem_base64_limpa_o_guardado_em_vez_de_ignorar(client, cenario):
+    """Um evento de QR sem base64 (por exemplo quando a Evolution bate o
+    limite de QRs) nao traz codigo novo. Se o corpo fosse so ignorado, o
+    painel continuaria mostrando o QR antigo, ja morto — o dono nunca
+    conseguiria reconectar. Limpar o campo faz o proximo `ver()` pedir um QR
+    novo de verdade."""
+    b = cenario["brutus"]
+    _instancia(b, estado=EstadoInstancia.AGUARDANDO_QR, qr_base64="data:image/png;base64,velho")
+
+    corpo = {
+        "event": "qrcode.updated",
+        "instance": nome_da_instancia(b.id),
+        "data": {"qrcode": {"instance": nome_da_instancia(b.id)}},
+    }
+    r = _bater(client, corpo)
+
+    assert r.status_code == 200
+    linha = _recarregar(b)
+    assert linha.qr_base64 is None
+    assert linha.estado == EstadoInstancia.AGUARDANDO_QR
 
 
 # ---- o que nao e para ca ----
