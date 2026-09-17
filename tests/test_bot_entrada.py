@@ -14,7 +14,7 @@ from django.db import connections
 from django.test import override_settings
 
 from app.services import bot
-from app.services.bot_entrada import Recebida, ler_mensagem
+from app.services.bot_entrada import Recebida, ler_mensagem, receber
 from app.services.whatsapp_instancias import nome_da_instancia
 from tenant.models import Barbearia, ConversaWhatsapp, EstadoInstancia, WhatsappInstancia
 from tenant.rls import com_barbearia
@@ -272,6 +272,57 @@ def test_silenciar_com_a_conversa_presa_nao_trava_o_webhook(cenario, monkeypatch
     finally:
         with connections["owner"].cursor() as cur:
             cur.execute("SELECT pg_advisory_unlock(hashtextextended(%s, 0))", [chave])
+
+
+# ---- mensagem velha ----
+# Reconectar o aparelho (ou a Evolution reenviar a fila) entrega mensagens de
+# horas atras. Responder o "1" de ontem, ou calar o bot por uma resposta
+# antiga do dono, seria agir sobre uma conversa que ja acabou.
+
+
+def test_mensagem_velha_e_ignorada_sem_resposta(client, cenario):
+    b = cenario["brutus"]
+    _com_bot(b)
+    velha = int(datetime.now(timezone.utc).timestamp()) - 11 * 60
+    with patch(ENFILEIRAR) as enfileirar:
+        r = _bater(client, _mensagem(b.id, timestamp=velha))
+    assert r.status_code == 200
+    assert r.json()["resultado"] == "ignorado:velha"
+    enfileirar.assert_not_called()
+
+
+def test_resposta_velha_do_dono_nao_cala(client, cenario):
+    b = cenario["brutus"]
+    _com_bot(b)
+    velha = str(int(datetime.now(timezone.utc).timestamp()) - 11 * 60)
+    r = _bater(client, _mensagem(b.id, from_me=True, timestamp=velha))
+    assert r.json()["resultado"] == "ignorado:velha"
+    assert _linha(b) is None
+
+
+def test_o_relogio_e_injetado(cenario):
+    b = cenario["brutus"]
+    _com_bot(b)
+    enviada = datetime(2026, 9, 17, 12, 0, tzinfo=timezone.utc)
+    corpo = _mensagem(b.id, timestamp=int(enviada.timestamp()))
+    with patch(ENFILEIRAR) as enfileirar:
+        assert receber(corpo, enviada + timedelta(minutes=11)) == "ignorado:velha"
+        assert receber(corpo, enviada + timedelta(minutes=9)) == "enfileirado"
+    enfileirar.assert_called_once()
+
+
+@pytest.mark.parametrize("timestamp", ["recente-int", "recente-str", None, "abc", ""])
+def test_mensagem_recente_ou_sem_horario_valido_passa(client, cenario, timestamp):
+    """Sem `messageTimestamp` legivel nao ha como saber a idade: melhor
+    responder do que perder a mensagem."""
+    b = cenario["brutus"]
+    _com_bot(b)
+    agora = int(datetime.now(timezone.utc).timestamp())
+    valor = {"recente-int": agora - 60, "recente-str": str(agora - 60)}.get(timestamp, timestamp)
+    with patch(ENFILEIRAR) as enfileirar:
+        r = _bater(client, _mensagem(b.id, timestamp=valor))
+    assert r.json()["resultado"] == "enfileirado"
+    enfileirar.assert_called_once()
 
 
 def test_evento_de_conexao_continua_no_caminho_de_sempre(client, cenario):

@@ -283,6 +283,9 @@ BOT_JANELA_DIAS = 21
 # Os ids das ultimas respostas do bot, para reconhecer o eco delas no webhook.
 BOT_IDS_GUARDADOS = 20
 BOT_ESPERA_TRAVA_S = 10
+# Mensagem enviada ha mais que isto (reconexao do aparelho, fila reenviada
+# pela Evolution) e' ignorada: nem resposta, nem silencio do bot.
+BOT_MENSAGEM_VELHA_MIN = 10
 # Conversa e' estado de minutos. Passados estes dias sem mexer, a linha so'
 # guardaria o numero de alguem sem motivo.
 BOT_CONVERSA_GUARDADA_DIAS = 2

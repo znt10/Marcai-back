@@ -10,7 +10,9 @@ reenviar, e a task fica testavel sem inventar um JSON da Evolution.
 """
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+from tenant.config import BOT_MENSAGEM_VELHA_MIN
 
 from tenant.models import EstadoInstancia, WhatsappInstancia
 from tenant.rls import com_barbearia
@@ -74,10 +76,28 @@ def ler_mensagem(corpo) -> "Recebida | str":
     return Recebida(barbearia_id, numero, texto, mensagem_id, chave.get("fromMe") is True)
 
 
+def _enviada_em(corpo) -> datetime | None:
+    """`data.messageTimestamp` (segundos unix, int ou str). Ausente ou
+    ilegivel devolve None — e None NAO conta como velha."""
+    valor = corpo.get("data", {}).get("messageTimestamp")
+    if isinstance(valor, bool):
+        return None
+    try:
+        return datetime.fromtimestamp(int(valor), tz=timezone.utc)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
 def receber(corpo, agora: datetime) -> str:
     lida = ler_mensagem(corpo)
     if isinstance(lida, str):
         return f"ignorado:{lida}"
+    # Reconectar o aparelho entrega mensagens de horas atras. Responder o "1"
+    # de ontem, ou calar o bot por uma resposta antiga do dono, seria agir
+    # sobre uma conversa que ja acabou. Sai antes de qualquer consulta.
+    enviada_em = _enviada_em(corpo)
+    if enviada_em is not None and agora - enviada_em > timedelta(minutes=BOT_MENSAGEM_VELHA_MIN):
+        return "ignorado:velha"
     # Mensagem de CLIENTE sem texto (midia, figurinha, ...) sai antes de
     # qualquer consulta: nao ha nada a enfileirar de qualquer jeito, ligado ou
     # nao o bot. `fromMe` fica de fora desta conta — o dono respondendo com
