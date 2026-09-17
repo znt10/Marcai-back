@@ -2,8 +2,9 @@
 
 E a mensagem que faz o plano SEM ZAP valer alguma coisa: naquele plano o
 cliente nao recebe nada, e sem isto o barbeiro tambem nao — ele so saberia da
-agenda abrindo o painel. Por isso ela sai nos DOIS planos, e sempre pelo numero
-central: quem tem relacao com o Marcai e o barbeiro.
+agenda abrindo o painel. Por isso ela sai nos DOIS planos, pelo numero central
+(ou pelo da propria barbearia, quando o barbeiro E' esse numero — ver
+`enviar_a_equipe_da`).
 
 Duas regras que foram decididas e que o codigo aqui so obedece:
 
@@ -22,7 +23,7 @@ from tenant.models import Agendamento, Barbearia, StatusAgendamento
 from tenant.rls import com_barbearia
 
 from .mensagens import msg_lista_do_dia
-from .whatsapp import enviar_a_equipe
+from .whatsapp import enviar_a_equipe_da
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,8 @@ def enviar(agora: datetime) -> int:
         # alguem possa inverter sem querer.
         for agendamentos_do_barbeiro in por_barbeiro.values():
             barbeiro = agendamentos_do_barbeiro[0].barbeiro
-            enviar_a_equipe(
+            enviar_a_equipe_da(
+                b.id,
                 barbeiro.whatsapp,
                 msg_lista_do_dia(
                     barbeiro_nome=barbeiro.nome,

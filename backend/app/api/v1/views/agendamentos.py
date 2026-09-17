@@ -23,7 +23,7 @@ from app.services.mensagens import (
     msg_confirmacao,
 )
 from app.services.trava_ip import ip_de
-from app.services.whatsapp import enviar_a_equipe, enviar_ao_cliente, numero_existe
+from app.services.whatsapp import enviar_a_equipe_da, enviar_ao_cliente, numero_existe
 from tenant.models import TipoMensagem
 from tenant.telefone import formatar, normalizar
 
@@ -87,7 +87,8 @@ class AgendamentosView(ExigeTenant, APIView):
         # E o barbeiro. Segundo envio, e nao um destinatario a mais no mesmo:
         # sao textos diferentes — o do cliente confirma e da o link de
         # cancelar; o do barbeiro so' avisa que entrou horario.
-        enviar_a_equipe(
+        enviar_a_equipe_da(
+            self.barbearia_id,
             criado["barbeiro_whatsapp"],
             msg_barbeiro_novo(
                 cliente_nome=d["nome"], servico_nome=criado["servico_nome"],
@@ -140,7 +141,8 @@ class AgendamentoCancelarPublicoView(ExigeTenant, APIView):
             # A vaga abriu: quem ia cortar precisa saber sem abrir o painel.
             # So' no `tipo == "ok"` — o `ja_cancelado` cai fora deste bloco de
             # proposito, senao dois toques no botao mandariam dois avisos.
-            enviar_a_equipe(
+            enviar_a_equipe_da(
+                self.barbearia_id,
                 resultado["barbeiro_whatsapp"],
                 msg_barbeiro_cancelado(
                     cliente_nome=resultado["cliente_nome"],

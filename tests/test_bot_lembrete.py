@@ -82,7 +82,7 @@ def test_responder_1_confirma(cenario):
         enviar_pendentes(agora)
     respostas = []
     with patch(ENVIAR, side_effect=lambda i, n, t: respostas.append(t) or "3EB0-R"), patch(
-        "app.services.bot.enviar_a_equipe"
+        "app.services.bot.enviar_a_equipe_da"
     ):
         desfecho = bot.processar(str(b.id), NUMERO, "1", "3A-RESPOSTA", agora + timedelta(minutes=5))
     assert desfecho == "lembrete_confirmado"
@@ -196,7 +196,7 @@ def test_cliente_gravado_com_10_digitos_confirma_respondendo_do_numero_de_11(cen
     assert enviar.call_args.args[1] == NUMERO
     respostas = []
     with patch(ENVIAR, side_effect=lambda i, n, t: respostas.append(t) or "3EB0-R"), patch(
-        "app.services.bot.enviar_a_equipe"
+        "app.services.bot.enviar_a_equipe_da"
     ):
         desfecho = bot.processar(str(b.id), NUMERO, "1", "3A-RESPOSTA", agora + timedelta(minutes=5))
     assert desfecho == "lembrete_confirmado"

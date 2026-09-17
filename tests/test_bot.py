@@ -2,7 +2,7 @@
 resposta que sairia.
 
 A Evolution e' dublada em dois pontos — `app.services.bot._enviar` (o que o
-cliente le) e `app.services.bot.enviar_a_equipe` (o que o barbeiro le). O
+cliente le) e `app.services.bot.enviar_a_equipe_da` (o que o barbeiro le). O
 resto e' de verdade: banco com RLS, `marcar()`, `slots_do_dia`,
 `cancelar_publico`.
 """
@@ -124,11 +124,12 @@ class _Conversa:
             self.cliente_leu.append(mensagem)
             return f"bot-{uuid.uuid4().hex[:8]}"
 
-        def a_equipe(numero, mensagem):
+        def a_equipe(barbearia_id, numero, mensagem):
+            assert str(barbearia_id) == str(self.barbearia.id)
             self.equipe_leu.append((numero, mensagem))
 
         with patch("app.services.bot._enviar", side_effect=ao_cliente), patch(
-            "app.services.bot.enviar_a_equipe", side_effect=a_equipe
+            "app.services.bot.enviar_a_equipe_da", side_effect=a_equipe
         ):
             return processar(
                 str(self.barbearia.id), self.numero, texto,
@@ -486,7 +487,7 @@ def test_envio_falho_no_perguntou_mantem_estado_anterior(cenario):
     opcoes_antes = _linha(b).opcoes
 
     with patch("app.services.bot._enviar", return_value=None), patch(
-        "app.services.bot.enviar_a_equipe"
+        "app.services.bot.enviar_a_equipe_da"
     ):
         resultado = processar(str(b.id), NUMERO, "1", "msg-falha", conversa.agora)
     assert resultado == "perguntou"
@@ -517,7 +518,7 @@ def test_marcar_com_envio_de_confirmacao_falho_ainda_avanca_o_estado(cenario):
     assert _linha(b).estado == "CONFIRMA"
 
     with patch("app.services.bot._enviar", return_value=None), patch(
-        "app.services.bot.enviar_a_equipe"
+        "app.services.bot.enviar_a_equipe_da"
     ):
         resultado = processar(str(b.id), NUMERO, "1", "msg-confirma-falha", conversa.agora)
     assert resultado == "marcou"

@@ -35,9 +35,9 @@ def _envios():
     `(numero, texto)`.
 
     Um mock so' deixou de contar a historia quando cliente e equipe passaram a
-    sair por numeros diferentes: `enviar_ao_cliente` recebe a barbearia na
-    frente e `enviar_a_equipe` nao, entao `c.args[0]` quer dizer coisas
-    diferentes nos dois. Estes casos sempre leram envio como "para quem, o
+    sair por numeros diferentes. Os dois recebem a barbearia na frente
+    (`enviar_ao_cliente` o objeto, `enviar_a_equipe_da` o id), entao o par
+    mora em `c.args[1:3]` nos dois. Estes casos sempre leram envio como "para quem, o
     que" — o ajudante preserva essa leitura.
 
     O que ele NAO prova, e nao deve provar: que a mensagem saiu de verdade.
@@ -46,14 +46,14 @@ def _envios():
     funcao de verdade.
     """
     with patch("app.api.v1.views.agendamentos.enviar_ao_cliente") as ao_cliente, patch(
-        "app.api.v1.views.agendamentos.enviar_a_equipe"
+        "app.api.v1.views.agendamentos.enviar_a_equipe_da"
     ) as a_equipe:
 
         class Envios:
             @property
             def pares(self):
                 return [(c.args[1], c.args[2]) for c in ao_cliente.call_args_list] + [
-                    (c.args[0], c.args[1]) for c in a_equipe.call_args_list
+                    (c.args[1], c.args[2]) for c in a_equipe.call_args_list
                 ]
 
             @property

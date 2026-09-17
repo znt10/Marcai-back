@@ -11,12 +11,14 @@ from tenant.config import (
     CHECK_NUMERO_TTL_MS,
 )
 from tenant.models import (
+    Barbearia,
     EstadoInstancia,
     MensagemNaoEnviada,
     PlanoBarbearia,
     WhatsappInstancia,
 )
 from tenant.rls import com_barbearia
+from tenant.telefone import canonico
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +63,43 @@ def enviar_a_equipe(whatsapp_digitos: str, mensagem: str) -> None:
     ela so nao fala com o cliente.
     """
     _enviar(_config()["instancia"], whatsapp_digitos, mensagem)
+
+
+def enviar_a_equipe_da(barbearia_id, whatsapp_digitos: str, mensagem: str) -> None:
+    """O aviso de equipe de UMA barbearia. Sai pelo central, como
+    `enviar_a_equipe` — menos quando o destinatario E' o numero da propria
+    barbearia.
+
+    E' o barbeiro sozinho que conectou o proprio celular como numero da
+    barbearia. Pelo central, o aviso chega de um numero que ele nunca salvou;
+    pela instancia dele, cai no "conversar comigo mesmo" (medido: `sendText`
+    de uma instancia para o proprio numero responde 201). Nao ha cliente
+    nenhum nesse caminho, entao a regra "o central nunca fala com cliente"
+    continua inteira.
+
+    Com zap, ativa e CONECTADA — qualquer outra coisa cai no central, que
+    entrega mesmo com o aparelho da barbearia fora. A leitura e' curta e o
+    envio fica fora dela: `com_barbearia` nao aninha, e segurar transacao
+    durante uma chamada de rede nao ajuda ninguem.
+    """
+    alvo = canonico(whatsapp_digitos)
+    instancia = None
+    if alvo is not None and Barbearia.objects.filter(
+        id=barbearia_id, ativo=True, plano=PlanoBarbearia.COM_ZAP,
+    ).exists():
+        with com_barbearia(barbearia_id):
+            linha = WhatsappInstancia.objects.filter(barbearia_id=barbearia_id).first()
+        if (
+            linha is not None
+            and linha.estado == EstadoInstancia.CONECTADO
+            and canonico(linha.numero_conectado) == alvo
+        ):
+            instancia = linha.nome
+
+    if instancia is None:
+        enviar_a_equipe(whatsapp_digitos, mensagem)
+        return
+    _enviar(instancia, whatsapp_digitos, mensagem)
 
 
 def enviar_ao_cliente(

@@ -72,7 +72,7 @@ from .mensagens import (
 from .servicos import QUALQUER
 from .servicos import listar_para_agendamento as servicos_para_agendamento
 from .trava_conversa import trava_da_conversa
-from .whatsapp import _enviar, enviar_a_equipe
+from .whatsapp import _enviar, enviar_a_equipe_da
 
 logger = logging.getLogger(__name__)
 
@@ -441,7 +441,8 @@ def _marcar(ctx: _Contexto, r: dict) -> _Saida:
             raise
         return _ir(ctx, c.HORA, volta, prefixo="Esse horário acabou de ser pego.")
 
-    enviar_a_equipe(
+    enviar_a_equipe_da(
+        ctx.bid,
         criado["barbeiro_whatsapp"],
         msg_barbeiro_novo(
             cliente_nome=nome, servico_nome=criado["servico_nome"],
@@ -465,7 +466,8 @@ def _cancelar(ctx: _Contexto, codigo: str) -> _Saida:
         return _Saida("fora_do_prazo", c.MENU, [msg_bot_fora_do_prazo()])
     if resultado["tipo"] != "ok":
         return _Saida("nao_e_seu", c.MENU, [msg_bot_nao_achei_agendamento()])
-    enviar_a_equipe(
+    enviar_a_equipe_da(
+        ctx.bid,
         resultado["barbeiro_whatsapp"],
         msg_barbeiro_cancelado(
             cliente_nome=resultado["cliente_nome"], servico_nome=resultado["servico_nome"],
@@ -490,7 +492,8 @@ def _nao_vou(ctx: _Contexto, codigo: str) -> _Saida:
     a = _agendamento_do_numero(ctx, codigo)
     if a is None:
         return _Saida("nao_e_seu", c.MENU, [msg_bot_nao_achei_agendamento()])
-    enviar_a_equipe(
+    enviar_a_equipe_da(
+        ctx.bid,
         a.barbeiro.whatsapp,
         msg_barbeiro_desistiu(
             cliente_nome=a.cliente.nome, servico_nome=a.servico_nome,
@@ -510,7 +513,7 @@ def _avisar_donos(ctx: _Contexto) -> None:
     nome = cliente.nome if cliente is not None else None
     texto = msg_bot_pediu_humano(cliente=nome or formatar(ctx.numero))
     for whatsapp in donos:
-        enviar_a_equipe(whatsapp, texto)
+        enviar_a_equipe_da(ctx.bid, whatsapp, texto)
 
 
 def silenciar(barbearia_id: str, numero: str, mensagem_id: str, agora: datetime) -> str:

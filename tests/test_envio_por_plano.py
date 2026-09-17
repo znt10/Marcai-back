@@ -36,12 +36,12 @@ def _evolution(monkeypatch):
     whatsapp.limpar_caches_numero()
 
 
-def _com_zap(barbearia, estado=EstadoInstancia.CONECTADO):
+def _com_zap(barbearia, estado=EstadoInstancia.CONECTADO, numero_conectado=None):
     Barbearia.objects.using("owner").filter(id=barbearia.id).update(plano="COM_ZAP")
     barbearia.plano = "COM_ZAP"
     WhatsappInstancia.objects.using("owner").create(
         id=str(uuid.uuid4()), barbearia_id=barbearia.id,
-        nome=f"marcai-{barbearia.id}", estado=estado,
+        nome=f"marcai-{barbearia.id}", estado=estado, numero_conectado=numero_conectado,
     )
     return barbearia
 
@@ -176,6 +176,72 @@ def test_equipe_e_avisada_tambem_no_plano_sem_zap(cenario):
     with patch.object(whatsapp.requests, "post", return_value=_ok()) as post:
         whatsapp.enviar_a_equipe("11911112222", "Novo horário")
     assert post.call_count == 1
+
+
+# ---- equipe no proprio numero da barbearia ----
+
+NUMERO_DA_BARBEARIA = "83999990000"
+
+
+def _para_a_equipe_da(barbearia, destino, texto="Novo horário"):
+    with patch.object(whatsapp.requests, "post", return_value=_ok()) as post:
+        whatsapp.enviar_a_equipe_da(barbearia.id, destino, texto)
+    assert post.call_count == 1
+    return _instancia_usada(post)
+
+
+def test_barbeiro_que_e_o_numero_da_barbearia_recebe_pelo_proprio_numero(cenario):
+    """O barbeiro sozinho que conectou o proprio celular como numero da
+    barbearia: o aviso cai no "conversar comigo mesmo" dele, e nao num numero
+    do Marcai que ele nunca salvou."""
+    b = _com_zap(cenario["brutus"], numero_conectado=NUMERO_DA_BARBEARIA)
+    assert _para_a_equipe_da(b, NUMERO_DA_BARBEARIA) == f"marcai-{b.id}"
+
+
+@pytest.mark.parametrize(
+    "guardado", ["558399990000@s.whatsapp.net", "558399990000", "5583999990000", "83999990000"],
+)
+@pytest.mark.parametrize("destino", ["8399990000", "83999990000"])
+def test_formas_diferentes_do_mesmo_celular_ainda_casam(cenario, guardado, destino):
+    """10, 11 ou 12 digitos, com ou sem JID: e' o mesmo aparelho. A conta
+    antiga do WhatsApp vem sem o nono digito e o cadastro pode ter qualquer
+    uma das duas formas."""
+    b = _com_zap(cenario["brutus"], numero_conectado=guardado)
+    assert _para_a_equipe_da(b, destino) == f"marcai-{b.id}"
+
+
+def test_outro_barbeiro_continua_pelo_central(cenario):
+    b = _com_zap(cenario["brutus"], numero_conectado=NUMERO_DA_BARBEARIA)
+    assert _para_a_equipe_da(b, "83988887777") == "central-do-marcai"
+
+
+@pytest.mark.parametrize(
+    "estado",
+    [EstadoInstancia.DESCONECTADO, EstadoInstancia.AGUARDANDO_QR, EstadoInstancia.PENDENTE],
+)
+def test_barbearia_fora_do_ar_manda_pelo_central(cenario, estado):
+    """Aviso de equipe nao e' mensagem de cliente: com o aparelho fora, o
+    central ainda entrega, e o barbeiro nao fica sem saber do horario."""
+    b = _com_zap(cenario["brutus"], estado=estado, numero_conectado=NUMERO_DA_BARBEARIA)
+    assert _para_a_equipe_da(b, NUMERO_DA_BARBEARIA) == "central-do-marcai"
+
+
+def test_sem_zap_manda_pelo_central(cenario):
+    b = _com_zap(cenario["brutus"], numero_conectado=NUMERO_DA_BARBEARIA)
+    Barbearia.objects.using("owner").filter(id=b.id).update(plano="SEM_ZAP")
+    assert _para_a_equipe_da(b, NUMERO_DA_BARBEARIA) == "central-do-marcai"
+
+
+def test_barbearia_desativada_manda_pelo_central(cenario):
+    b = _com_zap(cenario["brutus"], numero_conectado=NUMERO_DA_BARBEARIA)
+    Barbearia.objects.using("owner").filter(id=b.id).update(ativo=False)
+    assert _para_a_equipe_da(b, NUMERO_DA_BARBEARIA) == "central-do-marcai"
+
+
+def test_barbearia_sem_instancia_manda_pelo_central(cenario):
+    """O convite do dono no cadastro de uma barbearia nova: ainda nao existe
+    instancia conectada nenhuma."""
+    assert _para_a_equipe_da(cenario["brutus"], NUMERO_DA_BARBEARIA) == "central-do-marcai"
 
 
 # ---- a checagem do numero ----
