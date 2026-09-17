@@ -12,7 +12,7 @@ reenviar, e a task fica testavel sem inventar um JSON da Evolution.
 from dataclasses import dataclass
 from datetime import datetime
 
-from tenant.models import WhatsappInstancia
+from tenant.models import EstadoInstancia, WhatsappInstancia
 from tenant.rls import com_barbearia
 from tenant.telefone import do_jid
 
@@ -68,16 +68,22 @@ def receber(corpo, agora: datetime) -> str:
     lida = ler_mensagem(corpo)
     if isinstance(lida, str):
         return f"ignorado:{lida}"
+    # Mensagem de CLIENTE sem texto (midia, figurinha, ...) sai antes de
+    # qualquer consulta: nao ha nada a enfileirar de qualquer jeito, ligado ou
+    # nao o bot. `fromMe` fica de fora desta conta — o dono respondendo com
+    # audio ainda e' gente atendendo, e precisa seguir ate' `silenciar`.
+    if not lida.do_proprio_numero and lida.texto is None:
+        return "ignorado:sem_texto"
     with com_barbearia(lida.barbearia_id):
         instancia = WhatsappInstancia.objects.filter(barbearia_id=lida.barbearia_id).first()
-    if instancia is None or not instancia.bot_ativo:
+    if (
+        instancia is None
+        or not instancia.bot_ativo
+        or instancia.estado != EstadoInstancia.CONECTADO
+    ):
         return "ignorado:desligado"
-    # `fromMe` ANTES de exigir texto: o dono respondendo com audio ainda e'
-    # gente atendendo, e o bot tem que calar do mesmo jeito.
     if lida.do_proprio_numero:
         return silenciar(lida.barbearia_id, lida.numero, lida.mensagem_id, agora)
-    if lida.texto is None:
-        return "ignorado:sem_texto"
     enfileirar(lida)
     return "enfileirado"
 

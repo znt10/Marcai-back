@@ -34,17 +34,35 @@ def _segredo(monkeypatch):
 
 
 def _mensagem(barbearia_id, *, texto="oi", jid="5583988887777@s.whatsapp.net",
-              from_me=False, mensagem_id="3A0000000001", citando=False, midia=False):
+              from_me=False, mensagem_id="3A0000000001", citando=False, midia=False,
+              context_info=None, source="ios"):
     if midia:
         message = {"imageMessage": {"caption": ""}}
     elif citando:
         message = {"extendedTextMessage": {"text": texto}}
     else:
         message = {"conversation": texto}
+    # Formato medido na fatia 0b: `key` traz tambem `remoteJidAlt`,
+    # `addressingMode` e `participant`; `data` traz `source` e `messageType`.
+    data = {
+        "key": {
+            "remoteJid": jid,
+            "remoteJidAlt": jid,
+            "addressingMode": "pn",
+            "participant": None,
+            "fromMe": from_me,
+            "id": mensagem_id,
+        },
+        "message": message,
+        "messageType": "imageMessage" if midia else "conversation",
+        "source": source,
+    }
+    if context_info is not None:
+        data["contextInfo"] = context_info
     return {
         "event": "messages.upsert",
         "instance": nome_da_instancia(barbearia_id),
-        "data": {"key": {"remoteJid": jid, "fromMe": from_me, "id": mensagem_id}, "message": message},
+        "data": data,
     }
 
 
@@ -86,6 +104,17 @@ def test_midia_chega_sem_texto():
 
 def test_propria_barbearia_e_marcada():
     assert ler_mensagem(_mensagem(ID, from_me=True)).do_proprio_numero is True
+
+
+def test_resposta_citando_no_formato_medido_le_a_conversation():
+    """G2 medido na fatia 0b: uma resposta citando chega com o texto em
+    `message.conversation`, como mensagem comum — a citacao em si (stanzaId,
+    quotedMessage) fica em `data.contextInfo`, um campo separado que
+    `ler_mensagem` nunca precisa olhar."""
+    corpo = _mensagem(ID, texto="1", context_info={
+        "stanzaId": "3A-LEMBRETE", "quotedMessage": {"conversation": "Lembrete: ..."},
+    })
+    assert ler_mensagem(corpo).texto == "1"
 
 
 @pytest.mark.parametrize("corpo, motivo", [
@@ -161,6 +190,30 @@ def test_audio_do_dono_tambem_cala(client, cenario):
     assert r.json()["resultado"] == "silenciado"
 
 
+def test_mensagem_digitada_no_aparelho_com_source_unknown_cala(client, cenario):
+    """Medido na fatia 0b: uma mensagem digitada no aparelho da barbearia
+    chega com `fromMe: true` e `source: "unknown"`."""
+    b = cenario["brutus"]
+    _com_bot(b)
+    r = _bater(client, _mensagem(b.id, from_me=True, source="unknown"))
+    assert r.json()["resultado"] == "silenciado"
+
+
+def test_instancia_nao_conectada_nao_enfileira(client, cenario):
+    """Bot ligado numa instancia que caiu (nao esta CONECTADO) nao pode
+    enfileirar — nao ha aparelho para a Evolution entregar a resposta."""
+    b = cenario["brutus"]
+    Barbearia.objects.using("owner").filter(id=b.id).update(plano="COM_ZAP")
+    WhatsappInstancia.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=b.id, nome=nome_da_instancia(b.id),
+        estado=EstadoInstancia.DESCONECTADO, bot_ativo=True,
+    )
+    with patch(ENFILEIRAR) as enfileirar:
+        r = _bater(client, _mensagem(b.id))
+    assert r.json()["resultado"] == "ignorado:desligado"
+    enfileirar.assert_not_called()
+
+
 def test_eco_da_resposta_do_bot_nao_cala(client, cenario):
     b = cenario["brutus"]
     _com_bot(b)
@@ -172,14 +225,21 @@ def test_eco_da_resposta_do_bot_nao_cala(client, cenario):
     assert _linha(b).mudo_ate is None
 
 
-def test_silenciar_com_a_conversa_presa_nao_trava_o_webhook(cenario, monkeypatch):
+def test_silenciar_com_a_conversa_presa_nao_trava_o_webhook(cenario, monkeypatch, caplog):
     b = cenario["brutus"]
     monkeypatch.setattr(bot, "BOT_ESPERA_TRAVA_S", 0.2)
     chave = f"{b.id}:{NUMERO}"
     with connections["owner"].cursor() as cur:
         cur.execute("SELECT pg_advisory_lock(hashtextextended(%s, 0))", [chave])
     try:
-        assert bot.silenciar(str(b.id), NUMERO, "x", datetime.now(timezone.utc)) == "ignorado:trava"
+        with caplog.at_level("WARNING"):
+            resultado = bot.silenciar(str(b.id), NUMERO, "m-x", datetime.now(timezone.utc))
+        assert resultado == "ignorado:trava"
+        # O numero do cliente NUNCA vai pro log — so' a barbearia e o id da
+        # mensagem, que bastam para investigar sem guardar o telefone.
+        assert NUMERO not in caplog.text
+        assert str(b.id) in caplog.text
+        assert "m-x" in caplog.text
     finally:
         with connections["owner"].cursor() as cur:
             cur.execute("SELECT pg_advisory_unlock(hashtextextended(%s, 0))", [chave])
@@ -198,13 +258,30 @@ def test_evento_de_conexao_continua_no_caminho_de_sempre(client, cenario):
 
 @override_settings(DATA_UPLOAD_MAX_MEMORY_SIZE=512)
 def test_evento_grande_demais_ainda_responde_200(client, cenario):
-    """Um 400 aqui faria a Evolution reenviar a mesma foto para sempre."""
+    """Um 400 aqui faria a Evolution reenviar a mesma foto para sempre.
+
+    O DRF 3.17 nao levanta mais `RequestDataTooBig` ao ler o corpo (ele
+    parseia o stream cru): o guarda tem que comparar o `Content-Length` com o
+    limite ANTES de tocar em `request.data`."""
     b = cenario["brutus"]
     _com_bot(b)
     corpo = _mensagem(b.id, texto="x" * 4096)
-    with patch(ENFILEIRAR):
+    with patch(ENFILEIRAR) as enfileirar:
         r = _bater(client, corpo)
     assert r.status_code == 200
+    assert r.json()["resultado"] == "ignorado:grande"
+    enfileirar.assert_not_called()
+
+
+def test_falha_ao_enfileirar_ainda_responde_200(client, cenario):
+    """Uma queda do broker ou do banco no meio do webhook nao pode virar 500
+    — a Evolution reenviaria o mesmo evento para sempre."""
+    b = cenario["brutus"]
+    _com_bot(b)
+    with patch(ENFILEIRAR, side_effect=RuntimeError("broker fora do ar")):
+        r = _bater(client, _mensagem(b.id))
+    assert r.status_code == 200
+    assert r.json()["resultado"] == "ignorado:erro"
 
 
 def test_sem_credencial_continua_401(client, cenario):

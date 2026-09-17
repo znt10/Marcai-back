@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import pytest
+
 from app.tasks import lembretes, tratar_mensagem, whatsapp_healthcheck, zelador
 from backend.celery import app as celery_app
 
@@ -63,6 +65,20 @@ def test_tratar_mensagem_chama_o_bot_e_esta_registrada():
     args = processar.call_args.args
     assert args[:4] == ("b", "83988887777", "oi", "m1")
     assert "app.tasks.tratar_mensagem" in celery_app.tasks
+
+
+def test_tratar_mensagem_loga_e_reprop_a_excecao_sem_o_numero(caplog):
+    # A task NAO retenta: o unico jeito de nao perder o rastro de uma falha e'
+    # logar aqui, antes de propagar. O numero e o texto do cliente nunca vao
+    # pro log — so' a barbearia e o id da mensagem.
+    with patch("app.tasks.processar_mensagem_do_bot", side_effect=RuntimeError("banco caiu")):
+        with caplog.at_level("ERROR"):
+            with pytest.raises(RuntimeError):
+                tratar_mensagem("b1", "83988887777", "oi", "m1")
+    assert "83988887777" not in caplog.text
+    assert "oi" not in caplog.text
+    assert "b1" in caplog.text
+    assert "m1" in caplog.text
 
 
 def test_ping_nao_existe_mais():

@@ -122,7 +122,18 @@ def tratar_mensagem(barbearia_id: str, numero: str, texto: str, mensagem_id: str
     de confirmar isso e' uma segunda tentativa de marcar: o banco recusaria a
     sobreposicao, e o cliente leria "nao deu certo" depois de ter dado. Mesma
     escolha de `MensagemNaoEnviada`: nada aqui e' reenviado depois.
+
+    Uma falha aqui some do Celery sem retentativa nenhuma — o unico rastro e'
+    o log, por isso ele acontece ANTES de propagar. So' barbearia e mensagem,
+    nunca o numero ou o texto do cliente.
     """
-    return processar_mensagem_do_bot(
-        barbearia_id, numero, texto, mensagem_id, datetime.now(timezone.utc),
-    )
+    try:
+        return processar_mensagem_do_bot(
+            barbearia_id, numero, texto, mensagem_id, datetime.now(timezone.utc),
+        )
+    except Exception:
+        logger.exception(
+            "[bot] falha ao tratar mensagem (barbearia=%s, mensagem=%s)",
+            barbearia_id, mensagem_id,
+        )
+        raise

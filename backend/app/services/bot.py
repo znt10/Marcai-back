@@ -509,6 +509,8 @@ def silenciar(barbearia_id: str, numero: str, mensagem_id: str, agora: datetime)
                 else:
                     ConversaWhatsapp.objects.filter(id=linha.id).update(mudo_ate=ate)
     except OperationalError:
-        logger.warning("[bot] conversa de %s presa demais para silenciar", numero)
+        logger.warning(
+            "[bot] silenciar travado (barbearia=%s, mensagem=%s)", barbearia_id, mensagem_id,
+        )
         return "ignorado:trava"
     return "silenciado"

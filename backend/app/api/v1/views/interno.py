@@ -3,11 +3,11 @@ import logging
 import os
 from datetime import datetime, timezone
 
-from django.core.exceptions import RequestDataTooBig
+from django.conf import settings
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from app.services.bot_entrada import EVENTO_MENSAGEM, receber
+from app.services.bot_entrada import EVENTO_MENSAGEM, Recebida, ler_mensagem, receber
 from app.services.whatsapp_eventos import aplicar_evento
 
 logger = logging.getLogger(__name__)
@@ -57,20 +57,43 @@ class WhatsappEventoView(APIView):
         if not segredo or not hmac.compare_digest(recebido.encode(), segredo.encode()):
             return Response({"erro": "não autorizado"}, status=401)
 
+        # O guarda tem que olhar o `Content-Length` ANTES de tocar em
+        # `request.data`: no DRF 3.17 a leitura do corpo nao levanta mais
+        # `RequestDataTooBig` (o parser le o stream cru), entao o unico jeito
+        # de recusar sem estourar e' conferir o tamanho anunciado primeiro.
+        # 200 e nao 400: a Evolution reenvia o que nao foi aceito, e uma foto
+        # grande demais voltaria para sempre.
         try:
-            corpo = request.data
-        except RequestDataTooBig:
-            # 200 e nao 400: a Evolution reenvia o que nao foi aceito, e uma
-            # foto grande demais voltaria para sempre.
+            tamanho = int(request.META.get("CONTENT_LENGTH") or 0)
+        except (TypeError, ValueError):
+            tamanho = 0
+        if tamanho > settings.DATA_UPLOAD_MAX_MEMORY_SIZE:
             logger.warning("[webhook] evento acima do limite de corpo: descartado")
             return Response({"ok": True, "resultado": "ignorado:grande"})
+
+        corpo = request.data
         corpo = corpo if isinstance(corpo, dict) else {}
 
         # Mensagem de cliente vai para o bot; conexao e QR seguem o caminho de
         # sempre. As duas coisas chegam pela mesma rota porque a Evolution so'
         # tem UM webhook por instancia.
         if str(corpo.get("event") or "").lower() == EVENTO_MENSAGEM:
-            resultado = receber(corpo, datetime.now(timezone.utc))
+            try:
+                resultado = receber(corpo, datetime.now(timezone.utc))
+            except Exception:
+                # Uma queda do broker ou do banco no meio do webhook nao pode
+                # virar 500 — mesma razao do corpo grande: a Evolution
+                # reenviaria o mesmo evento para sempre. `ler_mensagem` e'
+                # pura e nao repete o que ja falhou, so' identifica o evento
+                # pro log — sem o numero nem o texto do cliente.
+                lida = ler_mensagem(corpo)
+                barbearia_id = lida.barbearia_id if isinstance(lida, Recebida) else None
+                mensagem_id = lida.mensagem_id if isinstance(lida, Recebida) else None
+                logger.exception(
+                    "[webhook] falha ao tratar messages.upsert (barbearia=%s, mensagem=%s)",
+                    barbearia_id, mensagem_id,
+                )
+                resultado = "ignorado:erro"
         else:
             resultado = aplicar_evento(corpo)
         return Response({"ok": True, "resultado": resultado})
