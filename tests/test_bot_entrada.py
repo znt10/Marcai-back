@@ -68,11 +68,11 @@ def _mensagem(barbearia_id, *, texto="oi", jid="5583988887777@s.whatsapp.net",
     }
 
 
-def _com_bot(barbearia, bot_ativo=True):
+def _com_bot(barbearia, bot_ativo=True, numero_conectado=None):
     Barbearia.objects.using("owner").filter(id=barbearia.id).update(plano="COM_ZAP")
     WhatsappInstancia.objects.using("owner").create(
         id=str(uuid.uuid4()), barbearia_id=barbearia.id, nome=nome_da_instancia(barbearia.id),
-        estado=EstadoInstancia.CONECTADO, bot_ativo=bot_ativo,
+        estado=EstadoInstancia.CONECTADO, bot_ativo=bot_ativo, numero_conectado=numero_conectado,
     )
 
 
@@ -209,6 +209,33 @@ def test_dono_respondendo_num_chat_lid_tambem_cala(client, cenario):
     r = _bater(client, corpo)
     assert r.json()["resultado"] == "silenciado"
     assert _linha(b).mudo_ate > datetime.now(timezone.utc) + timedelta(hours=3)
+
+
+@pytest.mark.parametrize("from_me", [True, False])
+@pytest.mark.parametrize(
+    "jid", ["5583988887777@s.whatsapp.net", "558388887777@s.whatsapp.net"],
+)
+def test_conversa_consigo_mesmo_nao_cala_nem_responde(client, cenario, from_me, jid):
+    """O aviso de equipe que a barbearia manda para o PROPRIO numero volta no
+    webhook como `fromMe` com `remoteJid` = ela mesma, e o mesmo vale para o
+    que o dono anota no "conversar comigo mesmo". Calar o bot ali silenciaria
+    uma conversa que nao existe; responder faria o bot conversar com ele
+    mesmo."""
+    b = cenario["brutus"]
+    _com_bot(b, numero_conectado=NUMERO)
+    with patch(ENFILEIRAR) as enfileirar, patch("app.services.bot_entrada.silenciar") as silenciar:
+        r = _bater(client, _mensagem(b.id, jid=jid, from_me=from_me, mensagem_id="3A-EU-MESMO"))
+    assert r.json()["resultado"] == "ignorado:proprio_numero"
+    enfileirar.assert_not_called()
+    silenciar.assert_not_called()
+    assert _linha(b) is None
+
+
+def test_dono_respondendo_cliente_com_numero_conectado_ainda_cala(client, cenario):
+    b = cenario["brutus"]
+    _com_bot(b, numero_conectado="83911112222")
+    r = _bater(client, _mensagem(b.id, from_me=True, mensagem_id="3A-DIGITADO-2"))
+    assert r.json()["resultado"] == "silenciado"
 
 
 def test_audio_do_dono_tambem_cala(client, cenario):

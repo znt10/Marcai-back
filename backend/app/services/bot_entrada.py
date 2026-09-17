@@ -16,7 +16,7 @@ from tenant.config import BOT_MENSAGEM_VELHA_MIN
 
 from tenant.models import EstadoInstancia, WhatsappInstancia
 from tenant.rls import com_barbearia
-from tenant.telefone import do_jid
+from tenant.telefone import canonico, do_jid
 
 from .bot import silenciar
 from .whatsapp_instancias import barbearia_id_do_nome
@@ -106,6 +106,13 @@ def receber(corpo, agora: datetime) -> str:
         return "ignorado:sem_texto"
     with com_barbearia(lida.barbearia_id):
         instancia = WhatsappInstancia.objects.filter(barbearia_id=lida.barbearia_id).first()
+    # O "conversar comigo mesmo" da barbearia: o aviso de equipe que ela
+    # manda para o proprio numero (`enviar_a_equipe_da`) volta aqui como
+    # `fromMe`, e o dono anota coisas ali. Nao ha cliente nessa conversa —
+    # `silenciar` calaria uma conversa inexistente, e enfileirar faria o bot
+    # responder a si mesmo. `lida.numero` ja vem canonico de `do_jid`.
+    if instancia is not None and canonico(instancia.numero_conectado) == lida.numero:
+        return "ignorado:proprio_numero"
     if (
         instancia is None
         or not instancia.bot_ativo
