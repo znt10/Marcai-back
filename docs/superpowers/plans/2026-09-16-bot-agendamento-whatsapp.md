@@ -4003,19 +4003,23 @@ docker compose restart api worker beat
    ```
    Esperado: a lista inclui `MESSAGES_UPSERT`.
 2. **Menu.** Segundo celular manda `oi`. Esperado: menu em poucos segundos.
-3. **Marcar.** Seguir até confirmar. Esperado: "Fechou, ..." com link; o horário aparece na agenda do painel; o barbeiro recebe "Novo horário" pelo número central.
+3. **Marcar.** Seguir até confirmar, escolhendo um horário a **mais de 60 minutos** à frente (amanhã serve). Com 60 ou menos, o item 5 dá "fora do prazo" (`PRAZO_CANCELAMENTO_MIN = 60`). Esperado: "Fechou, ..." com link; o horário aparece na agenda do painel; o barbeiro recebe "Novo horário" pelo número central.
 4. **Menu de quem tem horário.** `oi` de novo. Esperado: "Você tem: ..." e "2 - Cancelar esse".
 5. **Cancelar.** `2` → `1`. Esperado: "... cancelado" e o horário some da agenda.
 6. **Resposta citando.** Responder a uma pergunta do bot segurando a mensagem → `1`. Esperado: o bot entende como `1`.
-7. **Dono no celular.** Do chip, digitar qualquer coisa para o segundo celular. Depois, `oi` do segundo celular. Esperado: **nenhuma** resposta do bot.
-8. **Eco.** Numa conversa nova (outro número, ou depois de o mudo vencer): as respostas do bot **não** calam o bot — a conversa segue até o fim.
-9. **Zero.** `0`. Esperado: "já chamei alguém"; o dono recebe o aviso pelo número central.
-10. **Ignorados.** Mandar foto e áudio ao chip, e uma mensagem num grupo em que o chip esteja. Esperado: nenhuma resposta. `docker compose logs --since 2m worker | grep tratar_mensagem` sem execução para esses.
-11. **Lembrete.** Marcar pelo bot um horário 50 minutos à frente e rodar:
+7. **Eco.** A conversa dos itens 2–6 já é a prova: as respostas do bot **não** calaram o bot — ela seguiu até o fim.
+8. **Zero.** `0`. Esperado: "já chamei alguém"; o dono recebe o aviso pelo número central. O `0` cala o bot por 4 horas nessa conversa: limpe o mudo antes de seguir (troque pelo número do segundo celular, 11 dígitos):
+   ```bash
+   NUM=83900000000 docker compose exec -T -e NUM api python manage.py shell -c "import os;from tenant.models import ConversaWhatsapp;print(ConversaWhatsapp.objects.using('owner').filter(whatsapp=os.environ['NUM']).update(mudo_ate=None))"
+   ```
+9. **Ignorados.** Mandar foto e áudio ao chip, e uma mensagem num grupo em que o chip esteja. Esperado: nenhuma resposta. `docker compose logs --since 2m worker | grep tratar_mensagem` sem execução para esses.
+10. **Lembrete.** Marcar pelo bot um horário a **mais de 60 minutos** à frente — dentro de 60, `lembrete_ao_criar` já nasce avisado e o lembrete nunca sai. Pegue o código no fim do link da confirmação (`/agendamento/<codigo>`), traga o horário para dentro da janela do lembrete e rode:
     ```bash
+    COD=COLE-O-CODIGO docker compose exec -T -e COD api python manage.py shell -c "import os;from datetime import timedelta;from django.utils import timezone;from tenant.models import Agendamento;q=Agendamento.objects.using('owner').filter(codigo=os.environ['COD']);a=q.get();ini=timezone.now()+timedelta(minutes=50);print(q.update(inicio=ini,fim=ini+(a.fim-a.inicio),lembrete_enviado_em=None))"
     docker compose exec -T api python manage.py shell -c "from app.tasks import lembretes; print(lembretes())"
     ```
-    Esperado: lembrete com "1 - Confirmar / 2 - Não vou conseguir ir". `1` → "Combinado". Repetir com outro horário e `2` → o barbeiro recebe "Avisou que não vem".
+    O `beat` também roda `lembretes` sozinho no próximo tique: se o lembrete já chegou antes do segundo comando, ele imprime `0` e está tudo certo. Se o `update` der erro de sobreposição, o barbeiro já tem alguém daqui a 50 minutos: use outro minuto. Esperado: lembrete com "1 - Confirmar / 2 - Não vou conseguir ir". `1` → "Combinado". Repetir com outro horário e `2` → o barbeiro recebe "Avisou que não vem".
+11. **Dono no celular.** Do chip, digitar qualquer coisa para o segundo celular. Depois, `oi` do segundo celular. Esperado: **nenhuma** resposta do bot. Fica perto do fim porque cala a conversa por 4 horas; antes do item 12, limpe o mudo com o comando do item 8.
 12. **Desligar.** Painel → Desligado. `oi` do segundo celular. Esperado: nenhuma resposta; a assinatura (comando do item 1) volta a só dois eventos.
 
 - [ ] **Step 3: Registrar e commitar**
