@@ -47,6 +47,16 @@ def ler_mensagem(corpo) -> "Recebida | str":
     jid = chave.get("remoteJid")
     if isinstance(jid, str) and jid.endswith("@g.us"):
         return "grupo"
+    alt = chave.get("remoteJidAlt")
+    if (
+        isinstance(jid, str) and jid.endswith("@lid")
+        and isinstance(alt, str) and alt.endswith("@s.whatsapp.net")
+    ):
+        # Chat endereçado por `@lid`: o numero de verdade vem em
+        # `remoteJidAlt`. Vale para cliente e para `fromMe` — o dono
+        # respondendo nesse chat ainda precisa calar o bot. Sem alt de
+        # pessoa, `do_jid` devolve None e o evento e' descartado.
+        jid = alt
     numero = do_jid(jid)
     if numero is None:
         return "numero"

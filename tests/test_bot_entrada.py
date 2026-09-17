@@ -35,7 +35,7 @@ def _segredo(monkeypatch):
 
 def _mensagem(barbearia_id, *, texto="oi", jid="5583988887777@s.whatsapp.net",
               from_me=False, mensagem_id="3A0000000001", citando=False, midia=False,
-              context_info=None, source="ios"):
+              context_info=None, source="ios", jid_alt="igual", timestamp=None):
     if midia:
         message = {"imageMessage": {"caption": ""}}
     elif citando:
@@ -47,7 +47,7 @@ def _mensagem(barbearia_id, *, texto="oi", jid="5583988887777@s.whatsapp.net",
     data = {
         "key": {
             "remoteJid": jid,
-            "remoteJidAlt": jid,
+            "remoteJidAlt": jid if jid_alt == "igual" else jid_alt,
             "addressingMode": "pn",
             "participant": None,
             "fromMe": from_me,
@@ -59,6 +59,8 @@ def _mensagem(barbearia_id, *, texto="oi", jid="5583988887777@s.whatsapp.net",
     }
     if context_info is not None:
         data["contextInfo"] = context_info
+    if timestamp is not None:
+        data["messageTimestamp"] = timestamp
     return {
         "event": "messages.upsert",
         "instance": nome_da_instancia(barbearia_id),
@@ -115,6 +117,21 @@ def test_resposta_citando_no_formato_medido_le_a_conversation():
         "stanzaId": "3A-LEMBRETE", "quotedMessage": {"conversation": "Lembrete: ..."},
     })
     assert ler_mensagem(corpo).texto == "1"
+
+
+LID = "207843221540943@lid"
+
+
+def test_chat_lid_le_o_numero_do_remote_jid_alt():
+    """Conversa endereçada por `@lid`: o numero de verdade vem em
+    `remoteJidAlt`. Descartar esses chats deixaria o cliente sem resposta."""
+    corpo = _mensagem(ID, jid=LID, jid_alt="5583988887777@s.whatsapp.net")
+    assert ler_mensagem(corpo) == Recebida(ID, NUMERO, "oi", "3A0000000001", False)
+
+
+@pytest.mark.parametrize("alt", [None, LID, "", "120363025246125486@g.us"])
+def test_chat_lid_sem_alt_de_pessoa_continua_descartado(alt):
+    assert ler_mensagem(_mensagem(ID, jid=LID, jid_alt=alt)) == "numero"
 
 
 @pytest.mark.parametrize("corpo, motivo", [
@@ -179,6 +196,18 @@ def test_dono_respondendo_pelo_celular_cala_o_bot(client, cenario):
         r = _bater(client, _mensagem(b.id, from_me=True, mensagem_id="3A-DIGITADO"))
     assert r.json()["resultado"] == "silenciado"
     enfileirar.assert_not_called()
+    assert _linha(b).mudo_ate > datetime.now(timezone.utc) + timedelta(hours=3)
+
+
+def test_dono_respondendo_num_chat_lid_tambem_cala(client, cenario):
+    b = cenario["brutus"]
+    _com_bot(b)
+    corpo = _mensagem(
+        b.id, from_me=True, jid=LID, jid_alt="5583988887777@s.whatsapp.net",
+        mensagem_id="3A-DIGITADO-LID",
+    )
+    r = _bater(client, corpo)
+    assert r.json()["resultado"] == "silenciado"
     assert _linha(b).mudo_ate > datetime.now(timezone.utc) + timedelta(hours=3)
 
 
