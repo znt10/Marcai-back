@@ -42,7 +42,7 @@ from tenant.models import (
     WhatsappInstancia,
 )
 from tenant.rls import com_barbearia
-from tenant.telefone import formatar
+from tenant.telefone import formas_gravadas, formatar, nacional_canonico
 
 from . import conversa as c
 from .agenda import dias_com_horarios
@@ -377,14 +377,24 @@ def _opcoes_do_passo(ctx: _Contexto, passo: str, r: dict):
     raise ValueError(f"passo sem opcoes: {passo}")
 
 
+def _cliente_do_numero(numero: str):
+    """O `Cliente` deste numero em qualquer das formas gravadas (`8382217869`
+    ou `83982217869`), preferindo a canonica. Chame DENTRO de `com_barbearia`.
+    """
+    formas = formas_gravadas(numero)
+    por_forma = {cl.whatsapp: cl for cl in Cliente.objects.filter(whatsapp__in=formas)}
+    return next((por_forma[f] for f in formas if f in por_forma), None)
+
+
 def _cliente_e_marcados(ctx: _Contexto):
     with com_barbearia(ctx.bid):
-        cliente = Cliente.objects.filter(whatsapp=ctx.numero).first()
+        cliente = _cliente_do_numero(ctx.numero)
         if cliente is None:
             return None, []
         marcados = list(
             Agendamento.objects.filter(
-                cliente_id=cliente.id, status="CONFIRMADO", inicio__gt=ctx.agora,
+                cliente__whatsapp__in=formas_gravadas(ctx.numero),
+                status="CONFIRMADO", inicio__gt=ctx.agora,
             )
             .select_related("barbeiro")
             .order_by("inicio")[:BOT_HORAS_OFERECIDAS]
@@ -396,12 +406,14 @@ def _cliente_e_marcados(ctx: _Contexto):
 
 
 def _agendamento_do_numero(ctx: _Contexto, codigo: str):
-    """O horario so' e' deste numero se o CLIENTE dele tem este whatsapp. E' a
-    unica barreira entre um codigo guardado e o horario de outra pessoa."""
+    """O horario so' e' deste numero se o CLIENTE dele tem este whatsapp (em
+    qualquer das formas gravadas do mesmo celular). E' a unica barreira entre
+    um codigo guardado e o horario de outra pessoa."""
     with com_barbearia(ctx.bid):
         return (
             Agendamento.objects.filter(
-                codigo=codigo, status="CONFIRMADO", cliente__whatsapp=ctx.numero,
+                codigo=codigo, status="CONFIRMADO",
+                cliente__whatsapp__in=formas_gravadas(ctx.numero),
             )
             .select_related("barbeiro", "cliente")
             .first()
@@ -411,11 +423,16 @@ def _agendamento_do_numero(ctx: _Contexto, codigo: str):
 def _marcar(ctx: _Contexto, r: dict) -> _Saida:
     nome = r.get("cliente_nome") or ""
     volta = {k: v for k, v in r.items() if k not in ("inicio", "barbeiro_escolhido", "depois")}
+    # Cliente ja gravado com 10 digitos: `marcar` faz o upsert pelo whatsapp
+    # EXATO, entao passar a forma gravada evita um `Cliente` duplicado.
+    with com_barbearia(ctx.bid):
+        existente = _cliente_do_numero(ctx.numero)
+    whatsapp = existente.whatsapp if existente is not None else ctx.numero
     try:
         criado = marcar(
             barbearia_id=ctx.bid, barbeiro_id=r["barbeiro_escolhido"],
             servico_id=r["servico_id"], inicio=datetime.fromisoformat(r["inicio"]),
-            nome=nome, whatsapp=ctx.numero, agora=ctx.agora,
+            nome=nome, whatsapp=whatsapp, agora=ctx.agora,
         )
     except ErroCliente as e:
         return _ir(ctx, c.HORA, volta, prefixo=e.mensagem)
@@ -479,7 +496,8 @@ def _avisar_donos(ctx: _Contexto) -> None:
             Barbeiro.objects.filter(papel=PapelBarbeiro.DONO, ativo=True)
             .values_list("whatsapp", flat=True)
         )
-        nome = Cliente.objects.filter(whatsapp=ctx.numero).values_list("nome", flat=True).first()
+        cliente = _cliente_do_numero(ctx.numero)
+    nome = cliente.nome if cliente is not None else None
     texto = msg_bot_pediu_humano(cliente=nome or formatar(ctx.numero))
     for whatsapp in donos:
         enviar_a_equipe(whatsapp, texto)
@@ -531,7 +549,12 @@ def enviar_lembrete_pelo_bot(
 
     Conversa ocupada (escolhendo horario, ou muda porque alguem da barbearia
     esta falando) recebe o lembrete SEM opcoes, e o estado dela fica.
+
+    `numero` e' o gravado em `Cliente.whatsapp`, que pode ter 10 digitos; a
+    resposta chega com 11 (`do_jid`). Conversa, trava e envio usam a forma
+    canonica, ou o "1" do cliente cairia numa conversa vazia.
     """
+    numero = nacional_canonico(numero)
     enviado = False
     try:
         with trava_da_conversa(barbearia_id, numero, espera_s=BOT_ESPERA_TRAVA_S):

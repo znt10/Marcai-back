@@ -294,6 +294,33 @@ def test_cancelar_em_cima_da_hora_respeita_o_prazo(cenario):
         assert Agendamento.objects.get(id=ag.id).status == "CONFIRMADO"
 
 
+def test_cliente_gravado_com_10_digitos_e_reconhecido_pelo_numero_de_11(cenario):
+    """`normalizar` aceita celular sem o nono digito, entao a vitrine pode ter
+    gravado `8388887777`; `do_jid` sempre entrega `83988887777`. Sem aceitar
+    as duas formas, o bot nao via o horario, criava um `Cliente` duplicado e
+    nao deixava cancelar."""
+    b, pedro, servico = _cenario_simples(cenario)
+    antigo = _cliente(b, whatsapp="8388887777")
+    ag = _agendamento(b, pedro, servico, antigo, _amanha_redondo())
+    conversa = _Conversa(b)
+    conversa.diz("oi")
+    assert "Você tem: Pedro," in conversa.ultima
+    assert "2 - Cancelar esse" in conversa.ultima
+    conversa.diz("2")
+    assert conversa.diz("1") == "cancelou"
+    with com_barbearia(b.id):
+        assert Agendamento.objects.get(id=ag.id).status == "CANCELADO_CLIENTE"
+
+    for texto in ("oi", "1", "1", "1"):
+        conversa.diz(texto)
+    # Nome ja conhecido: o bot nao pergunta.
+    assert conversa.ultima.startswith("Confere:")
+    assert conversa.diz("1") == "marcou"
+    with com_barbearia(b.id):
+        assert [str(i) for i in Cliente.objects.values_list("id", flat=True)] == [str(antigo.id)]
+        assert Agendamento.objects.filter(cliente_id=antigo.id, status="CONFIRMADO").count() == 1
+
+
 # ---- lembrete ----
 
 

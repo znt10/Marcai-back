@@ -54,10 +54,34 @@ def do_jid(jid: str | None) -> str | None:
     digitos = jid[: -len(_SUFIXO_DE_PESSOA)]
     if not digitos.isdigit() or not digitos.startswith("55"):
         return None
-    nacional = digitos[2:]
-    if len(nacional) == 10 and nacional[2] in "6789":
-        nacional = f"{nacional[:2]}9{nacional[2:]}"
-    return normalizar(nacional)
+    return normalizar(nacional_canonico(digitos[2:]))
+
+
+_INICIO_DE_CELULAR = "6789"
+
+
+def nacional_canonico(nacional: str) -> str:
+    """A forma de 11 digitos de um numero nacional: celular de 10 digitos
+    (assinante comecando de 6 a 9) ganha o nono digito; o resto volta como
+    veio. Pura — nao valida, quem chama ja tem digitos."""
+    if len(nacional) == 10 and nacional[2] in _INICIO_DE_CELULAR:
+        return f"{nacional[:2]}9{nacional[2:]}"
+    return nacional
+
+
+def formas_gravadas(numero: str) -> list[str]:
+    """As formas em que o MESMO celular pode estar em `Cliente.whatsapp`.
+
+    `normalizar` aceita o celular sem o nono digito, entao a vitrine pode ter
+    gravado `8382217869` enquanto o WhatsApp entrega `83982217869`. Sem
+    migracao de dados: quem busca cliente pelo numero procura as duas. A
+    canonica vem primeiro. Tirar o 9 de `83912345678` daria um fixo — outra
+    pessoa —, entao so' ha segunda forma quando ela voltaria a este numero.
+    """
+    canonico = nacional_canonico(numero)
+    if len(canonico) == 11 and canonico[2] == "9" and canonico[3] in _INICIO_DE_CELULAR:
+        return [canonico, f"{canonico[:2]}{canonico[3:]}"]
+    return [canonico]
 
 
 def formatar(digitos: str) -> str:

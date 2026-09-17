@@ -27,7 +27,7 @@ NUMERO = "83988887777"
 ENVIAR = "app.services.bot._enviar"
 
 
-def _cenario(cenario, *, bot_ativo=True):
+def _cenario(cenario, *, bot_ativo=True, whatsapp=NUMERO):
     b = cenario["brutus"]
     Barbearia.objects.using("owner").filter(id=b.id).update(plano="COM_ZAP")
     WhatsappInstancia.objects.using("owner").create(
@@ -43,7 +43,7 @@ def _cenario(cenario, *, bot_ativo=True):
         duracao_minima_min=15, duracao_sugerida_min=30,
     )
     cliente = Cliente.objects.using("owner").create(
-        id=str(uuid.uuid4()), barbearia_id=b.id, nome="Maria Souza", whatsapp=NUMERO,
+        id=str(uuid.uuid4()), barbearia_id=b.id, nome="Maria Souza", whatsapp=whatsapp,
     )
     agora = datetime.now(timezone.utc)
     inicio = agora + timedelta(minutes=30)
@@ -147,3 +147,20 @@ def test_falha_no_envio_nao_grava_estado_como_se_tivesse_entregue(cenario):
     with patch(ENVIAR, return_value=None):
         assert enviar_pendentes(agora) == 1
     assert _linha(b) is None
+
+
+def test_cliente_gravado_com_10_digitos_confirma_respondendo_do_numero_de_11(cenario):
+    """O lembrete usava o numero gravado (10 digitos) como chave da conversa e
+    da trava, e a resposta chega com 11 (`do_jid`): o "1" caia numa conversa
+    vazia e voltava o menu em vez de confirmar."""
+    b, _, agora = _cenario(cenario, whatsapp="8388887777")
+    with patch(ENVIAR, return_value="3EB0-LEMBRETE") as enviar:
+        enviar_pendentes(agora)
+    assert enviar.call_args.args[1] == NUMERO
+    respostas = []
+    with patch(ENVIAR, side_effect=lambda i, n, t: respostas.append(t) or "3EB0-R"), patch(
+        "app.services.bot.enviar_a_equipe"
+    ):
+        desfecho = bot.processar(str(b.id), NUMERO, "1", "3A-RESPOSTA", agora + timedelta(minutes=5))
+    assert desfecho == "lembrete_confirmado"
+    assert respostas == ["Combinado, te esperamos!"]
