@@ -2,9 +2,12 @@
 
 E a mensagem que faz o plano SEM ZAP valer alguma coisa: naquele plano o
 cliente nao recebe nada, e sem isto o barbeiro tambem nao — ele so saberia da
-agenda abrindo o painel. Por isso ela sai nos DOIS planos, pelo numero central
-(ou pelo da propria barbearia, quando o barbeiro E' esse numero — ver
-`enviar_a_equipe_da`).
+agenda abrindo o painel. Por isso ela sai nos DOIS planos.
+
+Por qual numero, quem decide e' `enviar_a_equipe_da`: com zap e aparelho
+conectado, pelo numero da propria barbearia, que e' o que os barbeiros ja tem
+salvo — e uma queda do central nao deixa a equipe sem lista. Sem zap, ou com o
+aparelho fora, pelo central.
 
 Duas regras que foram decididas e que o codigo aqui so obedece:
 

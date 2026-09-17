@@ -248,7 +248,7 @@ def msg_bot_chamou_humano() -> str:
 
 
 def msg_bot_pediu_humano(*, cliente: str) -> str:
-    """Para o DONO, pelo numero central."""
+    """Para o DONO, pelo numero da barbearia (ou o central, sem aparelho conectado)."""
     return f"Cliente pediu atendimento no WhatsApp da barbearia\n{cliente}"
 
 

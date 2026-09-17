@@ -1,8 +1,9 @@
 """Quem fala com quem, por qual numero.
 
 A regra inteira da fatia cabe em duas linhas, e e' por isso que ela precisa de
-teste proprio: **cliente ← numero da barbearia; equipe ← numero central.** O
-central nunca fala com cliente, porque um bloqueio de WhatsApp causado por UMA
+teste proprio: **cliente ← numero da barbearia; equipe ← numero da barbearia
+quando ela esta conectada, central quando nao.** O central nunca fala com
+cliente, porque um bloqueio de WhatsApp causado por UMA
 barbearia derrubaria todas de uma vez — que e' exatamente o que a instancia por
 barbearia existe para isolar.
 
@@ -165,8 +166,8 @@ def test_equipe_sai_sempre_pelo_central(cenario):
     with patch.object(whatsapp.requests, "post", return_value=_ok()) as post:
         whatsapp.enviar_a_equipe("11911112222", "Novo horário")
 
-    # Mesmo com a barbearia tendo numero proprio: o aviso ao barbeiro sai do
-    # Marcai, porque quem tem relacao com o Marcai e' o barbeiro.
+    # `enviar_a_equipe` e' o central, sempre. Quem escolhe o numero da
+    # barbearia e' `enviar_a_equipe_da`, logo abaixo.
     assert _instancia_usada(post) == "central-do-marcai"
 
 
@@ -178,7 +179,7 @@ def test_equipe_e_avisada_tambem_no_plano_sem_zap(cenario):
     assert post.call_count == 1
 
 
-# ---- equipe no proprio numero da barbearia ----
+# ---- equipe pelo numero da barbearia ----
 
 NUMERO_DA_BARBEARIA = "83999990000"
 
@@ -190,29 +191,19 @@ def _para_a_equipe_da(barbearia, destino, texto="Novo horário"):
     return _instancia_usada(post)
 
 
-def test_barbeiro_que_e_o_numero_da_barbearia_recebe_pelo_proprio_numero(cenario):
-    """O barbeiro sozinho que conectou o proprio celular como numero da
-    barbearia: o aviso cai no "conversar comigo mesmo" dele, e nao num numero
-    do Marcai que ele nunca salvou."""
+@pytest.mark.parametrize("destino", ["83988887777", NUMERO_DA_BARBEARIA, "8399990000"])
+def test_com_zap_conectado_toda_a_equipe_recebe_pelo_numero_da_barbearia(cenario, destino):
+    """Qualquer membro, e nao so' quem e' o proprio numero: o numero da
+    barbearia e' o que os barbeiros ja conhecem e tem salvo, e uma queda do
+    central nao cala mais a equipe."""
     b = _com_zap(cenario["brutus"], numero_conectado=NUMERO_DA_BARBEARIA)
-    assert _para_a_equipe_da(b, NUMERO_DA_BARBEARIA) == f"marcai-{b.id}"
-
-
-@pytest.mark.parametrize(
-    "guardado", ["558399990000@s.whatsapp.net", "558399990000", "5583999990000", "83999990000"],
-)
-@pytest.mark.parametrize("destino", ["8399990000", "83999990000"])
-def test_formas_diferentes_do_mesmo_celular_ainda_casam(cenario, guardado, destino):
-    """10, 11 ou 12 digitos, com ou sem JID: e' o mesmo aparelho. A conta
-    antiga do WhatsApp vem sem o nono digito e o cadastro pode ter qualquer
-    uma das duas formas."""
-    b = _com_zap(cenario["brutus"], numero_conectado=guardado)
     assert _para_a_equipe_da(b, destino) == f"marcai-{b.id}"
 
 
-def test_outro_barbeiro_continua_pelo_central(cenario):
-    b = _com_zap(cenario["brutus"], numero_conectado=NUMERO_DA_BARBEARIA)
-    assert _para_a_equipe_da(b, "83988887777") == "central-do-marcai"
+def test_com_zap_conectado_sem_numero_guardado_ainda_usa_a_barbearia(cenario):
+    """O numero guardado e' enfeite para esta decisao: quem decide e' o estado."""
+    b = _com_zap(cenario["brutus"], numero_conectado=None)
+    assert _para_a_equipe_da(b, "83988887777") == f"marcai-{b.id}"
 
 
 @pytest.mark.parametrize(

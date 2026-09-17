@@ -18,7 +18,6 @@ from tenant.models import (
     WhatsappInstancia,
 )
 from tenant.rls import com_barbearia
-from tenant.telefone import canonico
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +49,9 @@ def _config() -> dict[str, str]:
 
 
 def enviar_a_equipe(whatsapp_digitos: str, mensagem: str) -> None:
-    """Manda pela instancia CENTRAL do Marcai — barbeiro, dono, convite.
+    """Manda pela instancia CENTRAL do Marcai — barbeiro, dono, convite. Quem
+    conhece a barbearia chama `enviar_a_equipe_da`, que so' cai aqui quando a
+    barbearia nao tem aparelho conectado.
 
     O par disto e `enviar_ao_cliente`, e a diferenca nao e de estilo: **o
     numero central nunca fala com cliente.** Se falasse, um bloqueio do
@@ -66,34 +67,34 @@ def enviar_a_equipe(whatsapp_digitos: str, mensagem: str) -> None:
 
 
 def enviar_a_equipe_da(barbearia_id, whatsapp_digitos: str, mensagem: str) -> None:
-    """O aviso de equipe de UMA barbearia. Sai pelo central, como
-    `enviar_a_equipe` — menos quando o destinatario E' o numero da propria
-    barbearia.
+    """O aviso de equipe de UMA barbearia: lista do dia, novo horario,
+    cancelamento, desistencia, pedido de humano, convite.
 
-    E' o barbeiro sozinho que conectou o proprio celular como numero da
-    barbearia. Pelo central, o aviso chega de um numero que ele nunca salvou;
-    pela instancia dele, cai no "conversar comigo mesmo" (medido: `sendText`
-    de uma instancia para o proprio numero responde 201). Nao ha cliente
-    nenhum nesse caminho, entao a regra "o central nunca fala com cliente"
-    continua inteira.
+    Com zap, ativa e CONECTADA, sai pela instancia DA BARBEARIA para qualquer
+    membro da equipe. Decisao do dono, por duas razoes:
 
-    Com zap, ativa e CONECTADA — qualquer outra coisa cai no central, que
-    entrega mesmo com o aparelho da barbearia fora. A leitura e' curta e o
-    envio fica fora dela: `com_barbearia` nao aninha, e segurar transacao
-    durante uma chamada de rede nao ajuda ninguem.
+    - o numero da barbearia e' o que os barbeiros ja conhecem e tem salvo; o
+      central e' um numero do Marcai que ninguem ali reconhece;
+    - uma queda local do central deixa de calar a equipe — cada barbearia
+      conectada avisa os seus pelo proprio aparelho.
+
+    Quando o destinatario e' o proprio numero conectado, a mensagem cai no
+    "conversar comigo mesmo" (medido: `sendText` para o proprio numero responde
+    201), e `bot_entrada` ignora o eco dela.
+
+    O central vira so' o recurso: sem zap, desativada, sem instancia ou com o
+    aparelho fora do ar — ai ele ainda entrega, e o barbeiro nao fica sem saber
+    do horario. A leitura e' curta e o envio fica fora dela: `com_barbearia`
+    nao aninha, e segurar transacao durante uma chamada de rede nao ajuda
+    ninguem.
     """
-    alvo = canonico(whatsapp_digitos)
     instancia = None
-    if alvo is not None and Barbearia.objects.filter(
+    if Barbearia.objects.filter(
         id=barbearia_id, ativo=True, plano=PlanoBarbearia.COM_ZAP,
     ).exists():
         with com_barbearia(barbearia_id):
             linha = WhatsappInstancia.objects.filter(barbearia_id=barbearia_id).first()
-        if (
-            linha is not None
-            and linha.estado == EstadoInstancia.CONECTADO
-            and canonico(linha.numero_conectado) == alvo
-        ):
+        if linha is not None and linha.estado == EstadoInstancia.CONECTADO:
             instancia = linha.nome
 
     if instancia is None:
