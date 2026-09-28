@@ -274,3 +274,30 @@ def test_enviar_recusado_devolve_none(monkeypatch):
     monkeypatch.setenv("EVOLUTION_API_KEY", "chave")
     with patch.object(whatsapp.requests, "post", return_value=Mock(ok=False, status_code=400, text="x")):
         assert whatsapp._enviar("marcai-x", "83988887777", "oi") is None
+
+
+def test_enviar_com_digitando_manda_o_delay_e_espera_por_ele(monkeypatch):
+    """A Evolution mostra "digitando..." durante o `delay` e so' responde o
+    POST depois de enviar: o timeout tem que cobrir a pausa, ou toda resposta
+    do bot viraria "falha ao enviar" com a mensagem saindo mesmo assim."""
+    monkeypatch.setenv("EVOLUTION_API_URL", "http://evolution:8080")
+    monkeypatch.setenv("EVOLUTION_API_KEY", "chave")
+    resposta = Mock(ok=True, status_code=201)
+    resposta.json.return_value = {"key": {"id": "3EB0X"}}
+    with patch.object(whatsapp.requests, "post", return_value=resposta) as post:
+        whatsapp._enviar("marcai-x", "83988887777", "oi", digitando_ms=3000)
+    assert post.call_args.kwargs["json"]["delay"] == 3000
+    assert post.call_args.kwargs["timeout"] >= 3 + 3
+
+
+def test_enviar_sem_digitando_nao_manda_delay(monkeypatch):
+    """Confirmacao do site e avisos da equipe saem na hora: o POST deles roda
+    dentro do pedido HTTP do cliente."""
+    monkeypatch.setenv("EVOLUTION_API_URL", "http://evolution:8080")
+    monkeypatch.setenv("EVOLUTION_API_KEY", "chave")
+    resposta = Mock(ok=True, status_code=201)
+    resposta.json.return_value = {"key": {"id": "3EB0X"}}
+    with patch.object(whatsapp.requests, "post", return_value=resposta) as post:
+        whatsapp._enviar("marcai-x", "83988887777", "oi")
+    assert "delay" not in post.call_args.kwargs["json"]
+    assert post.call_args.kwargs["timeout"] == 3

@@ -283,6 +283,11 @@ BOT_JANELA_DIAS = 21
 # Os ids das ultimas respostas do bot, para reconhecer o eco delas no webhook.
 BOT_IDS_GUARDADOS = 20
 BOT_ESPERA_TRAVA_S = 10
+# Cada resposta do bot sai depois de "digitando..." por uma pausa sorteada
+# nesta faixa (ms). Resposta instantanea e' cara de robo, e numero que se
+# comporta como robo e' o que o WhatsApp bane. A pausa acontece com a trava
+# da conversa presa: somada, tem que caber folgada em BOT_ESPERA_TRAVA_S.
+BOT_DIGITANDO_MS = (2000, 4000)
 # Mensagem enviada ha mais que isto (reconexao do aparelho, fila reenviada
 # pela Evolution) e' ignorada: nem resposta, nem silencio do bot.
 BOT_MENSAGEM_VELHA_MIN = 10

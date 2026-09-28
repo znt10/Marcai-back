@@ -81,7 +81,7 @@ def test_responder_1_confirma(cenario):
     with patch(ENVIAR, return_value="3EB0-LEMBRETE"):
         enviar_pendentes(agora)
     respostas = []
-    with patch(ENVIAR, side_effect=lambda i, n, t: respostas.append(t) or "3EB0-R"), patch(
+    with patch(ENVIAR, side_effect=lambda i, n, t, **_: respostas.append(t) or "3EB0-R"), patch(
         "app.services.bot.enviar_a_equipe_da"
     ):
         desfecho = bot.processar(str(b.id), NUMERO, "1", "3A-RESPOSTA", agora + timedelta(minutes=5))
@@ -97,7 +97,7 @@ def test_responder_fora_da_faixa_repete_a_pergunta_do_lembrete(cenario):
     with patch(ENVIAR, return_value="3EB0-LEMBRETE"):
         enviar_pendentes(agora)
     respostas = []
-    with patch(ENVIAR, side_effect=lambda i, n, t: respostas.append(t) or "3EB0-R"):
+    with patch(ENVIAR, side_effect=lambda i, n, t, **_: respostas.append(t) or "3EB0-R"):
         desfecho = bot.processar(str(b.id), NUMERO, "9", "3A-RESPOSTA", agora + timedelta(minutes=5))
     assert desfecho == "repetiu"
     assert len(respostas) == 1
@@ -195,7 +195,7 @@ def test_cliente_gravado_com_10_digitos_confirma_respondendo_do_numero_de_11(cen
         enviar_pendentes(agora)
     assert enviar.call_args.args[1] == NUMERO
     respostas = []
-    with patch(ENVIAR, side_effect=lambda i, n, t: respostas.append(t) or "3EB0-R"), patch(
+    with patch(ENVIAR, side_effect=lambda i, n, t, **_: respostas.append(t) or "3EB0-R"), patch(
         "app.services.bot.enviar_a_equipe_da"
     ):
         desfecho = bot.processar(str(b.id), NUMERO, "1", "3A-RESPOSTA", agora + timedelta(minutes=5))

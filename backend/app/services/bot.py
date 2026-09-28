@@ -12,6 +12,7 @@ Nenhuma funcao daqui e' chamada de dentro de um `com_barbearia`.
 """
 
 import logging
+import random
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -20,6 +21,7 @@ from django.db import IntegrityError, OperationalError
 
 from tenant.config import (
     BOT_DIAS_OFERECIDOS,
+    BOT_DIGITANDO_MS,
     BOT_ESPERA_TRAVA_S,
     BOT_HORAS_OFERECIDAS,
     BOT_IDS_GUARDADOS,
@@ -139,7 +141,12 @@ def processar(barbearia_id: str, numero: str, texto: str, mensagem_id: str, agor
         estado = _estado_de(linha)
         decisao = c.decidir(estado, texto, agora)
         saida = _executar(ctx, estado, linha.pergunta if linha else None, decisao)
-        ids = [i for i in (_enviar(instancia.nome, numero, t) for t in saida.textos) if i]
+        ids = [
+            i for i in (
+                _enviar(instancia.nome, numero, t, digitando_ms=random.randint(*BOT_DIGITANDO_MS))
+                for t in saida.textos
+            ) if i
+        ]
         _gravar(ctx, linha, saida, mensagem_id, ids)
         return saida.desfecho
 

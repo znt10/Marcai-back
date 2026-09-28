@@ -27,6 +27,7 @@ from tenant.models import (
     Servico,
     WhatsappInstancia,
 )
+from tenant.config import BOT_DIGITANDO_MS
 from tenant.rls import com_barbearia
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
@@ -115,13 +116,15 @@ class _Conversa:
         self.numero = numero
         self.agora = agora or datetime.now(timezone.utc)
         self.cliente_leu = []
+        self.pausas = []
         self.equipe_leu = []
 
     def diz(self, texto, *, mensagem_id=None):
-        def ao_cliente(instancia, numero, mensagem):
+        def ao_cliente(instancia, numero, mensagem, *, digitando_ms=None):
             assert instancia == nome_da_instancia(self.barbearia.id)
             assert numero == self.numero
             self.cliente_leu.append(mensagem)
+            self.pausas.append(digitando_ms)
             return f"bot-{uuid.uuid4().hex[:8]}"
 
         def a_equipe(barbearia_id, numero, mensagem):
@@ -157,6 +160,19 @@ def test_primeira_mensagem_recebe_o_menu_de_quem_nao_tem_horario(cenario):
     assert "1 - Marcar horário" in conversa.ultima
     assert "Cancelar" not in conversa.ultima
     assert _linha(b).estado == "MENU"
+
+
+def test_responde_depois_de_digitar_por_alguns_segundos(cenario):
+    """Resposta instantanea e' cara de robo — e numero que responde como
+    robo e' o que o WhatsApp bane. Cada resposta sai com "digitando..." por
+    uma pausa sorteada dentro da faixa."""
+    b, _, _ = _cenario_simples(cenario)
+    conversa = _Conversa(b)
+    for _ in range(5):
+        conversa.diz("oi")
+    minimo, maximo = BOT_DIGITANDO_MS
+    assert len(conversa.pausas) == 5
+    assert all(minimo <= p <= maximo for p in conversa.pausas)
 
 
 def test_quem_tem_horario_ve_o_horario_no_menu(cenario):
