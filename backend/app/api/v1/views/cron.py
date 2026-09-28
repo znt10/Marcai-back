@@ -19,6 +19,10 @@ class LembretesView(APIView):
     — sem host valido em `ALLOWED_HOSTS` o pedido nem chegaria a esta view.
     """
 
+    # Fora do limite por IP, como o webhook da Evolution: vem de dentro da
+    # rede e tem credencial propria. Um 429 aqui seria lembrete nao enviado.
+    throttle_classes = []
+
     def post(self, request):
         segredo = os.environ.get("CRON_SECRET", "")
         esperado = f"Bearer {segredo}"
