@@ -33,6 +33,10 @@ x-django: &django
     DJANGO_DEBUG: "0"
     DOMINIO_BASE: ${DOMINIO_BASE:?}
     REDIS_URL: redis://redis:6379/1
+    # Os contadores do limite por IP, compartilhados entre os 3 workers. Sem
+    # isto cada worker conta sozinho e o limite vale o triplo. Banco 2: o 1 e'
+    # a fila do Celery, e o 6 e' da Evolution.
+    CACHE_REDIS_URL: redis://redis:6379/2
     DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?}
     SESSAO_JWT_SECRET: ${SESSAO_JWT_SECRET:?}
     ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:?}
