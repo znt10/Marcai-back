@@ -49,7 +49,7 @@ from tenant.telefone import formas_gravadas, formatar, nacional_canonico
 from . import conversa as c
 from .agenda import dias_com_horarios
 from .agendamentos import ErroCliente, cancelar_publico, eh_sobreposicao, marcar
-from .convite import link_do_agendamento
+from .convite import link_de_agendar, link_do_agendamento
 from .mensagens import (
     msg_barbeiro_cancelado,
     msg_barbeiro_desistiu,
@@ -289,6 +289,8 @@ def _opcoes_do_passo(ctx: _Contexto, passo: str, r: dict):
         contexto = {
             "barbearia_nome": ctx.barbearia.nome,
             "agendamentos": [m["rotulo"] for m in marcados],
+            "cliente_nome": nome,
+            "link_site": link_de_agendar(ctx.barbearia.slug),
         }
         return opcoes, contexto, {"cliente_nome": nome}
 

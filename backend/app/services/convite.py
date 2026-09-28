@@ -65,3 +65,10 @@ def link_do_agendamento(slug: str, codigo: str) -> str:
     entao usa a mesma base do convite."""
     esquema, host = _base_valida()
     return f"{esquema}://{slug}.{host}/agendamento/{codigo}"
+
+
+def link_de_agendar(slug: str) -> str:
+    """O link que o bot oferece no primeiro contato, para quem prefere marcar
+    pelo site. Vai direto para a tela de marcar, nao para a vitrine."""
+    esquema, host = _base_valida()
+    return f"{esquema}://{slug}.{host}/agendar"

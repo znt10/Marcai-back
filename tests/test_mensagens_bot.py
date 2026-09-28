@@ -39,6 +39,42 @@ def test_menu_de_quem_nao_tem_horario():
     )
 
 
+def test_menu_de_cliente_conhecido_chama_pelo_primeiro_nome():
+    """Cliente que ja marcou antes e' cumprimentado pelo nome — parece
+    atendimento de gente. So' o primeiro: "Oi, João Pedro da Silva!" soa
+    como cobranca."""
+    texto = msg_bot_pergunta(
+        passo="MENU", opcoes=MARCAR,
+        contexto={"barbearia_nome": "Brutus", "agendamentos": [],
+                  "cliente_nome": "  joão pedro da silva "},
+    )
+    assert texto.startswith("Oi, João! Aqui é o atendimento da Brutus.")
+
+
+def test_menu_sem_nome_cadastrado_fica_no_oi():
+    texto = msg_bot_pergunta(
+        passo="MENU", opcoes=MARCAR,
+        contexto={"barbearia_nome": "Brutus", "agendamentos": [], "cliente_nome": None},
+    )
+    assert texto.startswith("Oi! Aqui é o atendimento da Brutus.")
+
+
+def test_menu_oferece_o_site_e_pergunta_se_continua_por_aqui():
+    """Primeiro contato: o link do site vem antes das opcoes, e as opcoes
+    viram a pergunta "ou prefere marcar por aqui?"."""
+    texto = msg_bot_pergunta(
+        passo="MENU", opcoes=MARCAR,
+        contexto={"barbearia_nome": "Brutus", "agendamentos": [],
+                  "link_site": "https://brutus.usemarcai.online/agendar"},
+    )
+    assert texto == (
+        "Oi! Aqui é o atendimento da Brutus.\n\n"
+        "Você pode marcar pelo site:\nhttps://brutus.usemarcai.online/agendar\n\n"
+        "Ou prefere marcar por aqui pelo WhatsApp? Responde com o número:\n"
+        "1 - Marcar horário\n0 - Falar com a barbearia"
+    )
+
+
 def test_menu_de_quem_tem_um_horario_mostra_o_horario():
     texto = msg_bot_pergunta(
         passo="MENU",
