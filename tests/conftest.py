@@ -103,18 +103,6 @@ def limpar_banco(request):
     yield
 
 
-@pytest.fixture(autouse=True)
-def limpar_cache():
-    """Os contadores do limite de login e da trava do admin moram no cache.
-    Sem limpar, as tentativas de um teste contam no seguinte, e o 11o login
-    da suite toma 429 sem ter nada a ver com isso."""
-    from django.core.cache import cache
-
-    cache.clear()
-    yield
-    cache.clear()
-
-
 @pytest.fixture
 def cenario():
     """Duas barbearias com um barbeiro cada. Duas, e nao uma, porque o unico

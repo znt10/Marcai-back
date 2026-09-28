@@ -229,43 +229,6 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [],
     "DEFAULT_PERMISSION_CLASSES": [],
     "UNAUTHENTICATED_USER": None,
-    # Limite por IP (app/api/v1/limite.py). `geral` vale para toda a API; as
-    # rotas de login somam `login`, mais apertado, porque cada tentativa roda
-    # o argon2. Ficam de fora so' o cron e o webhook da Evolution, que vem de
-    # dentro da rede e tem credencial propria.
-    #
-    # 120/min cabe folgado no uso real: abrir uma tela do painel sao poucas
-    # chamadas, e o unico polling (tela do WhatsApp) e' de segundos, nao de
-    # milissegundos. Uma barbearia inteira atras do mesmo wi-fi divide o IP.
-    "DEFAULT_THROTTLE_CLASSES": ["app.api.v1.limite.LimitePorIP"],
-    "DEFAULT_THROTTLE_RATES": {"geral": "120/min", "login": "10/min"},
-    "EXCEPTION_HANDLER": "app.api.v1.limite.tratar_excecao",
-    # Quantos proxies ACRESCENTAM ao `X-Forwarded-For` antes do Django. O DRF
-    # le o IP do cliente como o N-esimo a partir do FIM da lista. O valor
-    # padrao (None) e' pior do que parece: o DRF passa a usar o cabecalho
-    # INTEIRO como identidade, e quem manda um `X-Forwarded-For` diferente a
-    # cada pedido ganha um balde novo a cada pedido.
-    #
-    # 1 porque o `HostDoProxyMiddleware` troca o cabecalho pelo IP que o
-    # proxy.ts do front mandou, e dali em diante ele tem um valor so'.
-    "NUM_PROXIES": 1,
-}
-
-# Cache compartilhado entre os workers do gunicorn. Sem isto o Django usa
-# LocMemCache, que e' POR PROCESSO: com 3 workers, cada contador de tentativa
-# existe tres vezes, e o limite de login vale o triplo do que diz.
-#
-# Banco 2 do Redis, e nao o 1 do REDIS_URL: o 1 e' a fila do Celery, e um
-# `cache.clear()` nele apagaria tarefa pendente junto.
-#
-# Sem CACHE_REDIS_URL (dev e CI) fica o LocMem, que basta com um processo so'.
-_cache_redis = os.environ.get("CACHE_REDIS_URL", "")
-CACHES = {
-    "default": (
-        {"BACKEND": "django.core.cache.backends.redis.RedisCache", "LOCATION": _cache_redis}
-        if _cache_redis
-        else {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}
-    )
 }
 
 CELERY_BROKER_URL = os.environ.get("REDIS_URL", "redis://redis:6379/1")

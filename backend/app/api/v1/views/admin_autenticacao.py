@@ -5,7 +5,6 @@ from django.conf import settings
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from app.api.v1.limite import LimitaLogin
 from app.api.v1.serializers.admin_autenticacao import INVALIDO
 from app.services.admin_sessao import COOKIE_SESSAO_ADMIN, emitir
 from app.services.admin_senha import conferir_senha
@@ -13,7 +12,7 @@ from app.services.trava_ip import espera_de, falhas_de, ip_de, limpar_falhas, re
 from tenant.config import ADMIN_SESSAO_HORAS, ADMIN_TRAVA_TENTATIVAS
 
 
-class AdminLoginView(LimitaLogin, APIView):
+class AdminLoginView(APIView):
     """POST /api/admin/auth/login
 
     Sem mixin nenhum: o host ja e' o do admin (a `BarreiraAdminMiddleware`

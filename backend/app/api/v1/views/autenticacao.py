@@ -2,7 +2,6 @@ from django.conf import settings
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from app.api.v1.limite import LimitaLogin
 from app.api.v1.mixins import ExigeSessao, ExigeTenant
 from app.api.v1.serializers.autenticacao import (
     INVALIDO,
@@ -44,7 +43,7 @@ def _plantar_cookie(resposta, jwt: str):
     return resposta
 
 
-class LoginView(LimitaLogin, ExigeTenant, APIView):
+class LoginView(ExigeTenant, APIView):
     """POST /api/auth/login
 
     `ExigeTenant` e nao `ExigeSessao`, obviamente — mas a heranca importa por

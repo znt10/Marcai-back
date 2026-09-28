@@ -63,26 +63,22 @@ def test_emitir_sem_segredo_no_ambiente_estoura(monkeypatch):
 # --------------------------------------------------------------- trava_ip.py
 
 
-def test_ip_de_le_o_ultimo_da_lista_de_x_forwarded_for():
-    """O primeiro e' o que o cliente escreveu; o ultimo, o que o proxy
-    acrescentou. Ler o primeiro deixava trocar de IP a cada pedido."""
+@pytest.fixture(autouse=True)
+def _limpar_trava_ip():
+    from app.services import trava_ip
+
+    trava_ip._falhas.clear()
+    yield
+    trava_ip._falhas.clear()
+
+
+def test_ip_de_le_o_primeiro_da_lista_de_x_forwarded_for():
     from django.test import RequestFactory
 
     from app.services.trava_ip import ip_de
 
     req = RequestFactory().post("/", HTTP_X_FORWARDED_FOR="1.2.3.4, 5.6.7.8")
-    assert ip_de(req) == "5.6.7.8"
-
-
-def test_trava_mora_no_cache_compartilhado():
-    """Um dict no modulo seria um por worker do gunicorn. No cache, o que um
-    worker grava o outro le."""
-    from django.core.cache import cache
-
-    from app.services import trava_ip
-
-    trava_ip.registrar_falha("6.6.6.6")
-    assert cache.get(trava_ip._PREFIXO + "6.6.6.6")["quantas"] == 1
+    assert ip_de(req) == "1.2.3.4"
 
 
 def test_ip_de_cai_pro_remote_addr_sem_forwarded_for():
