@@ -39,6 +39,26 @@ def test_menu_de_quem_nao_tem_horario():
     )
 
 
+def test_menu_de_cliente_conhecido_chama_pelo_primeiro_nome():
+    """Cliente que ja marcou antes e' cumprimentado pelo nome — parece
+    atendimento de gente. So' o primeiro: "Oi, João Pedro da Silva!" soa
+    como cobranca."""
+    texto = msg_bot_pergunta(
+        passo="MENU", opcoes=MARCAR,
+        contexto={"barbearia_nome": "Brutus", "agendamentos": [],
+                  "cliente_nome": "  joão pedro da silva "},
+    )
+    assert texto.startswith("Oi, João! Aqui é o atendimento da Brutus.")
+
+
+def test_menu_sem_nome_cadastrado_fica_no_oi():
+    texto = msg_bot_pergunta(
+        passo="MENU", opcoes=MARCAR,
+        contexto={"barbearia_nome": "Brutus", "agendamentos": [], "cliente_nome": None},
+    )
+    assert texto.startswith("Oi! Aqui é o atendimento da Brutus.")
+
+
 def test_menu_de_quem_tem_um_horario_mostra_o_horario():
     texto = msg_bot_pergunta(
         passo="MENU",

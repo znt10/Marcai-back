@@ -289,6 +289,7 @@ def _opcoes_do_passo(ctx: _Contexto, passo: str, r: dict):
         contexto = {
             "barbearia_nome": ctx.barbearia.nome,
             "agendamentos": [m["rotulo"] for m in marcados],
+            "cliente_nome": nome,
         }
         return opcoes, contexto, {"cliente_nome": nome}
 

@@ -202,7 +202,10 @@ def rotulo_da_hora(*, inicio, barbeiro_nome: str | None) -> str:
 def msg_bot_pergunta(*, passo: str, opcoes: list[dict], contexto: dict) -> str:
     lista = _numerada(opcoes)
     if passo == "MENU":
-        partes = [f"Oi! Aqui é o atendimento da {contexto['barbearia_nome']}."]
+        # So' o primeiro nome: "Oi, João Pedro da Silva!" soa como cobranca.
+        nome = (contexto.get("cliente_nome") or "").split()
+        oi = f"Oi, {nome[0].capitalize()}!" if nome else "Oi!"
+        partes = [f"{oi} Aqui é o atendimento da {contexto['barbearia_nome']}."]
         marcados = contexto.get("agendamentos") or []
         if len(marcados) == 1:
             partes.append(f"Você tem: {marcados[0]}.")

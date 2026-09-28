@@ -180,6 +180,7 @@ def test_quem_tem_horario_ve_o_horario_no_menu(cenario):
     _agendamento(b, pedro, servico, _cliente(b), _amanha_redondo())
     conversa = _Conversa(b)
     conversa.diz("oi")
+    assert conversa.ultima.startswith("Oi, Maria!")
     assert "Você tem: Pedro," in conversa.ultima
     assert "1 - Marcar outro horário" in conversa.ultima
     assert "2 - Cancelar esse" in conversa.ultima
