@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from django.utils import timezone
 
-from app.services.convite import gerar_convite, link_do_agendamento, link_do_convite
+from app.services.convite import gerar_convite, link_de_agendar, link_do_agendamento, link_do_convite
 from app.services.senha import hash_de_convite
 
 
@@ -45,3 +45,10 @@ def test_link_do_agendamento_usa_a_mesma_base_do_convite(monkeypatch):
         link_do_agendamento("brutus", "abc123defg")
         == "https://brutus.usemarcai.online/agendamento/abc123defg"
     )
+
+
+def test_link_de_agendar_abre_o_agendar_da_barbearia(monkeypatch):
+    """O link que o bot oferece no primeiro contato: vai direto para a tela
+    de marcar, no subdominio da barbearia."""
+    monkeypatch.setenv("URL_BASE", "https://usemarcai.online")
+    assert link_de_agendar("znt") == "https://znt.usemarcai.online/agendar"

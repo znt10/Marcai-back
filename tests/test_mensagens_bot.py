@@ -59,6 +59,22 @@ def test_menu_sem_nome_cadastrado_fica_no_oi():
     assert texto.startswith("Oi! Aqui é o atendimento da Brutus.")
 
 
+def test_menu_oferece_o_site_e_pergunta_se_continua_por_aqui():
+    """Primeiro contato: o link do site vem antes das opcoes, e as opcoes
+    viram a pergunta "ou prefere marcar por aqui?"."""
+    texto = msg_bot_pergunta(
+        passo="MENU", opcoes=MARCAR,
+        contexto={"barbearia_nome": "Brutus", "agendamentos": [],
+                  "link_site": "https://brutus.usemarcai.online/agendar"},
+    )
+    assert texto == (
+        "Oi! Aqui é o atendimento da Brutus.\n\n"
+        "Você pode marcar pelo site:\nhttps://brutus.usemarcai.online/agendar\n\n"
+        "Ou prefere marcar por aqui pelo WhatsApp? Responde com o número:\n"
+        "1 - Marcar horário\n0 - Falar com a barbearia"
+    )
+
+
 def test_menu_de_quem_tem_um_horario_mostra_o_horario():
     texto = msg_bot_pergunta(
         passo="MENU",

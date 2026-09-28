@@ -211,7 +211,17 @@ def msg_bot_pergunta(*, passo: str, opcoes: list[dict], contexto: dict) -> str:
             partes.append(f"Você tem: {marcados[0]}.")
         elif marcados:
             partes.append("Você tem:\n" + "\n".join(marcados))
-        partes.append(f"{lista}\n{FALAR_COM_A_BARBEARIA}")
+        link = contexto.get("link_site")
+        if link:
+            # O site primeiro: quem prefere tocar na tela sai daqui; quem
+            # prefere conversar segue pelos numeros logo abaixo.
+            partes.append(f"Você pode marcar pelo site:\n{link}")
+            partes.append(
+                "Ou prefere marcar por aqui pelo WhatsApp? Responde com o número:\n"
+                f"{lista}\n{FALAR_COM_A_BARBEARIA}"
+            )
+        else:
+            partes.append(f"{lista}\n{FALAR_COM_A_BARBEARIA}")
         return "\n\n".join(partes)
     if passo == "NOME":
         return "Pra marcar, me diz seu nome:"

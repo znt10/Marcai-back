@@ -157,6 +157,8 @@ def test_primeira_mensagem_recebe_o_menu_de_quem_nao_tem_horario(cenario):
     conversa = _Conversa(b)
     assert conversa.diz("oi") == "perguntou"
     assert conversa.ultima.startswith("Oi! Aqui é o atendimento da Brutus.")
+    assert "/agendar" in conversa.ultima
+    assert "Ou prefere marcar por aqui pelo WhatsApp?" in conversa.ultima
     assert "1 - Marcar horário" in conversa.ultima
     assert "Cancelar" not in conversa.ultima
     assert _linha(b).estado == "MENU"
