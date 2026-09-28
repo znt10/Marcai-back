@@ -152,7 +152,9 @@ def _registrar_nao_enviada(barbearia, tipo: str, cliente_nome: str) -> None:
         logger.error("[whatsapp] falha ao registrar mensagem nao enviada: %s", e)
 
 
-def _enviar(instancia: str, whatsapp_digitos: str, mensagem: str) -> str | None:
+def _enviar(
+    instancia: str, whatsapp_digitos: str, mensagem: str, *, digitando_ms: int | None = None,
+) -> str | None:
     """Fire-and-forget. Falha de WhatsApp NUNCA derruba um agendamento (§10.2).
 
     Porte fiel de `enviarTexto` (marcai-front/src/lib/whatsapp.ts): loga e
@@ -165,6 +167,11 @@ def _enviar(instancia: str, whatsapp_digitos: str, mensagem: str) -> str | None:
     barbearia quando o destinatario e' cliente. O resto do corpo nao mudou uma
     linha.
 
+    `digitando_ms` vira o `delay` da Evolution: ela mostra "digitando..." por
+    esse tempo e so' entao envia — e so' responde o POST depois disso, por
+    isso o timeout cresce junto. Sem ele, sai na hora (confirmacao do site e
+    avisos rodam dentro do pedido HTTP de alguem, e nao podem esperar).
+
     Devolve o id da mensagem aceita, ou None.
     """
     cfg = _config()
@@ -173,11 +180,14 @@ def _enviar(instancia: str, whatsapp_digitos: str, mensagem: str) -> str | None:
         return
 
     try:
+        corpo_envio = {"number": f"55{whatsapp_digitos}", "text": mensagem}
+        if digitando_ms:
+            corpo_envio["delay"] = digitando_ms
         r = requests.post(
             f"{cfg['url']}/message/sendText/{instancia}",
-            json={"number": f"55{whatsapp_digitos}", "text": mensagem},
+            json=corpo_envio,
             headers={"apikey": cfg["chave"]},
-            timeout=3,
+            timeout=3 + (digitando_ms or 0) / 1000,
         )
     except requests.RequestException as e:
         logger.error("[whatsapp] falha ao enviar: %s", e)
