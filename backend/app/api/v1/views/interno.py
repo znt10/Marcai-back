@@ -44,6 +44,12 @@ class WhatsappEventoView(APIView):
     o descarte e a fila moram em bot_entrada.py.
     """
 
+    # Fora do limite por IP: a Evolution fala de dentro da rede, sempre do
+    # mesmo endereco, e numa barbearia movimentada manda mais de um evento por
+    # segundo. Um 429 aqui seria mensagem de cliente perdida. Quem barra
+    # estranho e' o `x-marcai-webhook`, conferido abaixo.
+    throttle_classes = []
+
     def post(self, request):
         segredo = os.environ.get("WHATSAPP_WEBHOOK_SEGREDO", "")
         recebido = request.headers.get("x-marcai-webhook", "")
