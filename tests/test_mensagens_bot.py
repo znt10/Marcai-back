@@ -133,9 +133,9 @@ def test_sem_opcoes_separa_falta_de_vaga_de_falta_de_horario_marcado():
 
 
 def test_lembrete_ganha_as_duas_opcoes_no_fim():
-    texto = msg_lembrete_com_opcoes(lembrete="Lembrete: corte hoje às 9:00, com Pedro.")
+    texto = msg_lembrete_com_opcoes(lembrete="*Lembrete: corte hoje às 9:00*\ncom Pedro")
     assert texto == (
-        "Lembrete: corte hoje às 9:00, com Pedro.\n\n"
+        "*Lembrete: corte hoje às 9:00*\ncom Pedro\n\n"
         "1 - Confirmar\n2 - Não vou conseguir ir"
     )
     assert msg_bot_pergunta_do_lembrete().endswith("1 - Confirmar\n2 - Não vou conseguir ir")

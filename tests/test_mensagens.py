@@ -4,6 +4,7 @@ from app.services.mensagens import (
     msg_cancelamento_pela_barbearia,
     msg_confirmacao,
     msg_convite,
+    msg_lembrete,
 )
 
 INICIO = datetime(2026, 8, 13, 11, 0, tzinfo=timezone.utc)
@@ -85,6 +86,21 @@ def test_msg_cancelamento_pela_barbearia_nao_confunde_com_cancelamento_do_client
     # mensagem seja: e' a diferenca entre um cliente que volta e um que nao.
     assert "Desculpa" in texto
     assert "remarcar" in texto
+
+
+def test_msg_lembrete_em_tres_linhas_com_a_primeira_em_negrito():
+    """Pedido do dono, 30/09: o que importa (o que, e a que horas) em negrito
+    na primeira linha; com quem e onde, uma linha cada. O "*" e' o negrito do
+    WhatsApp."""
+    texto = msg_lembrete(
+        servico_nome="Cabelo", barbeiro_nome="Jose Cicero",
+        inicio=INICIO, endereco="Rua Aurora, 88",
+    )
+    assert texto == (
+        "*Lembrete: cabelo hoje às 8:00*\n"
+        "com Jose Cicero\n"
+        "Endereço: Rua Aurora, 88"
+    )
 
 
 def test_msg_convite_leva_o_link_uma_vez_e_o_prazo():

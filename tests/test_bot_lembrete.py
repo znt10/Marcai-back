@@ -68,7 +68,7 @@ def test_com_bot_o_lembrete_sai_com_opcoes_e_para_a_conversa(cenario):
     instancia, numero, texto = enviar.call_args.args
     assert instancia == nome_da_instancia(b.id)
     assert numero == NUMERO
-    assert texto.startswith("Lembrete:")
+    assert texto.startswith("*Lembrete:")
     assert texto.endswith("1 - Confirmar\n2 - Não vou conseguir ir")
     linha = _linha(b)
     assert linha.estado == "AGUARDANDO_LEMBRETE"
@@ -142,7 +142,7 @@ def test_conversa_muda_recebe_o_lembrete_sem_opcoes(cenario):
     with patch(ENVIAR, return_value="3EB0-LEMBRETE") as enviar:
         enviar_pendentes(agora)
     texto = enviar.call_args.args[2]
-    assert texto.startswith("Lembrete:")
+    assert texto.startswith("*Lembrete:")
     assert "1 - Confirmar" not in texto
     linha = _linha(b)
     assert linha.estado == "MENU"
