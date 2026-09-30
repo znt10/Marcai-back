@@ -96,9 +96,16 @@ def msg_lembrete(*, servico_nome: str, barbeiro_nome: str, inicio, endereco: str
     # O endereco FICA so' aqui. Esta e' a mensagem que chega quando a pessoa
     # esta saindo de casa — e' o unico momento em que ele e' util, e por isso
     # ele saiu da confirmacao e nao daqui.
+    #
+    # Tres linhas, a primeira em negrito — o "*" do WhatsApp (pedido do dono,
+    # 30/09). Nao briga com a regra do tamanho: o que e' e a que horas continua
+    # inteiro na primeira linha, que e' a que a previa da notificacao mostra.
+    # "Endereço:" nomeia a linha porque, sozinho, o endereco era so' um texto
+    # solto depois do ponto.
     return (
-        f"Lembrete: {servico_nome.lower()} hoje às {formatar_hora_falada(inicio)}, "
-        f"com {barbeiro_nome}. {endereco}"
+        f"*Lembrete: {servico_nome.lower()} hoje às {formatar_hora_falada(inicio)}*\n"
+        f"com {barbeiro_nome}\n"
+        f"Endereço: {endereco}"
     )
 
 
