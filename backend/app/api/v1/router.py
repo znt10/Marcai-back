@@ -7,6 +7,7 @@ from .views.admin_barbearias import (
     AdminBarbeariaDetalheView,
     AdminBarbeariasView,
 )
+from .views.admin_whatsapp_central import AdminWhatsappCentralView
 from .views.agenda_painel import AgendaPainelView
 from .views.agendamentos import (
     AgendamentoCancelarPublicoView,
@@ -189,6 +190,11 @@ urlpatterns = [
         "admin/barbearias/<id:id>/convite",
         AdminBarbeariaConviteView.as_view(),
         name="admin-barbearias-convite",
+    ),
+    path(
+        "admin/whatsapp-central",
+        AdminWhatsappCentralView.as_view(),
+        name="admin-whatsapp-central",
     ),
     path("painel/whatsapp", WhatsappPainelView.as_view(), name="painel-whatsapp"),
     path(
