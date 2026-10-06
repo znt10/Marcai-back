@@ -132,7 +132,13 @@ def avisar_mudanca(barbearia_id, barbeiro_id, agora: datetime, *, novos=(), canc
     ids_novos, ids_cancelados = de_hoje(novos), de_hoje(cancelados)
     if not ids_novos and not ids_cancelados:
         return False
-    _enfileirar_refazer(str(barbearia_id), str(barbeiro_id), ids_novos, ids_cancelados)
+    try:
+        _enfileirar_refazer(str(barbearia_id), str(barbeiro_id), ids_novos, ids_cancelados)
+    except Exception as e:  # noqa: BLE001 — roda depois do commit
+        # A marcacao ja esta gravada: uma fila fora do ar nao pode virar 500
+        # na tela de quem marcou. False faz o site cair no aviso curto.
+        logger.error("[lista-do-dia] nao deu para enfileirar a lista de %s: %s", barbeiro_id, e)
+        return False
     return True
 
 
@@ -154,8 +160,11 @@ def refazer(
     apagou). Consultiva e nao `select_for_update` porque segura duas idas a
     Evolution, e a linha pode nem existir ainda.
 
-    Apagar que falha nao segura a lista nova: uma lista velha que nao sumiu
-    e' feia; uma lista nova que nao chegou e' prejuizo.
+    MANDA a nova e so' entao apaga a anterior. Na ordem contraria, um envio
+    que falhasse deixaria o barbeiro sem lista nenhuma — e, pelo site, sem o
+    aviso curto tambem, que ja foi trocado pela lista. Apagar que falha nao
+    desfaz nada: uma lista velha que nao sumiu e' feia; uma lista que sumiu
+    sem outra no lugar e' prejuizo.
     """
     hoje = dia_de_hoje(agora)
     ids_novos, ids_cancelados = set(novos), set(cancelados)
@@ -191,8 +200,6 @@ def refazer(
                 "inicio": a.inicio, "marca": marca,
             })
 
-        if anterior is not None:
-            apagar_para_todos(anterior.remote_jid, anterior.mensagem_id)
         aceita = enviar_a_equipe_aceita(
             barbeiro.whatsapp,
             msg_lista_refeita(barbeiro_nome=barbeiro.nome, linhas=linhas, agora=agora),
@@ -200,4 +207,6 @@ def refazer(
         if not _guardar(barbearia_id, barbeiro_id, hoje, aceita):
             logger.error("[lista-do-dia] lista refeita de %s nao saiu", barbeiro_id)
             return "nao_saiu"
+        if anterior is not None:
+            apagar_para_todos(anterior.remote_jid, anterior.mensagem_id)
         return "refeita"

@@ -8,7 +8,7 @@ mensagem que a pessoa aprende a nao ler, e ai a util se perde junto.
 
 import uuid
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -447,3 +447,46 @@ def test_so_os_de_hoje_vao_para_a_fila(cenario, refazer_enfileirado):
 
     assert _avisar(b, zeca, TARDE, cancelados=[hoje, amanha]) is True
     refazer_enfileirado.assert_called_once_with(str(b.id), str(zeca.id), [], [str(hoje.id)])
+
+
+# ----------------------------------------- revisao final: ordem e fila
+
+
+def test_envio_recusado_nao_apaga_a_lista_anterior(cenario):
+    """Apagar antes de mandar deixava o barbeiro sem lista nenhuma quando o
+    envio falhava — e, pelo site, sem o aviso curto tambem."""
+    b = cenario["brutus"]
+    zeca = _barbeiro(b, "Zeca Silva")
+    novo = _agendamento(b, zeca, 15 * 60)
+    _guardada(b, zeca)
+
+    _, apagar, _ = _refazer(b, zeca, novos=[novo], aceita=None)
+    apagar.assert_not_called()
+
+
+def test_manda_a_nova_antes_de_apagar_a_anterior(cenario):
+    b = cenario["brutus"]
+    zeca = _barbeiro(b, "Zeca Silva")
+    novo = _agendamento(b, zeca, 15 * 60)
+    _guardada(b, zeca)
+
+    ordem = Mock()
+    ordem.envia.return_value = Aceita("ID-NOVA", "jid-nova")
+    with patch.object(lista_do_dia, "apagar_para_todos", ordem.apaga), \
+            patch.object(lista_do_dia, "enviar_a_equipe_aceita", ordem.envia):
+        lista_do_dia.refazer(str(b.id), str(zeca.id), [str(novo.id)], [], TARDE)
+    assert [c[0] for c in ordem.mock_calls] == ["envia", "apaga"]
+
+
+def test_fila_fora_do_ar_nao_derruba_quem_marcou(cenario, refazer_enfileirado, caplog):
+    """`avisar_mudanca` roda depois do commit: uma fila fora do ar nao pode
+    virar 500 numa tela onde o horario ja esta marcado. Devolve False, e o
+    site cai no aviso curto."""
+    b = cenario["brutus"]
+    zeca = _barbeiro(b, "Zeca Silva")
+    novo = _agendamento(b, zeca, 15 * 60)
+    refazer_enfileirado.side_effect = OSError("broker fora")
+
+    with caplog.at_level("ERROR"):
+        assert _avisar(b, zeca, TARDE, novos=[novo]) is False
+    assert "broker fora" in caplog.text

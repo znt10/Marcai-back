@@ -177,11 +177,14 @@ mesmo recorte de `lista_do_dia`):
    seguidas saem em ordem, e a segunda apaga a lista da primeira;
 2. monta a lista com os `CONFIRMADO` de hoje, em ordem de horario, marcando
    os `novos` e intercalando os `cancelados` no lugar deles;
-3. se houver linha, apaga a mensagem anterior para todos
+3. manda a nova e grava `mensagem_id`/`remote_jid`. Falhou: loga, e a
+   anterior fica como esta (nada e' apagado);
+4. so' depois disso, se havia linha, apaga a mensagem anterior para todos
    (`DELETE /chat/deleteMessageForEveryone/{central}` com `id`, `remoteJid`,
-   `fromMe: true`). Falhou: loga e segue;
-4. manda a nova e grava `mensagem_id`/`remote_jid`. Falhou: loga, e a linha
-   fica apontando para a anterior.
+   `fromMe: true`). Falhou: loga e segue.
+
+   (Ordem trocada na revisao final de 06/10: apagando primeiro, um envio que
+   falhasse deixava o barbeiro sem lista e, pelo site, sem o aviso curto.)
 
 A marca de novo e o riscado valem so' na lista daquela mudanca; na seguinte,
 o novo vira linha comum e o cancelado some.
