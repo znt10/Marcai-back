@@ -38,9 +38,10 @@ class StatusAgendamento(models.TextChoices):
 
 
 class PlanoBarbearia(models.TextChoices):
-    """O que a barbearia comprou. `SEM_ZAP` e o default porque e o plano mais
-    barato e porque errar para ele nao manda mensagem nenhuma de um numero
-    errado — errar para `COM_ZAP` mandaria.
+    """O que a barbearia comprou. Desde a etapa 1 do numero central (spec
+    2026-10-06) toda barbearia e' `COM_ZAP`: o cliente recebe confirmacao e
+    lembrete pelo numero central do Marcai. O campo fica para os planos
+    futuros (WhatsApp x API oficial).
     """
 
     SEM_ZAP = "SEM_ZAP"
@@ -121,7 +122,7 @@ class Barbearia(models.Model):
     # QR aqui obrigaria a abrir aquele REVOKE para o runtime escrever, e com
     # ele viria `slug` e `ativo` de brinde.
     plano = models.CharField(
-        max_length=20, choices=PlanoBarbearia, default=PlanoBarbearia.SEM_ZAP,
+        max_length=20, choices=PlanoBarbearia, default=PlanoBarbearia.COM_ZAP,
     )
     ativo = models.BooleanField(default=True)
     criado_em = models.DateTimeField(default=timezone.now)
@@ -540,3 +541,33 @@ class ConversaWhatsapp(models.Model):
 
     def __str__(self):
         return f"{self.whatsapp} ({self.estado})"
+
+
+class ListaDoDiaEnviada(models.Model):
+    """A ultima lista do dia que um barbeiro recebeu pelo numero central.
+
+    Existe para a lista poder ser APAGADA quando a agenda de hoje muda: a
+    Evolution so' apaga sabendo o id e o jid da mensagem. Uma linha por
+    barbeiro por dia, sobrescrita a cada lista nova; o zelador poda as velhas.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    barbearia = models.ForeignKey(
+        Barbearia, on_delete=models.RESTRICT, related_name="listas_enviadas",
+    )
+    barbeiro = models.ForeignKey(
+        Barbeiro, on_delete=models.RESTRICT, related_name="listas_enviadas",
+    )
+    # A data LOCAL (Sao Paulo) da lista — a mesma de `dia_de_hoje(agora)`.
+    dia = models.DateField()
+    mensagem_id = models.TextField()
+    remote_jid = models.TextField()
+    enviada_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("barbeiro", "dia"), name="lista_por_barbeiro_e_dia"),
+        ]
+
+    def __str__(self):
+        return f"lista de {self.dia} ({self.mensagem_id})"

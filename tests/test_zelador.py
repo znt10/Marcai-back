@@ -220,3 +220,30 @@ def test_poda_conversas_paradas_e_preserva_as_vivas_e_as_mudas(cenario):
         assert sorted(ConversaWhatsapp.objects.values_list("whatsapp", flat=True)) == [
             "83900000002", "83900000003",
         ]
+
+
+def test_poda_listas_enviadas_antigas_e_preserva_as_recentes(cenario):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from app.services.zelador import _podar_listas
+    from tenant.config import ZELADOR_DIAS_DE_HISTORICO
+    from tenant.models import Barbeiro, ListaDoDiaEnviada
+    from tenant.rls import com_barbearia
+
+    b = cenario["brutus"]
+    barbeiro = Barbeiro.objects.using("owner").filter(barbearia_id=b.id).first()
+    hoje = timezone.now().date()
+    for dia, mensagem in (
+        (hoje - timedelta(days=ZELADOR_DIAS_DE_HISTORICO + 1), "VELHA"),
+        (hoje, "NOVA"),
+    ):
+        ListaDoDiaEnviada.objects.using("owner").create(
+            id=str(uuid.uuid4()), barbearia_id=b.id, barbeiro_id=barbeiro.id,
+            dia=dia, mensagem_id=mensagem, remote_jid="j",
+        )
+
+    assert _podar_listas() == 1
+    with com_barbearia(b.id):
+        assert list(ListaDoDiaEnviada.objects.values_list("mensagem_id", flat=True)) == ["NOVA"]

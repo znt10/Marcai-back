@@ -294,3 +294,19 @@ BOT_MENSAGEM_VELHA_MIN = 10
 # Conversa e' estado de minutos. Passados estes dias sem mexer, a linha so'
 # guardaria o numero de alguem sem motivo.
 BOT_CONVERSA_GUARDADA_DIAS = 2
+
+
+# ---- WhatsApp: etapa 1 do numero central (spec 2026-10-06) ---------------
+#
+# Lidos como `config.X` NA HORA DA CHAMADA, nunca com `from tenant.config
+# import X`: os testes do bot ligam os dois com `monkeypatch.setattr(config,
+# ...)`, e um nome importado congelaria o valor do import.
+
+# Instancia da Evolution POR BARBEARIA. Desligada: o numero do negocio do
+# cliente nao fica ligado a API nao oficial nenhuma. Ninguem cria, recria nem
+# confere instancia de barbearia enquanto isto for False.
+WHATSAPP_POR_BARBEARIA = False
+
+# O bot de agendamento. Desligado com o codigo inteiro guardado: volta no
+# plano de agendar pelo WhatsApp, com a API oficial.
+BOT_DISPONIVEL = False

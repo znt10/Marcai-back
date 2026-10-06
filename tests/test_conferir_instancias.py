@@ -20,6 +20,39 @@ from tenant.rls import com_barbearia
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
 
+@pytest.fixture(autouse=True)
+def _com_instancia_por_barbearia(monkeypatch):
+    """A conferencia so' trabalha com o interruptor ligado; estes casos a
+    testam assim. O caso desligado esta em `test_desligada_nao_faz_nada`."""
+    from tenant import config
+
+    monkeypatch.setattr(config, "WHATSAPP_POR_BARBEARIA", True)
+
+
+def test_desligada_nao_faz_nada(cenario, monkeypatch):
+    from unittest.mock import patch
+
+    from app import tasks
+    from tenant import config
+    from tenant.models import Barbearia, EstadoInstancia, WhatsappInstancia
+
+    monkeypatch.setattr(config, "WHATSAPP_POR_BARBEARIA", False)
+    b = cenario["brutus"]
+    Barbearia.objects.using("owner").filter(id=b.id).update(plano="COM_ZAP")
+    # PENDENTE e' o estado que, ligado, manda criar — o caso que mais
+    # importa nao acontecer.
+    WhatsappInstancia.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=b.id, nome=f"marcai-{b.id}",
+        estado=EstadoInstancia.PENDENTE,
+    )
+    with patch.object(tasks, "garantir_instancia") as garantir, patch.object(
+        tasks, "consultar_estado"
+    ) as consultar:
+        assert tasks.conferir_instancias() == {"criadas": 0, "conferidas": 0, "corrigidas": 0}
+    garantir.assert_not_called()
+    consultar.assert_not_called()
+
+
 def _com_zap(barbearia, estado=EstadoInstancia.PENDENTE, **campos):
     Barbearia.objects.using("owner").filter(id=barbearia.id).update(plano="COM_ZAP")
     return WhatsappInstancia.objects.using("owner").create(

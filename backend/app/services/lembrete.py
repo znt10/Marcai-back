@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from django.utils import timezone
 
+from tenant import config
 from tenant.config import LEMBRETE_ANTECEDENCIA_MIN
 from tenant.models import (
     Agendamento,
@@ -57,7 +58,8 @@ def enviar_pendentes(agora: datetime) -> int:
         # Qualquer outro caso segue `enviar_ao_cliente`, que ja sabe registrar
         # a "nao enviada" quando o numero esta fora do ar.
         pelo_bot = (
-            b.plano == PlanoBarbearia.COM_ZAP
+            config.BOT_DISPONIVEL
+            and b.plano == PlanoBarbearia.COM_ZAP
             and instancia is not None
             and instancia.bot_ativo
             and instancia.estado == EstadoInstancia.CONECTADO
@@ -74,9 +76,14 @@ def enviar_pendentes(agora: datetime) -> int:
             # commit correspondente nunca chegar a acontecer.
             with com_barbearia(b.id):
                 Agendamento.objects.filter(id=a.id).update(lembrete_enviado_em=timezone.now())
+            # Pelo bot (numero da propria barbearia) o texto e' o de sempre;
+            # pelo central, leva o nome da barbearia e o numero dela.
             texto = msg_lembrete(
                 servico_nome=a.servico_nome, barbeiro_nome=a.barbeiro.nome,
                 inicio=a.inicio, endereco=b.endereco,
+                **({} if pelo_bot else {
+                    "barbearia_nome": b.nome, "contato": b.whatsapp_contato,
+                }),
             )
             if pelo_bot:
                 # Import tardio: bot -> agendamentos -> lembrete.

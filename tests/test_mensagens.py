@@ -149,3 +149,102 @@ def test_msg_do_barbeiro_leva_o_nome_INTEIRO_do_cliente():
         cliente_nome="José Neto", servico_nome="Corte", inicio=INICIO, agora=AGORA,
     )
     assert "José Neto" in texto
+
+
+# ------------------------------------------- pelo numero central (etapa 1)
+#
+# O cliente nao conhece o numero do Marcai: toda mensagem abre com o nome da
+# barbearia, e as que pedem resposta apontam para o numero DELA.
+
+
+def test_confirmacao_pelo_central_diz_de_quem_e_e_para_onde_falar():
+    texto = msg_confirmacao(
+        cliente_nome="Maria Silva", barbeiro_nome="Zeca", servico_nome="Corte",
+        inicio=INICIO, endereco="Rua Aurora, 88", link="http://x/y",
+        barbearia_nome="Dom Tony", contato="83999990000",
+    )
+    assert texto == (
+        "*Dom Tony*\n"
+        "Fechou, Maria! Corte quinta 13/08 às 8:00, com Zeca.\n\n"
+        "Cancelar: http://x/y\n"
+        "Dúvida? Chama: (83) 9 9999-0000"
+    )
+
+
+def test_lembrete_pelo_central():
+    texto = msg_lembrete(
+        servico_nome="Cabelo", barbeiro_nome="Jose Cicero", inicio=INICIO,
+        endereco="Rua Aurora, 88", barbearia_nome="Dom Tony", contato="83999990000",
+    )
+    assert texto == (
+        "*Dom Tony — lembrete: cabelo hoje às 8:00*\n"
+        "com Jose Cicero\n"
+        "Endereço: Rua Aurora, 88\n"
+        "Não vai dar? Chama: (83) 9 9999-0000"
+    )
+
+
+def test_cancelamento_pela_barbearia_pelo_central():
+    texto = msg_cancelamento_pela_barbearia(
+        cliente_nome="Maria Silva", barbeiro_nome="Zeca", servico_nome="Corte",
+        inicio=INICIO, endereco="Rua Aurora, 88",
+        barbearia_nome="Dom Tony", contato="83999990000",
+    )
+    assert texto == (
+        "*Dom Tony*\n"
+        "Oi, Maria. Cancelamos seu corte de quinta 13/08 às 8:00. Desculpa! "
+        "Pra remarcar, chama: (83) 9 9999-0000"
+    )
+
+
+def test_cancelamento_do_cliente_pelo_central():
+    from app.services.mensagens import msg_cancelamento
+
+    texto = msg_cancelamento(barbeiro_nome="Zeca", inicio=INICIO, barbearia_nome="Dom Tony")
+    assert texto == "*Dom Tony*\nHorário de quinta 13/08 às 8:00, com Zeca cancelado. Até a próxima!"
+
+
+def test_sem_barbearia_o_texto_e_o_de_sempre():
+    """O bot manda pelo numero da propria barbearia: la o cabecalho seria
+    repeticao."""
+    texto = msg_confirmacao(
+        cliente_nome="Maria Silva", barbeiro_nome="Zeca", servico_nome="Corte",
+        inicio=INICIO, endereco="Rua Aurora, 88", link="http://x/y",
+    )
+    assert texto.startswith("Fechou, Maria!")
+
+
+def test_lista_refeita_marca_o_novo_e_risca_o_cancelado():
+    from datetime import timedelta
+
+    from app.services.mensagens import msg_lista_refeita
+
+    texto = msg_lista_refeita(
+        barbeiro_nome="Zeca Silva",
+        linhas=[
+            {"cliente_nome": "João Silva", "servico_nome": "Corte", "inicio": INICIO, "marca": None},
+            {"cliente_nome": "Pedro Lima", "servico_nome": "Barba",
+             "inicio": INICIO + timedelta(hours=7), "marca": "novo"},
+            {"cliente_nome": "Ana Souza", "servico_nome": "Corte",
+             "inicio": INICIO + timedelta(hours=8), "marca": "cancelado"},
+        ],
+        agora=AGORA,
+    )
+    assert texto == (
+        "Zeca, sua agenda de hoje mudou:\n"
+        "João Silva · hoje 08:00 · Corte\n"
+        "🆕 Pedro Lima · hoje 15:00 · Barba\n"
+        "~Ana Souza · hoje 16:00 · Corte~ cancelou"
+    )
+
+
+def test_lista_refeita_sem_horario_restante_diz_que_esvaziou():
+    from app.services.mensagens import msg_lista_refeita
+
+    texto = msg_lista_refeita(
+        barbeiro_nome="Zeca Silva",
+        linhas=[{"cliente_nome": "Ana Souza", "servico_nome": "Corte",
+                 "inicio": INICIO, "marca": "cancelado"}],
+        agora=AGORA,
+    )
+    assert texto.endswith("~Ana Souza · hoje 08:00 · Corte~ cancelou\nNão sobrou horário hoje.")

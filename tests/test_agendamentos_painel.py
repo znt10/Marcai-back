@@ -267,3 +267,65 @@ def test_cancelar_id_inexistente_e_404(client, cenario):
         "/api/painel/agendamentos/nao-existe/cancelar", headers={"host": host, **CABECALHO},
     )
     assert r.status_code == 404
+
+
+def test_marcar_no_painel_avisa_a_lista_de_hoje(client, cenario):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    host = _logar(client, barbeiro, b.id)
+    servico = _servico_vinculado(b.id, barbeiro)
+    inicio = _proximo_slot_livre(barbeiro, servico)
+
+    with patch("app.api.v1.views.agendamentos_painel.enviar_ao_cliente"), patch(
+        "app.services.lista_do_dia.avisar_mudanca"
+    ) as avisar:
+        r = client.post(
+            "/api/painel/agendamentos",
+            {
+                "barbeiroId": barbeiro.id, "servicoId": servico.id,
+                "inicio": inicio.isoformat(), "nome": "Cliente Novo",
+                "whatsapp": "11977778888",
+            },
+            content_type="application/json", headers={"host": host, **CABECALHO},
+        )
+    assert r.status_code == 201
+    from tenant.models import Agendamento
+
+    criado = Agendamento.objects.using("owner").get(codigo=r.json()["codigo"])
+    args, kwargs = avisar.call_args
+    assert str(args[1]) == str(barbeiro.id)
+    assert kwargs["novos"] == [(str(criado.id), criado.inicio)]
+
+
+def test_cancelar_no_painel_avisa_a_lista_de_hoje(client, cenario):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    host = _logar(client, barbeiro, b.id)
+
+    from tenant.models import Agendamento, Cliente, Servico
+
+    servico = Servico.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=b.id, nome="Corte",
+        duracao_minima_min=20, duracao_sugerida_min=30,
+    )
+    cliente = Cliente.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=b.id, nome="Cliente", whatsapp="11988889999",
+    )
+    futuro = datetime.now(timezone.utc) + timedelta(hours=3)
+    a = Agendamento.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=b.id, codigo=str(uuid.uuid4())[:10],
+        barbeiro_id=barbeiro.id, cliente_id=cliente.id, servico_id=servico.id,
+        servico_nome="Corte", inicio=futuro, fim=futuro + timedelta(minutes=30),
+        duracao_min=30, status="CONFIRMADO",
+    )
+
+    with patch("app.api.v1.views.agendamentos_painel.enviar_ao_cliente"), patch(
+        "app.services.lista_do_dia.avisar_mudanca"
+    ) as avisar:
+        r = client.post(
+            f"/api/painel/agendamentos/{a.id}/cancelar", headers={"host": host, **CABECALHO},
+        )
+    assert r.status_code == 200
+    args, kwargs = avisar.call_args
+    assert str(args[1]) == str(barbeiro.id)
+    assert [str(i) for i, _ in kwargs["cancelados"]] == [str(a.id)]

@@ -5,7 +5,7 @@ from django.db import connections
 from django.utils import timezone
 
 from tenant.config import BOT_CONVERSA_GUARDADA_DIAS, ZELADOR_DIAS_DE_HISTORICO
-from tenant.models import Barbearia, ConversaWhatsapp, MensagemNaoEnviada
+from tenant.models import Barbearia, ConversaWhatsapp, ListaDoDiaEnviada, MensagemNaoEnviada
 from tenant.rls import com_barbearia
 
 logger = logging.getLogger(__name__)
@@ -75,6 +75,7 @@ def alarmar_e_podar() -> dict:
         "podados_message": podados_message,
         "podadas_nao_enviadas": _podar_nao_enviadas(),
         "podadas_conversas": _podar_conversas(),
+        "podadas_listas": _podar_listas(),
     }
 
 
@@ -118,5 +119,18 @@ def _podar_conversas() -> int:
                 .exclude(mudo_ate__gt=agora)
                 .delete()
             )
+        podadas += apagadas
+    return podadas
+
+
+def _podar_listas() -> int:
+    """A lista enviada so' serve no proprio dia: e' por ela que a proxima
+    mudanca acha a mensagem para apagar. Passado o prazo do historico, so'
+    ocupa espaco."""
+    limite = (timezone.now() - timedelta(days=ZELADOR_DIAS_DE_HISTORICO)).date()
+    podadas = 0
+    for b in Barbearia.objects.all():
+        with com_barbearia(b.id):
+            apagadas, _ = ListaDoDiaEnviada.objects.filter(dia__lt=limite).delete()
         podadas += apagadas
     return podadas

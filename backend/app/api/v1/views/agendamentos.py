@@ -9,6 +9,7 @@ from app.api.v1.serializers.agendamentos import (
     AgendamentoDetalheSerializer,
     CriarAgendamentoSerializer,
 )
+from app.services import lista_do_dia
 from app.services.agendamentos import (
     ErroCliente,
     cancelar_publico,
@@ -80,21 +81,29 @@ class AgendamentosView(ExigeTenant, APIView):
                 cliente_nome=d["nome"], barbeiro_nome=criado["barbeiro_nome"],
                 servico_nome=criado["servico_nome"], inicio=criado["inicio"],
                 endereco=request.barbearia.endereco, link=link,
+                barbearia_nome=request.barbearia.nome,
+                contato=request.barbearia.whatsapp_contato,
             ),
             tipo=TipoMensagem.CONFIRMACAO,
             cliente_nome=d["nome"],
         )
-        # E o barbeiro. Segundo envio, e nao um destinatario a mais no mesmo:
-        # sao textos diferentes — o do cliente confirma e da o link de
-        # cancelar; o do barbeiro so' avisa que entrou horario.
-        enviar_a_equipe_da(
-            self.barbearia_id,
-            criado["barbeiro_whatsapp"],
-            msg_barbeiro_novo(
-                cliente_nome=d["nome"], servico_nome=criado["servico_nome"],
-                inicio=criado["inicio"], agora=datetime.now(timezone.utc),
-            ),
+        # E o barbeiro. Para HOJE, depois que a lista das 07:00 saiu, ele
+        # recebe a lista inteira refeita (com o horario novo marcado) no lugar
+        # do aviso curto — um lugar so' para ler. Para outro dia, o aviso
+        # curto de sempre.
+        refeita = lista_do_dia.avisar_mudanca(
+            self.barbearia_id, criado["barbeiro_id"], agora,
+            novos=[(criado["id"], criado["inicio"])],
         )
+        if not refeita:
+            enviar_a_equipe_da(
+                self.barbearia_id,
+                criado["barbeiro_whatsapp"],
+                msg_barbeiro_novo(
+                    cliente_nome=d["nome"], servico_nome=criado["servico_nome"],
+                    inicio=criado["inicio"], agora=datetime.now(timezone.utc),
+                ),
+            )
         return Response({"codigo": criado["codigo"]}, status=201)
 
 
@@ -134,6 +143,7 @@ class AgendamentoCancelarPublicoView(ExigeTenant, APIView):
                 resultado["cliente_whatsapp"],
                 msg_cancelamento(
                     barbeiro_nome=resultado["barbeiro_nome"], inicio=resultado["inicio"],
+                    barbearia_nome=request.barbearia.nome,
                 ),
                 tipo=TipoMensagem.CANCELAMENTO,
                 cliente_nome=resultado["cliente_nome"],
@@ -141,15 +151,21 @@ class AgendamentoCancelarPublicoView(ExigeTenant, APIView):
             # A vaga abriu: quem ia cortar precisa saber sem abrir o painel.
             # So' no `tipo == "ok"` — o `ja_cancelado` cai fora deste bloco de
             # proposito, senao dois toques no botao mandariam dois avisos.
-            enviar_a_equipe_da(
-                self.barbearia_id,
-                resultado["barbeiro_whatsapp"],
-                msg_barbeiro_cancelado(
-                    cliente_nome=resultado["cliente_nome"],
-                    servico_nome=resultado["servico_nome"],
-                    inicio=resultado["inicio"], agora=datetime.now(timezone.utc),
-                ),
+            # Hoje, depois das 07:00, pela lista refeita; senao, aviso curto.
+            refeita = lista_do_dia.avisar_mudanca(
+                self.barbearia_id, resultado["barbeiro_id"], agora,
+                cancelados=[(resultado["id"], resultado["inicio"])],
             )
+            if not refeita:
+                enviar_a_equipe_da(
+                    self.barbearia_id,
+                    resultado["barbeiro_whatsapp"],
+                    msg_barbeiro_cancelado(
+                        cliente_nome=resultado["cliente_nome"],
+                        servico_nome=resultado["servico_nome"],
+                        inicio=resultado["inicio"], agora=datetime.now(timezone.utc),
+                    ),
+                )
         # "ja_cancelado" cai aqui tambem, de proposito: quem apertou o botao
         # duas vezes queria o mesmo desfecho, e ele ja vale — 200 idempotente.
         return Response({"ok": True})

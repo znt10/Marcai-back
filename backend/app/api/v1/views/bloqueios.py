@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 
 from app.api.v1.mixins import NAO_ENCONTRADO, ExigeSessao
 from app.api.v1.serializers.expediente import CriarBloqueioSerializer
+from app.services import lista_do_dia
 from app.services.autorizacao import alvo_do_barbeiro, filtro_do_barbeiro
 from app.services.agendamentos import cancelar as cancelar_agendamento
 from app.services.bloqueios import apagar_bloqueio, criar_bloqueio, folga_sobreposta
@@ -76,11 +77,13 @@ class BloqueiosView(ExigeSessao, APIView):
         # horario continua fechado — o contrario deixaria clientes cancelados
         # e a agenda aberta de novo.
         cancelados = 0
+        derrubados = []
         for c in pegos:
             dados = cancelar_agendamento(self.barbearia_id, c["id"], barbeiro_id)
             if dados is None:
                 continue
             cancelados += 1
+            derrubados.append((dados["id"], dados["inicio"]))
             # Fire-and-forget, igual ao resto: WhatsApp fora do ar nao desfaz
             # um cancelamento que ja' valeu.
             enviar_ao_cliente(
@@ -92,9 +95,17 @@ class BloqueiosView(ExigeSessao, APIView):
                     servico_nome=dados["servico_nome"],
                     inicio=dados["inicio"],
                     endereco=request.barbearia.endereco,
+                    barbearia_nome=request.barbearia.nome,
+                    contato=request.barbearia.whatsapp_contato,
                 ),
                 tipo=TipoMensagem.CANCELAMENTO,
                 cliente_nome=dados["cliente_nome"],
+            )
+        # Um aviso so' com todos os que cairam: o bloqueio da tarde nao pode
+        # virar cinco listas seguidas.
+        if derrubados:
+            lista_do_dia.avisar_mudanca(
+                self.barbearia_id, barbeiro_id, agora, cancelados=derrubados,
             )
         return Response({"id": novo_id, "cancelados": cancelados}, status=201)
 

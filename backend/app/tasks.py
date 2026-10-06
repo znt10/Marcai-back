@@ -6,10 +6,12 @@ from celery import shared_task
 from app.services.bot import processar as processar_mensagem_do_bot
 from app.services.lembrete import enviar_pendentes
 from app.services.lista_do_dia import enviar as enviar_lista_do_dia
+from app.services.lista_do_dia import refazer as refazer_lista_do_dia
 from app.services.whatsapp import estado_da_instancia
 from app.services.whatsapp_eventos import aplicar_estado
 from app.services.whatsapp_instancias import consultar_estado, garantir_instancia
 from app.services.zelador import alarmar_e_podar
+from tenant import config
 from tenant.models import Barbearia, EstadoInstancia, PlanoBarbearia, WhatsappInstancia
 from tenant.rls import com_barbearia
 
@@ -57,6 +59,20 @@ def lista_do_dia() -> int:
     return enviar_lista_do_dia(datetime.now(timezone.utc))
 
 
+@shared_task(ignore_result=True)
+def refazer_lista(barbearia_id: str, barbeiro_id: str, novos: list, cancelados: list) -> str:
+    """A lista de hoje de um barbeiro, apagada e mandada de novo depois que
+    a agenda mudou. Fora do pedido HTTP: sao duas idas a Evolution, e quem
+    marcou nao espera por elas.
+
+    NAO RETENTA: uma lista que chega minutos depois, por cima de uma mais
+    nova, desarrumaria a ordem — a proxima mudanca refaz de qualquer jeito.
+    """
+    return refazer_lista_do_dia(
+        barbearia_id, barbeiro_id, novos, cancelados, datetime.now(timezone.utc),
+    )
+
+
 @shared_task
 def conferir_instancias() -> dict:
     """A rede de seguranca do webhook, a cada cinco minutos.
@@ -81,6 +97,12 @@ def conferir_instancias() -> dict:
     traria 404, que marcaria `PENDENTE`, que faria o proximo tique RECRIAR o
     numero de uma barbearia que saiu.
     """
+    # Etapa 1 do numero central: nao ha instancia de barbearia para criar
+    # nem conferir. A tarefa continua agendada para voltar sozinha quando o
+    # interruptor for religado.
+    if not config.WHATSAPP_POR_BARBEARIA:
+        return {"criadas": 0, "conferidas": 0, "corrigidas": 0}
+
     criadas = conferidas = corrigidas = 0
 
     for b in Barbearia.objects.filter(ativo=True, plano=PlanoBarbearia.COM_ZAP):

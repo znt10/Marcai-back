@@ -4,6 +4,7 @@ from tenant.datas import (
     formatar_hora,
     formatar_hora_falada,
 )
+from tenant.telefone import formatar
 
 # Todo texto que sai pelo WhatsApp mora aqui — espalhar template pelas rotas e
 # como duas mensagens do mesmo evento acabam divergindo.
@@ -50,6 +51,7 @@ def _capitalizar(texto: str) -> str:
 def msg_confirmacao(
     *, cliente_nome: str, barbeiro_nome: str, servico_nome: str,
     inicio, endereco: str, link: str,
+    barbearia_nome: str | None = None, contato: str | None = None,
 ) -> str:
     primeiro_nome = cliente_nome.split(" ")[0]
     # O endereco SAIU daqui (pedido do dono, 02/09): quem marca ja esta na
@@ -57,42 +59,57 @@ def msg_confirmacao(
     # mensagem para tres paragrafos. `endereco` continua no parametro de
     # proposito — quem chama nao muda, e o lembrete (que chega quando a pessoa
     # esta de fato saindo de casa) ainda e o lugar certo para ele.
-    return (
+    texto = (
         f"Fechou, {primeiro_nome}! {_capitalizar(servico_nome)} "
         f"{formatar_dia_com_semana(inicio)} às {formatar_hora_falada(inicio)}, "
         f"com {barbeiro_nome}.\n\nCancelar: {link}"
     )
+    if barbearia_nome is None:
+        return texto
+    # Pelo numero CENTRAL (etapa 1): o cliente nao conhece este numero. O
+    # nome da barbearia abre, e a ultima linha diz para onde responder — sem
+    # ela, a duvida iria para um numero que ninguem le.
+    return f"*{barbearia_nome}*\n{texto}\nDúvida? Chama: {formatar(contato)}"
 
 
 def msg_cancelamento_pela_barbearia(
     *, cliente_nome: str, barbeiro_nome: str, servico_nome: str,
     inicio, endereco: str,
+    barbearia_nome: str | None = None, contato: str | None = None,
 ) -> str:
     primeiro_nome = cliente_nome.split(" ")[0]
     # O pedido de desculpa FICA, encurtado. Foi a barbearia que desmarcou: uma
     # mensagem seca aqui e' a diferenca entre um cliente que remarca e um que
     # nao volta. O convite a remarcar tambem fica, pela mesma razao.
-    return (
+    base = (
         f"Oi, {primeiro_nome}. Cancelamos seu {servico_nome.lower()} de "
-        f"{formatar_dia_com_semana(inicio)} às {formatar_hora_falada(inicio)}. "
-        f"Desculpa! Chama a gente pra remarcar."
+        f"{formatar_dia_com_semana(inicio)} às {formatar_hora_falada(inicio)}. Desculpa!"
     )
+    if barbearia_nome is None:
+        return f"{base} Chama a gente pra remarcar."
+    # "Chama a gente" pelo central levaria o cliente a responder para o
+    # Marcai. O numero da barbearia vai escrito.
+    return f"*{barbearia_nome}*\n{base} Pra remarcar, chama: {formatar(contato)}"
 
 
-def msg_cancelamento(*, barbeiro_nome: str, inicio) -> str:
+def msg_cancelamento(*, barbeiro_nome: str, inicio, barbearia_nome: str | None = None) -> str:
     """O cliente que cancelou o PRÓPRIO horário — por isso, ao contrário de
     `msg_cancelamento_pela_barbearia`, nao ha "Oi, fulano" nem pedido de
     desculpa: mandar isso pra quem acabou de cancelar seria estranho, nao
     gentil. Espelha `msgCancelamento` (mensagens.ts), que tambem ignora
     `clienteNome`/`servicoNome`/`endereco` apesar de aceita-los no tipo.
     """
-    return (
+    texto = (
         f"Horário de {formatar_dia_com_semana(inicio)} às {formatar_hora_falada(inicio)}, "
         f"com {barbeiro_nome} cancelado. Até a próxima!"
     )
+    return texto if barbearia_nome is None else f"*{barbearia_nome}*\n{texto}"
 
 
-def msg_lembrete(*, servico_nome: str, barbeiro_nome: str, inicio, endereco: str) -> str:
+def msg_lembrete(
+    *, servico_nome: str, barbeiro_nome: str, inicio, endereco: str,
+    barbearia_nome: str | None = None, contato: str | None = None,
+) -> str:
     # O endereco FICA so' aqui. Esta e' a mensagem que chega quando a pessoa
     # esta saindo de casa — e' o unico momento em que ele e' util, e por isso
     # ele saiu da confirmacao e nao daqui.
@@ -102,10 +119,21 @@ def msg_lembrete(*, servico_nome: str, barbeiro_nome: str, inicio, endereco: str
     # inteiro na primeira linha, que e' a que a previa da notificacao mostra.
     # "Endereço:" nomeia a linha porque, sozinho, o endereco era so' um texto
     # solto depois do ponto.
+    hora = formatar_hora_falada(inicio)
+    if barbearia_nome is None:
+        return (
+            f"*Lembrete: {servico_nome.lower()} hoje às {hora}*\n"
+            f"com {barbeiro_nome}\n"
+            f"Endereço: {endereco}"
+        )
+    # Pelo central: o nome da barbearia entra na linha em negrito (a que a
+    # previa da notificacao mostra), e a ultima diz para onde avisar que nao
+    # vai — sem ela, quem desiste avisaria um numero que ninguem le.
     return (
-        f"*Lembrete: {servico_nome.lower()} hoje às {formatar_hora_falada(inicio)}*\n"
+        f"*{barbearia_nome} — lembrete: {servico_nome.lower()} hoje às {hora}*\n"
         f"com {barbeiro_nome}\n"
-        f"Endereço: {endereco}"
+        f"Endereço: {endereco}\n"
+        f"Não vai dar? Chama: {formatar(contato)}"
     )
 
 
@@ -168,6 +196,33 @@ def msg_lista_do_dia(*, barbeiro_nome: str, agendamentos: list[dict], agora) -> 
         for a in agendamentos
     ]
     return cabecalho + "\n" + "\n".join(linhas)
+
+
+def msg_lista_refeita(*, barbeiro_nome: str, linhas: list[dict], agora) -> str:
+    """A lista de HOJE de novo, depois que ela mudou (a anterior foi
+    apagada). Mesma linha da lista das 07:00, com duas marcas que so' valem
+    nesta mensagem: "🆕" no horario que acabou de entrar e o riscado do
+    WhatsApp ("~...~") no que acabou de sair. Na proxima lista o novo vira
+    linha comum e o cancelado some.
+
+    `linhas`: [{"cliente_nome", "servico_nome", "inicio", "marca"}], ja em
+    ordem de horario, com `marca` None, "novo" ou "cancelado".
+    """
+    partes = [f"{barbeiro_nome.split()[0]}, sua agenda de hoje mudou:"]
+    for linha in linhas:
+        base = _linha_do_horario(
+            cliente_nome=linha["cliente_nome"], servico_nome=linha["servico_nome"],
+            inicio=linha["inicio"], agora=agora,
+        )
+        if linha["marca"] == "novo":
+            partes.append(f"🆕 {base}")
+        elif linha["marca"] == "cancelado":
+            partes.append(f"~{base}~ cancelou")
+        else:
+            partes.append(base)
+    if all(linha["marca"] == "cancelado" for linha in linhas):
+        partes.append("Não sobrou horário hoje.")
+    return "\n".join(partes)
 
 
 # ---- O bot de agendamento -------------------------------------------------
@@ -319,3 +374,13 @@ def msg_lembrete_com_opcoes(*, lembrete: str) -> str:
 
 def msg_bot_pergunta_do_lembrete() -> str:
     return f"Responde 1 pra confirmar ou 2 se não for conseguir ir.\n\n{_OPCOES_DO_LEMBRETE}"
+
+
+def msg_saudacao(*, link: str) -> str:
+    """O texto que o dono cola na "Mensagem de saudação" do WhatsApp
+    Business (etapa 1): sai do numero da propria barbearia, por isso sem o
+    nome dela."""
+    return (
+        f"Oi! Pra marcar seu horário, é só tocar no link: {link}\n"
+        "Se preferir, espera uns minutinhos que já vamos te responder."
+    )

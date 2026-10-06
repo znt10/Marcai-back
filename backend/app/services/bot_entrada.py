@@ -12,6 +12,7 @@ reenviar, e a task fica testavel sem inventar um JSON da Evolution.
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from tenant import config
 from tenant.config import BOT_MENSAGEM_VELHA_MIN
 
 from tenant.models import EstadoInstancia, WhatsappInstancia
@@ -89,6 +90,10 @@ def _enviada_em(corpo) -> datetime | None:
 
 
 def receber(corpo, agora: datetime) -> str:
+    # Antes de ler o corpo: com o bot desligado, nada que chega aqui vira
+    # consulta ao banco nem task.
+    if not config.BOT_DISPONIVEL:
+        return "ignorado:desligado"
     lida = ler_mensagem(corpo)
     if isinstance(lida, str):
         return f"ignorado:{lida}"

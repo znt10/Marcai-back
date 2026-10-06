@@ -73,12 +73,8 @@ def test_sucesso_e_registrado_com_jid_e_status(monkeypatch, caplog):
 
 # ------------------------------------------------------------- numero_existe
 #
-# Esta secao passou a precisar de BANCO, e a razao e a mesma que fez a pergunta
-# mudar de forma: quem responde "esse numero tem WhatsApp" e a instancia DA
-# BARBEARIA, entao e preciso existir uma barbearia com zap e com vinculo de pe.
-# Perguntar pela central seria perguntar a um numero que pode nem estar
-# conectado — e a resposta dela nao diz nada sobre o numero que vai mandar a
-# mensagem.
+# Desde a etapa 1 a pergunta e' feita pela instancia CENTRAL. O plano ainda
+# importa: sem zap, a pergunta nem e' feita.
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
@@ -91,17 +87,11 @@ def _config_evolution(monkeypatch):
 
 @pytest.fixture
 def com_zap(cenario):
-    """Uma barbearia com zap e CONECTADA — o unico estado em que a pergunta
-    chega a ser feita."""
-    from tenant.models import Barbearia, EstadoInstancia, WhatsappInstancia
+    from tenant.models import Barbearia
 
     b = cenario["brutus"]
     Barbearia.objects.using("owner").filter(id=b.id).update(plano="COM_ZAP")
     b.plano = "COM_ZAP"
-    WhatsappInstancia.objects.using("owner").create(
-        id=str(uuid.uuid4()), barbearia_id=b.id, nome=f"marcai-{b.id}",
-        estado=EstadoInstancia.CONECTADO,
-    )
     return b
 
 
@@ -301,3 +291,75 @@ def test_enviar_sem_digitando_nao_manda_delay(monkeypatch):
         whatsapp._enviar("marcai-x", "83988887777", "oi")
     assert "delay" not in post.call_args.kwargs["json"]
     assert post.call_args.kwargs["timeout"] == 3
+
+
+# ------------------------------------------------ _enviar_aceita / apagar
+
+
+def test_enviar_aceita_devolve_id_e_jid(monkeypatch):
+    _config_evolution(monkeypatch)
+    resposta = Mock(ok=True, status_code=201)
+    resposta.json.return_value = {
+        "key": {"id": "3EB0ABC", "remoteJid": "5583988887777@s.whatsapp.net"},
+    }
+    with patch.object(whatsapp.requests, "post", return_value=resposta):
+        aceita = whatsapp._enviar_aceita("brutus", "83988887777", "oi")
+    assert aceita == whatsapp.Aceita("3EB0ABC", "5583988887777@s.whatsapp.net")
+
+
+def test_enviar_aceita_sem_key_ainda_e_aceita(monkeypatch):
+    """Aceita sem id e' aceita: o cliente recebe. So' nao da para apagar
+    depois — quem guarda (a lista do dia) confere o id."""
+    _config_evolution(monkeypatch)
+    resposta = Mock(ok=True, status_code=201)
+    resposta.json.return_value = {}
+    with patch.object(whatsapp.requests, "post", return_value=resposta):
+        assert whatsapp._enviar_aceita("brutus", "83988887777", "oi") == whatsapp.Aceita(None, None)
+
+
+def test_enviar_a_equipe_aceita_vai_pelo_central(monkeypatch):
+    _config_evolution(monkeypatch)
+    resposta = Mock(ok=True, status_code=201)
+    resposta.json.return_value = {"key": {"id": "X", "remoteJid": "J"}}
+    with patch.object(whatsapp.requests, "post", return_value=resposta) as post:
+        assert whatsapp.enviar_a_equipe_aceita("83988887777", "oi") == whatsapp.Aceita("X", "J")
+    assert post.call_args.args[0] == "http://evolution:8080/message/sendText/brutus"
+
+
+def test_apagar_para_todos_manda_id_jid_e_fromme(monkeypatch):
+    _config_evolution(monkeypatch)
+    with patch.object(whatsapp.requests, "delete", return_value=Mock(ok=True)) as delete:
+        assert whatsapp.apagar_para_todos("5583988887777@s.whatsapp.net", "3EB0X") is True
+    assert delete.call_args.args[0] == "http://evolution:8080/chat/deleteMessageForEveryone/brutus"
+    assert delete.call_args.kwargs["json"] == {
+        "id": "3EB0X", "remoteJid": "5583988887777@s.whatsapp.net", "fromMe": True,
+    }
+
+
+def test_apagar_recusado_devolve_false_e_loga(monkeypatch, caplog):
+    _config_evolution(monkeypatch)
+    with patch.object(
+        whatsapp.requests, "delete", return_value=Mock(ok=False, status_code=400, text="nao achei")
+    ):
+        with caplog.at_level("ERROR"):
+            assert whatsapp.apagar_para_todos("j", "i") is False
+    assert "nao achei" in caplog.text
+
+
+def test_apagar_falha_de_rede_devolve_false(monkeypatch):
+    _config_evolution(monkeypatch)
+    import requests
+
+    with patch.object(whatsapp.requests, "delete", side_effect=requests.ConnectionError("x")):
+        assert whatsapp.apagar_para_todos("j", "i") is False
+
+
+def test_apagar_sem_url_ou_sem_id_nao_chama_nada(monkeypatch):
+    monkeypatch.delenv("EVOLUTION_API_URL", raising=False)
+    with patch.object(whatsapp.requests, "delete") as delete:
+        assert whatsapp.apagar_para_todos("j", "i") is False
+    _config_evolution(monkeypatch)
+    with patch.object(whatsapp.requests, "delete") as delete:
+        assert whatsapp.apagar_para_todos(None, "i") is False
+        assert whatsapp.apagar_para_todos("j", None) is False
+    delete.assert_not_called()

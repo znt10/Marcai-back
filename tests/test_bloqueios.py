@@ -438,3 +438,43 @@ def test_folga_semanal_nunca_some(client, cenario):
     )
     r = client.get("/api/painel/expediente", headers={"host": host, **CABECALHO})
     assert len(r.json()["bloqueios"]) == 1
+
+
+def test_bloqueio_que_derruba_horarios_avisa_a_lista_uma_vez_com_todos(client, cenario):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    host = _logar(client, barbeiro, b.id)
+    inicio = datetime.now(timezone.utc) + timedelta(days=1)
+    um = _com_agendamento(b.id, barbeiro, inicio)
+    outro = _com_agendamento(b.id, barbeiro, inicio + timedelta(minutes=30))
+
+    corpo = _bloqueio_de_uma_vez(inicio - timedelta(minutes=30), inicio + timedelta(hours=2))
+    corpo["cancelarConflitos"] = True
+    with patch("app.api.v1.views.bloqueios.enviar_ao_cliente"), patch(
+        "app.services.lista_do_dia.avisar_mudanca"
+    ) as avisar:
+        r = client.post(
+            "/api/painel/bloqueios", corpo,
+            content_type="application/json", headers={"host": host, **CABECALHO},
+        )
+    assert r.status_code == 201
+    avisar.assert_called_once()
+    args, kwargs = avisar.call_args
+    assert str(args[1]) == str(barbeiro.id)
+    assert sorted(str(i) for i, _ in kwargs["cancelados"]) == sorted([str(um.id), str(outro.id)])
+
+
+def test_bloqueio_sem_ninguem_dentro_nao_avisa_a_lista(client, cenario):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    host = _logar(client, barbeiro, b.id)
+    inicio = datetime.now(timezone.utc) + timedelta(days=1)
+
+    with patch("app.services.lista_do_dia.avisar_mudanca") as avisar:
+        r = client.post(
+            "/api/painel/bloqueios",
+            _bloqueio_de_uma_vez(inicio, inicio + timedelta(hours=1)),
+            content_type="application/json", headers={"host": host, **CABECALHO},
+        )
+    assert r.status_code == 201
+    avisar.assert_not_called()

@@ -150,6 +150,16 @@ def _sem_whatsapp_de_verdade(monkeypatch):
     monkeypatch.delenv("EVOLUTION_API_URL", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def lista_refeita():
+    """Por padrao, nenhuma mudanca cai na lista de hoje: os casos daqui
+    marcam "daqui a pouco", e a decisao real dependeria da hora em que a
+    suite roda. Quem testa a troca do aviso curto pela lista liga o
+    retorno."""
+    with patch("app.services.lista_do_dia.avisar_mudanca", return_value=False) as avisar:
+        yield avisar
+
+
 # ------------------------------------------------------------- POST (marcar)
 
 
@@ -176,7 +186,7 @@ def test_marca_sem_sessao_e_manda_confirmacao(client, cenario):
     # garante e' que o do cliente continua saindo.
     assert mock_envia.call_count == 2
     confirmacao = mock_envia.texto_para("11977778888")
-    assert confirmacao.startswith("Fechou,")
+    assert confirmacao.startswith("*Brutus*\nFechou,")
 
     from tenant.models import Agendamento
 
@@ -548,3 +558,50 @@ def test_cliente_cancelando_avisa_o_barbeiro(client, cenario):
     assert barbeiro.whatsapp in destinos, "a vaga abriu e o barbeiro nao ficou sabendo"
     aviso = mock_envia.texto_para(barbeiro.whatsapp)
     assert aviso.startswith("Cancelou")
+
+
+def test_marcar_para_hoje_refaz_a_lista_em_vez_do_aviso_curto(client, cenario, lista_refeita):
+    lista_refeita.return_value = True
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    servico = _servico_vinculado(b.id, barbeiro)
+    inicio = _proximo_slot_livre(barbeiro, servico)
+
+    with _envios() as mock_envia:
+        r = client.post(
+            "/api/agendamentos",
+            {
+                "barbeiroId": barbeiro.id, "servicoId": servico.id,
+                "inicio": inicio.isoformat(), "nome": "José Neto",
+                "whatsapp": "11977778888",
+            },
+            content_type="application/json", headers={"host": HOST, **CABECALHO},
+        )
+    assert r.status_code == 201
+    assert barbeiro.whatsapp not in mock_envia.destinos, "a lista refeita substitui o aviso"
+    assert "11977778888" in mock_envia.destinos
+
+    from tenant.models import Agendamento
+
+    criado = Agendamento.objects.using("owner").get(codigo=r.json()["codigo"])
+    args, kwargs = lista_refeita.call_args
+    assert (str(args[0]), str(args[1])) == (str(b.id), str(barbeiro.id))
+    assert kwargs["novos"] == [(str(criado.id), criado.inicio)]
+
+
+def test_cliente_cancelando_hoje_refaz_a_lista_em_vez_do_aviso_curto(client, cenario, lista_refeita):
+    lista_refeita.return_value = True
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    servico = _servico_vinculado(b.id, barbeiro)
+    inicio = _proximo_slot_livre(barbeiro, servico, daqui_a_min=180)
+    a = _agendamento(b.id, barbeiro, inicio)
+
+    with _envios() as mock_envia:
+        r = client.post(
+            f"/api/agendamentos/{a.codigo}/cancelar",
+            content_type="application/json", headers={"host": HOST, **CABECALHO},
+        )
+    assert r.status_code == 200
+    assert barbeiro.whatsapp not in mock_envia.destinos
+    assert lista_refeita.call_args.kwargs["cancelados"] == [(str(a.id), a.inicio)]

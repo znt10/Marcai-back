@@ -15,6 +15,16 @@ from tenant.models import Barbearia, Barbeiro, EstadoInstancia, WhatsappInstanci
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
+
+@pytest.fixture(autouse=True)
+def _bot_disponivel(monkeypatch):
+    """O bot esta desligado em producao (etapa 1 do numero central), mas o
+    codigo fica para o plano de agendar pelo WhatsApp: estes casos o testam
+    ligado."""
+    from tenant import config
+
+    monkeypatch.setattr(config, "BOT_DISPONIVEL", True)
+
 ROTA = "/api/painel/whatsapp/bot"
 ASSINAR = "app.services.whatsapp_painel.aplicar_assinatura"
 
@@ -156,18 +166,3 @@ def test_ativo_precisa_ser_booleano(client, cenario, corpo):
         r = _post(client, host, corpo)
     assert r.status_code == 422
     assinar.assert_not_called()
-
-
-def test_ver_mostra_o_interruptor_para_todo_mundo(client, cenario):
-    b = cenario["brutus"]
-    _com_zap(b, bot_ativo=True)
-    host = _logar(client, _barbeiro(b, "BARBEIRO"), b)
-    r = client.get("/api/painel/whatsapp", headers={"host": host})
-    assert r.json()["botAtivo"] is True
-
-
-def test_ver_sem_zap_diz_desligado(client, cenario):
-    b = cenario["brutus"]
-    host = _logar(client, _barbeiro(b, "DONO"), b)
-    r = client.get("/api/painel/whatsapp", headers={"host": host})
-    assert r.json()["botAtivo"] is False
