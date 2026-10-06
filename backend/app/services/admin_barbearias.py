@@ -9,14 +9,27 @@ from tenant.models import (
     Agendamento,
     Barbearia,
     Barbeiro,
+    BarbeiroServico,
+    Bloqueio,
+    Cliente,
+    ConversaWhatsapp,
+    HorarioTrabalho,
+    ListaDoDiaEnviada,
+    MensagemNaoEnviada,
     PlanoBarbearia,
+    Servico,
     WhatsappInstancia,
 )
 from tenant.rls import com_barbearia_admin
 from tenant.telefone import normalizar
 
 from .convite import gerar_convite
-from .whatsapp_instancias import apagar_instancia, garantir_instancia, nome_da_instancia
+from .whatsapp_instancias import (
+    apagar_instancia,
+    desligar_na_evolution,
+    garantir_instancia,
+    nome_da_instancia,
+)
 
 
 def listar_com_contagem() -> list[dict]:
@@ -254,3 +267,51 @@ def reemitir_convite(barbearia_id: str) -> dict:
         "dono_whatsapp": atual.whatsapp,
         "convite": convite,
     }
+
+
+# Filhos antes dos pais: toda chave para a barbearia (e as de agendamento para
+# barbeiro, cliente e servico) e' RESTRICT, entao a ordem e' o que deixa cada
+# DELETE passar. Uma tabela de tenant nova entra aqui, senao apagar volta a
+# estourar no banco — `test_toda_tabela_que_aponta_para_barbearia_sai_junto`
+# cobra.
+ORDEM_DE_APAGAR = (
+    ListaDoDiaEnviada,
+    ConversaWhatsapp,
+    MensagemNaoEnviada,
+    WhatsappInstancia,
+    Agendamento,
+    Bloqueio,
+    HorarioTrabalho,
+    BarbeiroServico,
+    Cliente,
+    Servico,
+    Barbeiro,
+)
+
+
+def o_que_sai_com(barbearia_id) -> list[tuple[type, int]]:
+    """Quantas linhas de cada tabela vao junto, para a tela de confirmacao.
+    Pela conexao `admin` com o RLS apontado para ESTA barbearia: a requisicao
+    do admin do Django esta presa a barbearia escolhida no seletor, que pode
+    ser outra, e ali estas linhas nem apareceriam."""
+    with com_barbearia_admin(barbearia_id):
+        return [(m, m.objects.using("admin").count()) for m in ORDEM_DE_APAGAR]
+
+
+def apagar_barbearia(barbearia_id) -> None:
+    """Apaga a barbearia e tudo o que e' dela, numa transacao so'. Sem
+    desfazer: e' a ferramenta do dono da plataforma, e a tela de confirmacao do
+    admin ja mostrou o que ia junto.
+
+    A instancia da Evolution, se ainda houver, e' desligada DEPOIS do commit:
+    falhar la' nao pode deixar a barbearia meio apagada aqui."""
+    with com_barbearia_admin(barbearia_id):
+        instancia = (
+            WhatsappInstancia.objects.using("admin").values_list("nome", flat=True).first()
+        )
+        for modelo in ORDEM_DE_APAGAR:
+            modelo.objects.using("admin").all().delete()
+        Barbearia.objects.using("admin").filter(id=barbearia_id).delete()
+
+    if instancia:
+        desligar_na_evolution(instancia)

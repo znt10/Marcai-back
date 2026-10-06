@@ -260,28 +260,38 @@ def apagar_instancia(barbearia) -> None:
     if linha is None:
         return
 
-    cfg = _config()
-    if cfg["url"]:
-        for rota in ("logout", "delete"):
-            try:
-                r = requests.delete(
-                    f"{cfg['url']}/instance/{rota}/{linha.nome}",
-                    headers={"apikey": cfg["chave"]},
-                    timeout=TIMEOUT_S,
-                )
-                if not r.ok:
-                    logger.error(
-                        "[whatsapp-instancia] %s recusado (%s) para %s: fica orfa la",
-                        rota, r.status_code, linha.nome,
-                    )
-            except requests.RequestException as e:
-                logger.error(
-                    "[whatsapp-instancia] falha no %s de %s (%s): fica orfa la",
-                    rota, linha.nome, e,
-                )
+    desligar_na_evolution(linha.nome)
 
     with com_barbearia(barbearia.id):
         WhatsappInstancia.objects.filter(barbearia_id=barbearia.id).delete()
+
+
+def desligar_na_evolution(nome: str) -> None:
+    """Logout e delete da instancia do lado da Evolution, sem tocar no banco.
+
+    Separado de `apagar_instancia` porque apagar a barbearia pelo admin do
+    Django tambem precisa disto, e de dentro daquela requisicao o
+    `com_barbearia` (durable) nao pode ser aberto."""
+    cfg = _config()
+    if not cfg["url"]:
+        return
+    for rota in ("logout", "delete"):
+        try:
+            r = requests.delete(
+                f"{cfg['url']}/instance/{rota}/{nome}",
+                headers={"apikey": cfg["chave"]},
+                timeout=TIMEOUT_S,
+            )
+            if not r.ok:
+                logger.error(
+                    "[whatsapp-instancia] %s recusado (%s) para %s: fica orfa la",
+                    rota, r.status_code, nome,
+                )
+        except requests.RequestException as e:
+            logger.error(
+                "[whatsapp-instancia] falha no %s de %s (%s): fica orfa la",
+                rota, nome, e,
+            )
 
 
 def desconectar_aparelho(nome: str) -> bool:
