@@ -10,6 +10,7 @@ from app.services.whatsapp import estado_da_instancia
 from app.services.whatsapp_eventos import aplicar_estado
 from app.services.whatsapp_instancias import consultar_estado, garantir_instancia
 from app.services.zelador import alarmar_e_podar
+from tenant import config
 from tenant.models import Barbearia, EstadoInstancia, PlanoBarbearia, WhatsappInstancia
 from tenant.rls import com_barbearia
 
@@ -81,6 +82,12 @@ def conferir_instancias() -> dict:
     traria 404, que marcaria `PENDENTE`, que faria o proximo tique RECRIAR o
     numero de uma barbearia que saiu.
     """
+    # Etapa 1 do numero central: nao ha instancia de barbearia para criar
+    # nem conferir. A tarefa continua agendada para voltar sozinha quando o
+    # interruptor for religado.
+    if not config.WHATSAPP_POR_BARBEARIA:
+        return {"criadas": 0, "conferidas": 0, "corrigidas": 0}
+
     criadas = conferidas = corrigidas = 0
 
     for b in Barbearia.objects.filter(ativo=True, plano=PlanoBarbearia.COM_ZAP):

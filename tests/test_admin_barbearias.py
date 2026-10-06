@@ -314,6 +314,15 @@ def evolution_simulada():
         yield {"garantir": garantir, "apagar": apagar}
 
 
+@pytest.fixture
+def com_instancia_por_barbearia(monkeypatch):
+    """Os ganchos de instancia continuam no codigo (voltam quando a API
+    oficial chegar); estes casos os testam com o interruptor ligado."""
+    from tenant import config
+
+    monkeypatch.setattr(config, "WHATSAPP_POR_BARBEARIA", True)
+
+
 def _criar_barbearia(client, slug="nova", **extra):
     corpo = {
         "slug": slug, "nome": "Nova", "endereco": "Rua A, 1",
@@ -332,7 +341,7 @@ def _instancia_de(barbearia_id):
     return WhatsappInstancia.objects.using("owner").filter(barbearia_id=barbearia_id).first()
 
 
-def test_criar_com_zap_deixa_a_instancia_pendente_e_chama_a_evolution(client, evolution_simulada):
+def test_criar_com_zap_deixa_a_instancia_pendente_e_chama_a_evolution(client, evolution_simulada, com_instancia_por_barbearia):
     from tenant.models import Barbearia, EstadoInstancia
 
     _logar_admin(client)
@@ -373,7 +382,7 @@ def test_criar_com_plano_inventado_da_422(client, evolution_simulada):
     assert evolution_simulada["garantir"].call_count == 0
 
 
-def test_patch_sobe_para_com_zap(client, cenario, evolution_simulada):
+def test_patch_sobe_para_com_zap(client, cenario, evolution_simulada, com_instancia_por_barbearia):
     from tenant.models import Barbearia, EstadoInstancia
 
     _logar_admin(client)
@@ -436,7 +445,7 @@ def test_desativar_barbearia_com_zap_desliga_o_numero(client, cenario, evolution
     assert evolution_simulada["apagar"].call_count == 1
 
 
-def test_reativar_barbearia_com_zap_recria_o_numero(client, cenario, evolution_simulada):
+def test_reativar_barbearia_com_zap_recria_o_numero(client, cenario, evolution_simulada, com_instancia_por_barbearia):
     from tenant.models import Barbearia, EstadoInstancia
 
     _logar_admin(client)
@@ -472,3 +481,42 @@ def test_listagem_mostra_o_plano(client, cenario, evolution_simulada):
     r = client.get("/api/admin/barbearias", headers={"host": HOST})
     planos = {b["slug"]: b["plano"] for b in r.json()["barbearias"]}
     assert planos == {"brutus": "COM_ZAP", "dontony": "SEM_ZAP"}
+
+
+def test_criar_com_zap_nao_cria_instancia_com_o_interruptor_desligado(client, evolution_simulada):
+    _logar_admin(client)
+    r = _criar_barbearia(client, plano="COM_ZAP")
+    assert r.status_code == 201
+    assert _instancia_de(r.json()["id"]) is None
+    assert evolution_simulada["garantir"].call_count == 0
+
+
+def test_patch_para_com_zap_nao_cria_instancia_com_o_interruptor_desligado(
+    client, cenario, evolution_simulada,
+):
+    _logar_admin(client)
+    b = cenario["brutus"]
+    r = client.patch(
+        f"/api/admin/barbearias/{b.id}", {"plano": "COM_ZAP"},
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+    assert r.status_code == 200
+    assert _instancia_de(b.id) is None
+    assert evolution_simulada["garantir"].call_count == 0
+
+
+def test_reativar_nao_cria_instancia_com_o_interruptor_desligado(
+    client, cenario, evolution_simulada,
+):
+    from tenant.models import Barbearia
+
+    _logar_admin(client)
+    b = cenario["brutus"]
+    Barbearia.objects.using("owner").filter(id=b.id).update(plano="COM_ZAP", ativo=False)
+    r = client.patch(
+        f"/api/admin/barbearias/{b.id}", {"ativo": True},
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+    assert r.status_code == 200
+    assert _instancia_de(b.id) is None
+    assert evolution_simulada["garantir"].call_count == 0

@@ -3,6 +3,7 @@ import uuid
 from django.db import connections, transaction
 from django.db.models import F
 
+from tenant import config
 from tenant.config import SLUG_REGEX, SUBDOMINIOS_RESERVADOS
 from tenant.models import (
     Agendamento,
@@ -104,7 +105,7 @@ def criar(dados: dict) -> dict:
             convite_token_hash=convite["hash"],
             convite_expira_em=convite["expira_em"],
         )
-        if plano == PlanoBarbearia.COM_ZAP:
+        if _com_instancia(plano):
             _criar_linha_da_instancia(barbearia.id)
 
     # DEPOIS do commit, e nao dentro dele: a Evolution fora do ar nao pode
@@ -116,7 +117,7 @@ def criar(dados: dict) -> dict:
     # conexao que a transacao de cima abriu. Registrado na `default` (o padrao
     # do `on_commit`), que esta em autocommit, ele dispararia NA HORA — antes
     # de a barbearia existir para quem le por outra conexao.
-    if plano == PlanoBarbearia.COM_ZAP:
+    if _com_instancia(plano):
         transaction.on_commit(lambda: garantir_instancia(barbearia), using="admin")
 
     return {
@@ -128,6 +129,13 @@ def criar(dados: dict) -> dict:
         "dono_nome": dono_nome,
         "convite": convite,
     }
+
+
+def _com_instancia(plano: str) -> bool:
+    """A barbearia ganha instancia propria na Evolution? So' com zap E com o
+    interruptor ligado. Desligado (etapa 1 do numero central), ninguem cria
+    instancia de barbearia: tudo sai pelo central."""
+    return plano == PlanoBarbearia.COM_ZAP and config.WHATSAPP_POR_BARBEARIA
 
 
 def _criar_linha_da_instancia(barbearia_id) -> None:
@@ -177,8 +185,9 @@ def atualizar_ativo(barbearia_id: str, ativo: bool) -> bool:
 
     if barbearia.plano == PlanoBarbearia.COM_ZAP:
         if ativo:
-            _criar_linha_da_instancia(barbearia.id)
-            garantir_instancia(barbearia)
+            if _com_instancia(barbearia.plano):
+                _criar_linha_da_instancia(barbearia.id)
+                garantir_instancia(barbearia)
         else:
             apagar_instancia(barbearia)
     return True
@@ -201,8 +210,9 @@ def atualizar_plano(barbearia_id: str, plano: str) -> bool:
     barbearia.plano = plano
 
     if plano == PlanoBarbearia.COM_ZAP:
-        _criar_linha_da_instancia(barbearia.id)
-        garantir_instancia(barbearia)
+        if _com_instancia(plano):
+            _criar_linha_da_instancia(barbearia.id)
+            garantir_instancia(barbearia)
     else:
         apagar_instancia(barbearia)
     return True
