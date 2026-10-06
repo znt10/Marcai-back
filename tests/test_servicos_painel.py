@@ -105,6 +105,27 @@ def test_post_cria_com_ordem_seguinte_a_ultima(client, cenario):
     assert criado.ordem == 4
 
 
+def test_post_so_com_o_nome_cria_com_o_tempo_padrao(client, cenario):
+    """A tela de servicos so' pede o nome (06/10/2026). O tempo e' de cada
+    barbeiro, em "Seus servicos"; quem toca em "faco" comeca com o padrao."""
+    from tenant.config import DURACAO_MINIMA_MIN, DURACAO_PADRAO_MIN
+    from tenant.models import Servico
+
+    b = cenario["brutus"]
+    dono = _barbeiro(b.id)
+    host = _logar(client, dono, b.id)
+
+    r = client.post(
+        "/api/painel/servicos", {"nome": "Sobrancelha"},
+        content_type="application/json", headers={"host": host, **CABECALHO},
+    )
+    assert r.status_code == 201
+
+    criado = Servico.objects.using("owner").get(id=r.json()["id"])
+    assert criado.duracao_minima_min == DURACAO_MINIMA_MIN
+    assert criado.duracao_sugerida_min == DURACAO_PADRAO_MIN
+
+
 def test_post_nome_repetido_ativo_da_409(client, cenario):
     b = cenario["brutus"]
     dono = _barbeiro(b.id)

@@ -136,7 +136,10 @@ def test_put_desmarcar_preserva_a_duracao_praticada(client, cenario):
     assert vinculo.ativo is False
 
 
-def test_put_duracao_abaixo_da_minima_do_servico_e_422(client, cenario):
+def test_put_duracao_abaixo_da_minima_antiga_do_servico_e_aceita(client, cenario):
+    """O "nunca leva menos que" saiu da tela de servicos (06/10/2026): o
+    tempo e' de cada barbeiro. A minima que ficou gravada nos servicos antigos
+    nao pode mais recusar, porque ninguem a ve nem a edita."""
     b = cenario["brutus"]
     barbeiro = _barbeiro(b.id)
     host = _logar(client, barbeiro, b.id)
@@ -145,6 +148,28 @@ def test_put_duracao_abaixo_da_minima_do_servico_e_422(client, cenario):
     r = client.put(
         "/api/painel/barbeiro-servicos",
         {"servicoId": servico.id, "faz": True, "duracaoMin": 15},
+        content_type="application/json",
+        headers={"host": host, **CABECALHO},
+    )
+    assert r.status_code == 200
+
+    from tenant.models import BarbeiroServico
+
+    assert BarbeiroServico.objects.using("owner").get(
+        barbeiro_id=barbeiro.id, servico_id=servico.id
+    ).duracao_min == 15
+
+
+@pytest.mark.parametrize("duracao", [5, 70])
+def test_put_duracao_fora_do_limite_geral_e_422(client, cenario, duracao):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    host = _logar(client, barbeiro, b.id)
+    servico = _servico(b.id, min_=10, sugerida=30)
+
+    r = client.put(
+        "/api/painel/barbeiro-servicos",
+        {"servicoId": servico.id, "faz": True, "duracaoMin": duracao},
         content_type="application/json",
         headers={"host": host, **CABECALHO},
     )
