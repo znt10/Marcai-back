@@ -53,6 +53,9 @@ SENHA_MINIMA = 8
 # o CHECK do banco existe e nao basta sozinho.
 DURACAO_MINIMA_MIN = 10
 DURACAO_MAXIMA_MIN = 60
+# O tempo com que um servico novo comeca para quem toca em "faco". Desde
+# 06/10/2026 o dono so' da' o nome ao criar; cada barbeiro ajusta o dele.
+DURACAO_PADRAO_MIN = 30
 
 # ---- Convite (front/src/lib/config.ts) ----
 #

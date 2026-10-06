@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from tenant.config import DURACAO_MINIMA_MIN, DURACAO_PADRAO_MIN
+
 
 class ServicoParaAgendamentoSerializer(serializers.Serializer):
     """Tres campos, e a lista branca vale aqui pelo mesmo motivo de sempre —
@@ -40,9 +42,13 @@ class ServicoPainelSerializer(serializers.Serializer):
 
 
 class CriarServicoSerializer(serializers.Serializer):
+    """So' o nome e' obrigatorio: a tela deixou de pedir as duracoes
+    (06/10/2026), e o tempo passou a ser de cada barbeiro. Elas continuam
+    aceitas, e conferidas, para quem ainda as mande."""
+
     nome = serializers.CharField(min_length=2, max_length=40)
-    duracaoMinimaMin = serializers.IntegerField()
-    duracaoSugeridaMin = serializers.IntegerField()
+    duracaoMinimaMin = serializers.IntegerField(default=DURACAO_MINIMA_MIN)
+    duracaoSugeridaMin = serializers.IntegerField(default=DURACAO_PADRAO_MIN)
 
 
 class AtualizarServicoSerializer(serializers.Serializer):

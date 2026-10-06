@@ -46,9 +46,7 @@ def definir_vinculo(
     duracao_min: int | None, preco_centavos: int | None = None,
 ) -> dict:
     with com_barbearia(barbearia_id):
-        servico = Servico.objects.filter(id=servico_id).values(
-            "duracao_minima_min", "duracao_sugerida_min"
-        ).first()
+        servico = Servico.objects.filter(id=servico_id).values("duracao_sugerida_min").first()
         if servico is None:
             return {"tipo": "nao_encontrado"}
 
@@ -70,7 +68,7 @@ def definir_vinculo(
             preco = existente["preco_centavos"] if existente else None
 
         try:
-            validar_duracao(duracao, servico["duracao_minima_min"])
+            validar_duracao(duracao)
         except ErroDuracao as e:
             return {"tipo": "recusado", "erro": str(e)}
 

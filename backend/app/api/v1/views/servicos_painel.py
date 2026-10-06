@@ -31,7 +31,7 @@ class ServicosPainelView(ExigeSessao, APIView):
 
         entrada = CriarServicoSerializer(data=request.data)
         if not entrada.is_valid():
-            return Response({"erro": "Preenche nome e durações."}, status=422)
+            return Response({"erro": "Preenche o nome do serviço."}, status=422)
         d = entrada.validated_data
 
         recusa = limites_do_servico(d["duracaoMinimaMin"], d["duracaoSugeridaMin"])

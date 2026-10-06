@@ -84,18 +84,20 @@ class ErroDuracao(Exception):
     final."""
 
 
-def validar_duracao(duracao_min: int, servico_duracao_minima_min: int) -> None:
-    """Confere os TRES limites, inclusive os dois que o CHECK do banco ja
-    cobre. Redundante de proposito: a mensagem daqui e' legivel na tela; a do
-    CHECK e' um despejo do Postgres."""
+def validar_duracao(duracao_min: int) -> None:
+    """Confere os limites gerais, os mesmos que o CHECK do banco ja cobre.
+    Redundante de proposito: a mensagem daqui e' legivel na tela; a do CHECK
+    e' um despejo do Postgres.
+
+    A minima do SERVICO deixou de valer aqui em 06/10/2026: a tela de servicos
+    nao a mostra nem a edita mais, e o tempo e' de cada barbeiro. Uma recusa
+    por um numero que ninguem ve nao teria explicacao possivel."""
     if not isinstance(duracao_min, int) or isinstance(duracao_min, bool):
         raise ErroDuracao("A duração precisa ser um número inteiro de minutos.")
     if duracao_min < DURACAO_MINIMA_MIN:
         raise ErroDuracao(f"A duração precisa ser de pelo menos {DURACAO_MINIMA_MIN} minutos.")
     if duracao_min > DURACAO_MAXIMA_MIN:
         raise ErroDuracao(f"A duração pode ser de no máximo {DURACAO_MAXIMA_MIN} minutos.")
-    if duracao_min < servico_duracao_minima_min:
-        raise ErroDuracao(f"Esse serviço precisa de pelo menos {servico_duracao_minima_min} minutos.")
 
 
 class ErroPreco(Exception):
@@ -123,8 +125,8 @@ def limites_do_servico(duracao_minima_min: int, duracao_sugerida_min: int) -> st
         return f"O mínimo é {DURACAO_MINIMA_MIN} minutos."
     if duracao_minima_min > DURACAO_MAXIMA_MIN or duracao_sugerida_min > DURACAO_MAXIMA_MIN:
         return f"O máximo é {DURACAO_MAXIMA_MIN} minutos."
-    # A sugerida e' o que entra no vinculo ao marcar; menor que a minima
-    # criaria um vinculo que `validar_duracao` recusaria logo depois.
+    # O CHECK `servico_duracao_valida` (0003) tambem exige isto; aqui a
+    # recusa sai legivel em vez de um despejo do Postgres.
     if duracao_minima_min > duracao_sugerida_min:
         return "A duração sugerida não pode ser menor que a mínima."
     return None
