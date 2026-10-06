@@ -2,6 +2,7 @@ import logging
 import os
 import time
 import uuid
+from dataclasses import dataclass
 
 import requests
 
@@ -10,13 +11,7 @@ from tenant.config import (
     CHECK_NUMERO_TIMEOUT_MS,
     CHECK_NUMERO_TTL_MS,
 )
-from tenant.models import (
-    Barbearia,
-    EstadoInstancia,
-    MensagemNaoEnviada,
-    PlanoBarbearia,
-    WhatsappInstancia,
-)
+from tenant.models import MensagemNaoEnviada, PlanoBarbearia
 from tenant.rls import com_barbearia
 
 logger = logging.getLogger(__name__)
@@ -48,6 +43,16 @@ def _config() -> dict[str, str]:
     }
 
 
+@dataclass(frozen=True)
+class Aceita:
+    """A mensagem que a Evolution ACEITOU. `id` e `jid` sao o que permite
+    apagar depois (a lista do dia). Podem vir None: aceita sem `key` ainda
+    e' aceita — o destinatario recebe, so' nao da para apagar."""
+
+    id: str | None
+    jid: str | None
+
+
 def enviar_a_equipe(whatsapp_digitos: str, mensagem: str) -> None:
     """Manda pela instancia CENTRAL do Marcai — barbeiro, dono, convite. Quem
     conhece a barbearia chama `enviar_a_equipe_da`, que so' cai aqui quando a
@@ -67,68 +72,48 @@ def enviar_a_equipe(whatsapp_digitos: str, mensagem: str) -> None:
 
 
 def enviar_a_equipe_da(barbearia_id, whatsapp_digitos: str, mensagem: str) -> None:
-    """O aviso de equipe de UMA barbearia: lista do dia, novo horario,
-    cancelamento, desistencia, pedido de humano, convite.
+    """O aviso de equipe de UMA barbearia: lista, novo horario, cancelamento,
+    convite.
 
-    Com zap, ativa e CONECTADA, sai pela instancia DA BARBEARIA para qualquer
-    membro da equipe. Decisao do dono, por duas razoes:
-
-    - o numero da barbearia e' o que os barbeiros ja conhecem e tem salvo; o
-      central e' um numero do Marcai que ninguem ali reconhece;
-    - uma queda local do central deixa de calar a equipe — cada barbearia
-      conectada avisa os seus pelo proprio aparelho.
-
-    Quando o destinatario e' o proprio numero conectado, a mensagem cai no
-    "conversar comigo mesmo" (medido: `sendText` para o proprio numero responde
-    201), e `bot_entrada` ignora o eco dela.
-
-    O central vira so' o recurso: sem zap, desativada, sem instancia ou com o
-    aparelho fora do ar — ai ele ainda entrega, e o barbeiro nao fica sem saber
-    do horario. A leitura e' curta e o envio fica fora dela: `com_barbearia`
-    nao aninha, e segurar transacao durante uma chamada de rede nao ajuda
-    ninguem.
+    Desde a etapa 1 do numero central (spec 2026-10-06) sai SEMPRE pelo
+    central: o numero da barbearia nao fica mais ligado a Evolution. A
+    assinatura com `barbearia_id` fica para nao mexer em quem chama.
     """
-    instancia = None
-    if Barbearia.objects.filter(
-        id=barbearia_id, ativo=True, plano=PlanoBarbearia.COM_ZAP,
-    ).exists():
-        with com_barbearia(barbearia_id):
-            linha = WhatsappInstancia.objects.filter(barbearia_id=barbearia_id).first()
-        if linha is not None and linha.estado == EstadoInstancia.CONECTADO:
-            instancia = linha.nome
+    enviar_a_equipe(whatsapp_digitos, mensagem)
 
-    if instancia is None:
-        enviar_a_equipe(whatsapp_digitos, mensagem)
-        return
-    _enviar(instancia, whatsapp_digitos, mensagem)
+
+def enviar_a_equipe_aceita(whatsapp_digitos: str, mensagem: str) -> Aceita | None:
+    """`enviar_a_equipe` para quem precisa do que a Evolution devolveu — a
+    lista do dia guarda o id e o jid para poder apaga-la depois."""
+    return _enviar_aceita(_config()["instancia"], whatsapp_digitos, mensagem)
 
 
 def enviar_ao_cliente(
     barbearia, whatsapp_digitos: str, mensagem: str, *, tipo: str, cliente_nome: str,
 ) -> bool:
-    """Manda pela instancia DA BARBEARIA. Devolve se saiu.
+    """Manda ao cliente pelo numero CENTRAL. Devolve se saiu.
 
-    Tres caminhos, e cada um e uma decisao ja tomada:
+    - **sem zap**: nao manda e NAO registra — o cliente desse plano nunca
+      esperou WhatsApp. (Desde a etapa 1 toda barbearia e' com zap; o caminho
+      fica para os planos futuros.)
+    - **sem `EVOLUTION_API_URL`** (desenvolvimento): so' loga. Nao houve
+      queda, so' nao ha servidor — registrar encheria o painel de mentira.
+    - **envio recusado ou rede fora**: nao sai e FICA REGISTRADA. Sem fila:
+      uma confirmacao tres horas atrasada e' pior que nenhuma.
 
-    - **sem zap**: nao manda e NAO registra. O cliente desse plano nunca
-      esperou WhatsApp nenhum — ele viu a confirmacao na tela. Registrar aqui
-      encheria o painel de "nao enviadas" que nao representam perda nenhuma.
-    - **com zap, conectado**: sai pelo numero da barbearia.
-    - **com zap, fora do ar**: nao sai e FICA REGISTRADA. Sem fila e sem
-      fallback pelo central: uma confirmacao que chega tres horas depois,
-      quando o cliente ja ligou para perguntar, e pior que nenhuma; e mandar
-      pelo central faria o cliente receber de um numero que ele nao conhece.
-      O que a linha compra e o painel poder dizer "N mensagens nao enviadas" —
-      o dono descobre a queda pelo prejuizo, e nao so pela faixa.
+    Isto desfaz a regra antiga "o central nunca fala com cliente" (spec
+    2026-10-06, secao 2): risco aceito pelo Jose — se o chip cair, equipe e
+    clientes param juntos ate a troca.
     """
     if barbearia.plano != PlanoBarbearia.COM_ZAP:
         return False
 
-    with com_barbearia(barbearia.id):
-        linha = WhatsappInstancia.objects.filter(barbearia_id=barbearia.id).first()
+    cfg = _config()
+    if not cfg["url"]:
+        logger.info("[whatsapp] sem EVOLUTION_API_URL: %s %s", whatsapp_digitos, mensagem)
+        return False
 
-    if linha is not None and linha.estado == EstadoInstancia.CONECTADO:
-        _enviar(linha.nome, whatsapp_digitos, mensagem)
+    if _enviar_aceita(cfg["instancia"], whatsapp_digitos, mensagem) is not None:
         return True
 
     _registrar_nao_enviada(barbearia, tipo, cliente_nome)
@@ -152,9 +137,9 @@ def _registrar_nao_enviada(barbearia, tipo: str, cliente_nome: str) -> None:
         logger.error("[whatsapp] falha ao registrar mensagem nao enviada: %s", e)
 
 
-def _enviar(
+def _enviar_aceita(
     instancia: str, whatsapp_digitos: str, mensagem: str, *, digitando_ms: int | None = None,
-) -> str | None:
+) -> Aceita | None:
     """Fire-and-forget. Falha de WhatsApp NUNCA derruba um agendamento (§10.2).
 
     Porte fiel de `enviarTexto` (marcai-front/src/lib/whatsapp.ts): loga e
@@ -172,7 +157,7 @@ def _enviar(
     isso o timeout cresce junto. Sem ele, sai na hora (confirmacao do site e
     avisos rodam dentro do pedido HTTP de alguem, e nao podem esperar).
 
-    Devolve o id da mensagem aceita, ou None.
+    Devolve o que a Evolution aceitou (`Aceita`), ou None quando nao saiu.
     """
     cfg = _config()
     if not cfg["url"]:
@@ -210,13 +195,56 @@ def _enviar(
         corpo = r.json()
     except ValueError:
         pass
-    chave = (corpo or {}).get("key", {})
-    jid = chave.get("remoteJid", "?")
+    chave = (corpo or {}).get("key") or {}
+    jid = chave.get("remoteJid")
     status = (corpo or {}).get("status", "?")
-    logger.info("[whatsapp] aceito para %s (jid %s, status %s)", whatsapp_digitos, jid, status)
-    # O id sobe para quem chamou. Os envios de sempre o ignoram; o bot o
-    # guarda para reconhecer o eco da propria mensagem no webhook.
-    return chave.get("id")
+    logger.info(
+        "[whatsapp] aceito para %s (jid %s, status %s)", whatsapp_digitos, jid or "?", status,
+    )
+    # O id e o jid sobem para quem chamou. O bot guarda o id para reconhecer
+    # o eco da propria resposta; a lista do dia guarda os dois para apagar.
+    return Aceita(chave.get("id"), jid)
+
+
+def _enviar(
+    instancia: str, whatsapp_digitos: str, mensagem: str, *, digitando_ms: int | None = None,
+) -> str | None:
+    """O id da mensagem aceita, ou None. O que o bot sempre usou."""
+    aceita = _enviar_aceita(instancia, whatsapp_digitos, mensagem, digitando_ms=digitando_ms)
+    return aceita.id if aceita is not None else None
+
+
+def apagar_para_todos(jid: str | None, mensagem_id: str | None) -> bool:
+    """Apaga, para todos, uma mensagem que o CENTRAL mandou. Devolve se a
+    Evolution aceitou. Nunca levanta: quem chama (a lista refeita) manda a
+    lista nova de qualquer jeito — uma lista velha que nao sumiu e' feia, uma
+    lista nova que nao chegou e' prejuizo.
+
+    Premissa medida na Task 12 do plano: ha relato de a 2.3.7 nao apagar
+    (evolution-api#592).
+    """
+    cfg = _config()
+    if not cfg["url"] or not jid or not mensagem_id:
+        return False
+
+    try:
+        r = requests.delete(
+            f"{cfg['url']}/chat/deleteMessageForEveryone/{cfg['instancia']}",
+            json={"id": mensagem_id, "remoteJid": jid, "fromMe": True},
+            headers={"apikey": cfg["chave"]},
+            timeout=3,
+        )
+    except requests.RequestException as e:
+        logger.error("[whatsapp] falha ao apagar %s: %s", mensagem_id, e)
+        return False
+
+    if not r.ok:
+        logger.error(
+            "[whatsapp] apagar recusado (%s) para %s: %s",
+            r.status_code, mensagem_id, r.text[:300],
+        )
+        return False
+    return True
 
 
 def numero_existe(barbearia, whatsapp_digitos: str, ip: str) -> str:
@@ -235,26 +263,20 @@ def numero_existe(barbearia, whatsapp_digitos: str, ip: str) -> str:
     causa disso seria perder um horario por um dado que aquele plano nao usa.
     Ali sobra a validacao de formato, que ja existe antes desta chamada.
 
-    Com zap, a pergunta e' feita pela instancia DA BARBEARIA: a central pode
-    nem ter vinculo de pe, e perguntar por ela devolveria `indeterminado` para
-    todo mundo. Instancia da barbearia fora do ar cai no mesmo
-    `indeterminado` de sempre — deixa passar.
+    Com zap, a pergunta e' feita pela instancia CENTRAL (etapa 1 do numero
+    central, spec 2026-10-06): e' ela que vai mandar a mensagem. Central fora
+    do ar cai no mesmo `indeterminado` de sempre — deixa passar.
     """
     if barbearia.plano != PlanoBarbearia.COM_ZAP:
         return "indeterminado"
 
     cfg = _config()
-    if not cfg["url"]:
+    if not cfg["url"] or not cfg["instancia"]:
         return "indeterminado"
 
-    with com_barbearia(barbearia.id):
-        linha = WhatsappInstancia.objects.filter(barbearia_id=barbearia.id).first()
-    if linha is None or linha.estado != EstadoInstancia.CONECTADO:
-        return "indeterminado"
-
-    # Chave com a barbearia dentro: o cache guarda a resposta de UMA instancia,
-    # e uma instancia desconectada responde diferente da conectada ao lado.
-    chave = f"{barbearia.id}:{whatsapp_digitos}"
+    # Pela CENTRAL: a resposta e' a mesma para toda barbearia, entao o cache
+    # e' por numero.
+    chave = whatsapp_digitos
     guardado = _cache_numero.get(chave)
     if guardado and guardado["expira_em"] > _agora_ms():
         return "existe" if guardado["existe"] else "nao_existe"
@@ -271,7 +293,7 @@ def numero_existe(barbearia, whatsapp_digitos: str, ip: str) -> str:
 
     try:
         r = requests.post(
-            f"{cfg['url']}/chat/whatsappNumbers/{linha.nome}",
+            f"{cfg['url']}/chat/whatsappNumbers/{cfg['instancia']}",
             json={"numbers": [f"55{whatsapp_digitos}"]},
             headers={"apikey": cfg["chave"]},
             timeout=CHECK_NUMERO_TIMEOUT_MS / 1000,
