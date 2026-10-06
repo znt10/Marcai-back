@@ -48,6 +48,8 @@ nao um usuario final, e o dado nunca chega a trocar de dono.
 
 from django.contrib import admin
 
+from app.services.admin_barbearias import apagar_barbearia, o_que_sai_com
+from tenant.middleware import AdminDjangoMiddleware
 from tenant.models import (
     Agendamento,
     Barbearia,
@@ -92,10 +94,54 @@ class BarbeariaAdmin(admin.ModelAdmin):
     `Barbearia` e' a unica das oito tabelas de tenant fora do RLS (e' lida
     antes de existir tenant, no `TenantMiddleware`), entao esta lista mostra
     TODAS as barbearias, nao so' a escolhida.
+
+    **Toda escrita aqui vai pela conexao `admin`.** O admin do Django usa a
+    `default` (`brutus_app`), que nao escreve nesta tabela (o REVOKE da 0002);
+    sem os metodos abaixo, salvar e apagar davam 500 com "permission denied".
+
+    **Apagar leva junto tudo o que e' da barbearia** — barbeiros, servicos,
+    clientes, agendamentos, o WhatsApp —, e a tela de confirmacao diz quanto
+    de cada. Sem isso nenhuma barbearia de verdade sairia: as chaves para ela
+    sao RESTRICT, e ela sempre tem pelo menos o dono.
     """
 
     list_display = ("slug", "nome", "ativo", "criado_em")
     search_fields = ("slug", "nome")
+
+    def save_model(self, request, obj, form, change):
+        obj.save(using="admin")
+
+    def get_deleted_objects(self, objs, request):
+        # Contado pela conexao `admin`, barbearia a barbearia: o Django contaria
+        # pela `default`, presa no RLS da barbearia escolhida no seletor, e
+        # chamaria de "protegido" o que aqui vai junto.
+        itens, resumo = [], {}
+        for barbearia in objs:
+            filhos = []
+            for modelo, n in o_que_sai_com(barbearia.id):
+                if not n:
+                    continue
+                opts = modelo._meta
+                filhos.append(f"{n} {opts.verbose_name if n == 1 else opts.verbose_name_plural}")
+                resumo[opts.verbose_name_plural] = resumo.get(opts.verbose_name_plural, 0) + n
+            itens += [f"Barbearia: {barbearia}", filhos]
+        resumo = {Barbearia._meta.verbose_name_plural: len(objs), **resumo}
+        return itens, resumo, set(), []
+
+    def delete_model(self, request, obj):
+        self._apagar(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        for barbearia in queryset:
+            self._apagar(request, barbearia)
+
+    def _apagar(self, request, barbearia):
+        apagar_barbearia(barbearia.id)
+        # Apagada a escolhida, a sessao apontaria para um id que nao existe e
+        # toda lista viria vazia sem explicar. Sem a chave, o middleware manda
+        # de volta ao seletor.
+        if request.session.get(AdminDjangoMiddleware.CHAVE_SESSAO) == str(barbearia.id):
+            del request.session[AdminDjangoMiddleware.CHAVE_SESSAO]
 
 
 @admin.register(Barbeiro)
