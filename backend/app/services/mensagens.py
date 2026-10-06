@@ -198,6 +198,33 @@ def msg_lista_do_dia(*, barbeiro_nome: str, agendamentos: list[dict], agora) -> 
     return cabecalho + "\n" + "\n".join(linhas)
 
 
+def msg_lista_refeita(*, barbeiro_nome: str, linhas: list[dict], agora) -> str:
+    """A lista de HOJE de novo, depois que ela mudou (a anterior foi
+    apagada). Mesma linha da lista das 07:00, com duas marcas que so' valem
+    nesta mensagem: "🆕" no horario que acabou de entrar e o riscado do
+    WhatsApp ("~...~") no que acabou de sair. Na proxima lista o novo vira
+    linha comum e o cancelado some.
+
+    `linhas`: [{"cliente_nome", "servico_nome", "inicio", "marca"}], ja em
+    ordem de horario, com `marca` None, "novo" ou "cancelado".
+    """
+    partes = [f"{barbeiro_nome.split()[0]}, sua agenda de hoje mudou:"]
+    for linha in linhas:
+        base = _linha_do_horario(
+            cliente_nome=linha["cliente_nome"], servico_nome=linha["servico_nome"],
+            inicio=linha["inicio"], agora=agora,
+        )
+        if linha["marca"] == "novo":
+            partes.append(f"🆕 {base}")
+        elif linha["marca"] == "cancelado":
+            partes.append(f"~{base}~ cancelou")
+        else:
+            partes.append(base)
+    if all(linha["marca"] == "cancelado" for linha in linhas):
+        partes.append("Não sobrou horário hoje.")
+    return "\n".join(partes)
+
+
 # ---- O bot de agendamento -------------------------------------------------
 #
 # Menu NUMERADO, e o numero sozinho e' a unica coisa que o bot entende (spec,

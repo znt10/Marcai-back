@@ -6,6 +6,7 @@ from celery import shared_task
 from app.services.bot import processar as processar_mensagem_do_bot
 from app.services.lembrete import enviar_pendentes
 from app.services.lista_do_dia import enviar as enviar_lista_do_dia
+from app.services.lista_do_dia import refazer as refazer_lista_do_dia
 from app.services.whatsapp import estado_da_instancia
 from app.services.whatsapp_eventos import aplicar_estado
 from app.services.whatsapp_instancias import consultar_estado, garantir_instancia
@@ -56,6 +57,20 @@ def lista_do_dia() -> int:
     o painel.
     """
     return enviar_lista_do_dia(datetime.now(timezone.utc))
+
+
+@shared_task(ignore_result=True)
+def refazer_lista(barbearia_id: str, barbeiro_id: str, novos: list, cancelados: list) -> str:
+    """A lista de hoje de um barbeiro, apagada e mandada de novo depois que
+    a agenda mudou. Fora do pedido HTTP: sao duas idas a Evolution, e quem
+    marcou nao espera por elas.
+
+    NAO RETENTA: uma lista que chega minutos depois, por cima de uma mais
+    nova, desarrumaria a ordem — a proxima mudanca refaz de qualquer jeito.
+    """
+    return refazer_lista_do_dia(
+        barbearia_id, barbeiro_id, novos, cancelados, datetime.now(timezone.utc),
+    )
 
 
 @shared_task

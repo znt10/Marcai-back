@@ -18,8 +18,9 @@ from tenant.config import BOT_ESPERA_TRAVA_S
 
 
 @contextmanager
-def trava_da_conversa(barbearia_id: str, whatsapp: str, *, espera_s: float = BOT_ESPERA_TRAVA_S):
-    chave = f"{barbearia_id}:{whatsapp}"
+def trava_consultiva(chave: str, *, espera_s: float = BOT_ESPERA_TRAVA_S):
+    """Uma trava consultiva do Postgres por `chave`, na CONEXAO — ver o
+    docstring do modulo. A conversa do bot e a lista do dia refeita usam."""
     with connection.cursor() as cur:
         # `lock_timeout` vale para trava consultiva tambem. Sem ele, um worker
         # preso numa conversa travada ficaria parado para sempre. RESET logo
@@ -35,3 +36,9 @@ def trava_da_conversa(barbearia_id: str, whatsapp: str, *, espera_s: float = BOT
     finally:
         with connection.cursor() as cur:
             cur.execute("SELECT pg_advisory_unlock(hashtextextended(%s, 0))", [chave])
+
+
+@contextmanager
+def trava_da_conversa(barbearia_id: str, whatsapp: str, *, espera_s: float = BOT_ESPERA_TRAVA_S):
+    with trava_consultiva(f"{barbearia_id}:{whatsapp}", espera_s=espera_s):
+        yield

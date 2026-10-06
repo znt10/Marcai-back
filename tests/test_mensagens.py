@@ -212,3 +212,39 @@ def test_sem_barbearia_o_texto_e_o_de_sempre():
         inicio=INICIO, endereco="Rua Aurora, 88", link="http://x/y",
     )
     assert texto.startswith("Fechou, Maria!")
+
+
+def test_lista_refeita_marca_o_novo_e_risca_o_cancelado():
+    from datetime import timedelta
+
+    from app.services.mensagens import msg_lista_refeita
+
+    texto = msg_lista_refeita(
+        barbeiro_nome="Zeca Silva",
+        linhas=[
+            {"cliente_nome": "João Silva", "servico_nome": "Corte", "inicio": INICIO, "marca": None},
+            {"cliente_nome": "Pedro Lima", "servico_nome": "Barba",
+             "inicio": INICIO + timedelta(hours=7), "marca": "novo"},
+            {"cliente_nome": "Ana Souza", "servico_nome": "Corte",
+             "inicio": INICIO + timedelta(hours=8), "marca": "cancelado"},
+        ],
+        agora=AGORA,
+    )
+    assert texto == (
+        "Zeca, sua agenda de hoje mudou:\n"
+        "João Silva · hoje 08:00 · Corte\n"
+        "🆕 Pedro Lima · hoje 15:00 · Barba\n"
+        "~Ana Souza · hoje 16:00 · Corte~ cancelou"
+    )
+
+
+def test_lista_refeita_sem_horario_restante_diz_que_esvaziou():
+    from app.services.mensagens import msg_lista_refeita
+
+    texto = msg_lista_refeita(
+        barbeiro_nome="Zeca Silva",
+        linhas=[{"cliente_nome": "Ana Souza", "servico_nome": "Corte",
+                 "inicio": INICIO, "marca": "cancelado"}],
+        agora=AGORA,
+    )
+    assert texto.endswith("~Ana Souza · hoje 08:00 · Corte~ cancelou\nNão sobrou horário hoje.")
