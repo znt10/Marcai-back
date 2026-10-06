@@ -59,6 +59,13 @@ def link_do_convite(slug: str, token: str) -> str:
     return f"{esquema}://{slug}.{host}/convite/{token}"
 
 
+def link_da_vitrine(slug: str) -> str:
+    """A pagina publica da barbearia — o link que a saudacao do WhatsApp
+    Business manda para quem escreve."""
+    esquema, host = _base_valida()
+    return f"{esquema}://{slug}.{host}"
+
+
 def link_do_agendamento(slug: str, codigo: str) -> str:
     """O link de cancelar da confirmacao que o BOT manda. A rota publica monta
     o seu a partir do `Origin` do navegador; o bot nao tem navegador nenhum,

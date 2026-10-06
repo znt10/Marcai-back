@@ -374,3 +374,13 @@ def msg_lembrete_com_opcoes(*, lembrete: str) -> str:
 
 def msg_bot_pergunta_do_lembrete() -> str:
     return f"Responde 1 pra confirmar ou 2 se não for conseguir ir.\n\n{_OPCOES_DO_LEMBRETE}"
+
+
+def msg_saudacao(*, link: str) -> str:
+    """O texto que o dono cola na "Mensagem de saudação" do WhatsApp
+    Business (etapa 1): sai do numero da propria barbearia, por isso sem o
+    nome dela."""
+    return (
+        f"Oi! Pra marcar seu horário, é só tocar no link: {link}\n"
+        "Se preferir, espera uns minutinhos que já vamos te responder."
+    )

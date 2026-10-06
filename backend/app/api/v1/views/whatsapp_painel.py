@@ -8,17 +8,12 @@ MENSAGEM_SO_DONO = "Só o dono conecta o WhatsApp."
 
 
 class WhatsappPainelView(ExigeSessao, APIView):
-    """GET /api/painel/whatsapp — de TODO barbeiro logado, de proposito.
-
-    `ExigeSessao` e nao `ExigeDono` porque a faixa de "WhatsApp desconectado"
-    e' para a equipe inteira: um barbeiro que nao a visse passaria a tarde sem
-    entender por que cliente nenhum confirma. O que o papel filtra e' um campo
-    so' — o `qrBase64`, que o servico devolve nulo para quem nao e dono, e que
-    na mao de um barbeiro ligaria o WhatsApp da barbearia ao celular dele.
-    """
+    """GET /api/painel/whatsapp — de todo barbeiro logado: a saudacao e' so'
+    um texto para copiar, e a contagem de nao enviadas interessa a quem
+    atende o cliente que ligou perguntando."""
 
     def get(self, request):
-        return Response(ver(request.barbearia, self.papel))
+        return Response(ver(request.barbearia))
 
 
 class WhatsappDesconectarView(ExigeDono, APIView):
