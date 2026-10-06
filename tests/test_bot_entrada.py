@@ -21,6 +21,16 @@ from tenant.rls import com_barbearia
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
+
+@pytest.fixture(autouse=True)
+def _bot_disponivel(monkeypatch):
+    """O bot esta desligado em producao (etapa 1 do numero central), mas o
+    codigo fica para o plano de agendar pelo WhatsApp: estes casos o testam
+    ligado."""
+    from tenant import config
+
+    monkeypatch.setattr(config, "BOT_DISPONIVEL", True)
+
 ROTA = "/api/interno/whatsapp/evento"
 SEGREDO = "segredo-do-webhook"
 CABECALHO = {"host": "admin.localhost", "x-brutus-cliente": "evolution", "x-marcai-webhook": SEGREDO}

@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from django.utils import timezone
 
+from tenant import config
 from tenant.config import LEMBRETE_ANTECEDENCIA_MIN
 from tenant.models import (
     Agendamento,
@@ -57,7 +58,8 @@ def enviar_pendentes(agora: datetime) -> int:
         # Qualquer outro caso segue `enviar_ao_cliente`, que ja sabe registrar
         # a "nao enviada" quando o numero esta fora do ar.
         pelo_bot = (
-            b.plano == PlanoBarbearia.COM_ZAP
+            config.BOT_DISPONIVEL
+            and b.plano == PlanoBarbearia.COM_ZAP
             and instancia is not None
             and instancia.bot_ativo
             and instancia.estado == EstadoInstancia.CONECTADO

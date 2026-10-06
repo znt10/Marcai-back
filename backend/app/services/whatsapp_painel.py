@@ -11,6 +11,7 @@ import logging
 
 from django.utils import timezone
 
+from tenant import config
 from tenant.models import (
     EstadoInstancia,
     MensagemNaoEnviada,
@@ -133,6 +134,9 @@ def ligar_bot(barbearia, ativo: bool) -> bool:
     abriria a janela em que o banco diz "ligado" e nenhuma mensagem chega —
     e se a aplicacao falhasse, a janela nunca fecharia. Falhou, nada muda.
     """
+    # Desligar continua passando: e' o que leva uma linha velha a False.
+    if ativo and not config.BOT_DISPONIVEL:
+        return False
     if barbearia.plano != PlanoBarbearia.COM_ZAP:
         return False
 
