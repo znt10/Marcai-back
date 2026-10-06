@@ -22,6 +22,7 @@ from .convite import link_da_vitrine
 from .mensagens import msg_saudacao
 from .whatsapp_instancias import aplicar_assinatura, desconectar_aparelho
 
+
 def ver(barbearia) -> dict:
     with com_barbearia(barbearia.id):
         nao_enviadas = MensagemNaoEnviada.objects.filter(barbearia_id=barbearia.id).count()
