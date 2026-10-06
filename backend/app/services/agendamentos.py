@@ -125,6 +125,8 @@ def marcar(
         )
 
     return {
+        "id": novo_id,
+        "barbeiro_id": str(barbeiro_id),
         "codigo": codigo,
         "barbeiro_nome": vinculo.barbeiro.nome,
         # O numero do barbeiro sobe junto porque quem marca e' o CLIENTE, e o
@@ -158,6 +160,7 @@ def cancelar(barbearia_id: str, agendamento_id: str, filtro_barbeiro_id: str | N
             status="CANCELADO_BARBEIRO", cancelado_em=timezone.now(),
         )
         return {
+            "id": str(a.id), "barbeiro_id": str(a.barbeiro_id),
             "cliente_nome": a.cliente.nome, "cliente_whatsapp": a.cliente.whatsapp,
             "barbeiro_nome": a.barbeiro.nome, "servico_nome": a.servico_nome, "inicio": a.inicio,
         }
@@ -230,6 +233,8 @@ def cancelar_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict:
         )
         return {
             "tipo": "ok",
+            "id": str(a.id),
+            "barbeiro_id": str(a.barbeiro_id),
             "cliente_nome": a.cliente.nome,
             "cliente_whatsapp": a.cliente.whatsapp,
             "barbeiro_nome": a.barbeiro.nome,

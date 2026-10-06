@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 
 from app.api.v1.mixins import NAO_ENCONTRADO, ExigeSessao
 from app.api.v1.serializers.agendamentos import CriarAgendamentoSerializer
+from app.services import lista_do_dia
 from app.services.agendamentos import ErroCliente, cancelar, eh_sobreposicao, marcar
 from app.services.autorizacao import filtro_do_barbeiro
 from app.services.mensagens import msg_cancelamento_pela_barbearia, msg_confirmacao
@@ -71,6 +72,14 @@ class AgendamentosPainelView(ExigeSessao, APIView):
             tipo=TipoMensagem.CONFIRMACAO,
             cliente_nome=d["nome"],
         )
+        # Painel nao manda aviso curto ao barbeiro (nunca mandou); mas a
+        # lista de HOJE, se ja saiu, e' refeita — inclusive para quem marcou
+        # na propria agenda: a lista antiga some, e a que fica tem que estar
+        # certa.
+        lista_do_dia.avisar_mudanca(
+            self.barbearia_id, criado["barbeiro_id"], agora,
+            novos=[(criado["id"], criado["inicio"])],
+        )
         return Response({"codigo": criado["codigo"]}, status=201)
 
 
@@ -95,5 +104,9 @@ class AgendamentoCancelarView(ExigeSessao, APIView):
             ),
             tipo=TipoMensagem.CANCELAMENTO,
             cliente_nome=cancelado["cliente_nome"],
+        )
+        lista_do_dia.avisar_mudanca(
+            self.barbearia_id, cancelado["barbeiro_id"], datetime.now(timezone.utc),
+            cancelados=[(cancelado["id"], cancelado["inicio"])],
         )
         return Response({"ok": True})
