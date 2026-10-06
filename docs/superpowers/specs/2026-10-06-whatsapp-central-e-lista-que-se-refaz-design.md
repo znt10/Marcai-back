@@ -135,7 +135,7 @@ Cancelamento pelo proprio cliente:
 
 ```
 *{Barbearia}*
-Horário de {quinta 10/09} às {9:00}, com {barbeiro}, cancelado. Até a próxima!
+Horário de {quinta 10/09} às {9:00}, com {barbeiro} cancelado. Até a próxima!
 ```
 
 As mensagens da equipe nao mudam de texto: os barbeiros sabem que o numero e'
