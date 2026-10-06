@@ -93,7 +93,7 @@ def limpar_banco(request):
                 "tenant_bloqueio, tenant_horariotrabalho, "
                 "tenant_barbeiroservico, tenant_servico, tenant_barbeiro, "
                 "tenant_whatsappinstancia, tenant_mensagemnaoenviada, "
-                "tenant_conversawhatsapp, "
+                "tenant_listadodiaenviada, tenant_conversawhatsapp, "
                 "tenant_barbearia RESTART IDENTITY CASCADE"
             )
 
@@ -131,9 +131,14 @@ def cenario():
 
     dados = {}
     for slug, nome in (("brutus", "Brutus"), ("dontony", "Dom Tony")):
+        # `SEM_ZAP` EXPLICITO: o default do modelo virou `COM_ZAP` na etapa 1
+        # do numero central, e os casos antigos foram escritos sobre uma
+        # barbearia que nao manda nada ao cliente. Quem precisa de com zap
+        # sobe o plano no proprio teste, como sempre fez.
         b = Barbearia.objects.using("owner").create(
             id=str(uuid.uuid4()),
             slug=slug,
+            plano="SEM_ZAP",
             nome=nome,
             endereco="Rua Aurora, 88",
             horario_resumo=None,

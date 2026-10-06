@@ -165,3 +165,21 @@ def test_conversa_do_bot_nao_vaza_entre_barbearias(cenario):
     # Fora do wrapper, ZERO: o numero de quem conversa com uma barbearia nao
     # pode aparecer numa consulta que esqueceu o tenant.
     assert ConversaWhatsapp.objects.count() == 0
+
+
+def test_lista_do_dia_enviada_nao_vaza_entre_barbearias(cenario):
+    from tenant.models import ListaDoDiaEnviada
+
+    for slug, mensagem in (("brutus", "ID-BRUTUS"), ("dontony", "ID-DONTONY")):
+        b = cenario[slug]
+        barbeiro = Barbeiro.objects.using("owner").filter(barbearia_id=b.id).first()
+        ListaDoDiaEnviada.objects.using("owner").create(
+            id=str(uuid.uuid4()), barbearia_id=b.id, barbeiro_id=barbeiro.id,
+            dia="2026-10-06", mensagem_id=mensagem, remote_jid="x@s.whatsapp.net",
+        )
+
+    with com_barbearia(cenario["brutus"].id):
+        assert list(ListaDoDiaEnviada.objects.values_list("mensagem_id", flat=True)) == [
+            "ID-BRUTUS"
+        ]
+    assert ListaDoDiaEnviada.objects.count() == 0

@@ -353,17 +353,15 @@ def test_criar_com_zap_deixa_a_instancia_pendente_e_chama_a_evolution(client, ev
     assert evolution_simulada["garantir"].call_count == 1
 
 
-def test_criar_sem_plano_nasce_sem_zap_e_nao_fala_com_a_evolution(client, evolution_simulada):
+def test_criar_sem_plano_nasce_com_zap(client, evolution_simulada):
+    """Etapa 1 do numero central: toda barbearia manda WhatsApp ao cliente
+    (pelo central). O seletor de plano saiu do admin."""
     from tenant.models import Barbearia
 
     _logar_admin(client)
     r = _criar_barbearia(client)
     assert r.status_code == 201
-
-    b = Barbearia.objects.using("owner").get(id=r.json()["id"])
-    assert b.plano == "SEM_ZAP"
-    assert _instancia_de(b.id) is None
-    assert evolution_simulada["garantir"].call_count == 0
+    assert Barbearia.objects.using("owner").get(id=r.json()["id"]).plano == "COM_ZAP"
 
 
 def test_criar_com_plano_inventado_da_422(client, evolution_simulada):

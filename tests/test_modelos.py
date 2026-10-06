@@ -84,3 +84,17 @@ def test_o_id_e_uuid_de_verdade():
     assert isinstance(Barbearia._meta.get_field("id"), models.UUIDField)
     assert isinstance(Barbeiro._meta.get_field("id"), models.UUIDField)
     assert Barbeiro._meta.get_field("barbearia").target_field.column == "id"
+
+
+@pytest.mark.django_db(databases=["default", "owner"], transaction=True)
+def test_a_migracao_poe_toda_barbearia_com_zap(cenario):
+    """O `cenario` nasce SEM_ZAP (explicito no conftest): a funcao de dados
+    da 0007 tem que levar as duas para COM_ZAP."""
+    import importlib
+    from types import SimpleNamespace
+
+    from django.apps import apps
+
+    migracao = importlib.import_module("tenant.migrations.0007_whatsapp_central")
+    migracao._todas_com_zap(apps, SimpleNamespace(connection=SimpleNamespace(alias="owner")))
+    assert set(Barbearia.objects.using("owner").values_list("plano", flat=True)) == {"COM_ZAP"}

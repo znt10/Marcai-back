@@ -58,7 +58,7 @@ def criar(dados: dict) -> dict:
     if not SLUG_REGEX.fullmatch(slug) or slug in SUBDOMINIOS_RESERVADOS:
         return {"tipo": "slug_invalido"}
 
-    plano = str(dados.get("plano") or PlanoBarbearia.SEM_ZAP)
+    plano = str(dados.get("plano") or PlanoBarbearia.COM_ZAP)
     if plano not in PlanoBarbearia.values:
         return {"tipo": "plano_invalido"}
 
