@@ -76,9 +76,14 @@ def enviar_pendentes(agora: datetime) -> int:
             # commit correspondente nunca chegar a acontecer.
             with com_barbearia(b.id):
                 Agendamento.objects.filter(id=a.id).update(lembrete_enviado_em=timezone.now())
+            # Pelo bot (numero da propria barbearia) o texto e' o de sempre;
+            # pelo central, leva o nome da barbearia e o numero dela.
             texto = msg_lembrete(
                 servico_nome=a.servico_nome, barbeiro_nome=a.barbeiro.nome,
                 inicio=a.inicio, endereco=b.endereco,
+                **({} if pelo_bot else {
+                    "barbearia_nome": b.nome, "contato": b.whatsapp_contato,
+                }),
             )
             if pelo_bot:
                 # Import tardio: bot -> agendamentos -> lembrete.

@@ -176,7 +176,7 @@ def test_marca_sem_sessao_e_manda_confirmacao(client, cenario):
     # garante e' que o do cliente continua saindo.
     assert mock_envia.call_count == 2
     confirmacao = mock_envia.texto_para("11977778888")
-    assert confirmacao.startswith("Fechou,")
+    assert confirmacao.startswith("*Brutus*\nFechou,")
 
     from tenant.models import Agendamento
 

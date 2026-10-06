@@ -92,6 +92,8 @@ class BloqueiosView(ExigeSessao, APIView):
                     servico_nome=dados["servico_nome"],
                     inicio=dados["inicio"],
                     endereco=request.barbearia.endereco,
+                    barbearia_nome=request.barbearia.nome,
+                    contato=request.barbearia.whatsapp_contato,
                 ),
                 tipo=TipoMensagem.CANCELAMENTO,
                 cliente_nome=dados["cliente_nome"],

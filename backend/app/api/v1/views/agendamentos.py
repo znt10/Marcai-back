@@ -80,6 +80,8 @@ class AgendamentosView(ExigeTenant, APIView):
                 cliente_nome=d["nome"], barbeiro_nome=criado["barbeiro_nome"],
                 servico_nome=criado["servico_nome"], inicio=criado["inicio"],
                 endereco=request.barbearia.endereco, link=link,
+                barbearia_nome=request.barbearia.nome,
+                contato=request.barbearia.whatsapp_contato,
             ),
             tipo=TipoMensagem.CONFIRMACAO,
             cliente_nome=d["nome"],
@@ -134,6 +136,7 @@ class AgendamentoCancelarPublicoView(ExigeTenant, APIView):
                 resultado["cliente_whatsapp"],
                 msg_cancelamento(
                     barbeiro_nome=resultado["barbeiro_nome"], inicio=resultado["inicio"],
+                    barbearia_nome=request.barbearia.nome,
                 ),
                 tipo=TipoMensagem.CANCELAMENTO,
                 cliente_nome=resultado["cliente_nome"],
