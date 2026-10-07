@@ -200,7 +200,7 @@ def msg_lista_do_dia(*, barbeiro_nome: str, agendamentos: list[dict], agora) -> 
 
 def msg_lista_refeita(*, barbeiro_nome: str, linhas: list[dict], agora) -> str:
     """A lista de HOJE de novo, depois que ela mudou (a anterior foi
-    apagada). Mesma linha da lista das 07:00, com uma marca que so' vale
+    apagada). Mesma linha da lista das 06:30, com uma marca que so' vale
     nesta mensagem: "🆕" no horario que acabou de entrar. Na proxima lista
     ele vira linha comum.
 

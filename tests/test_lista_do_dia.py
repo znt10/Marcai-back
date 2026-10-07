@@ -1,4 +1,4 @@
-"""A lista das 07:00.
+"""A lista das 06:30.
 
 Duas regras foram decididas e sao o que estes casos prendem: **cada um recebe
 so os proprios horarios, o dono inclusive** e **dia vazio nao manda nada.** As
@@ -27,11 +27,11 @@ from tenant.models import (
 
 pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
-# 07:00 de Sao Paulo num dia FIXO — a hora em que a tarefa roda de verdade.
+# 06:30 de Sao Paulo num dia FIXO — a hora em que a tarefa roda de verdade.
 # Data fixa, e nao `now()`, porque um `now()` faria estes casos falharem so
 # entre 21:00 e 00:00 (quando a data local e a UTC divergem), que e o pior
 # tipo de teste: verde o dia todo e vermelho na hora de sair.
-AGORA = local_para_utc("2026-09-16", 7 * 60)
+AGORA = local_para_utc("2026-09-16", 6 * 60 + 30)
 
 
 def _barbeiro(barbearia, nome, papel="BARBEIRO", ativo=True):
@@ -59,7 +59,7 @@ def _agendamento(barbearia, barbeiro, minutos_do_dia, cliente_nome="Ana", status
     )
 
 
-def _rodar(aceita=Aceita("ID-07H", "jid-07h")):
+def _rodar(aceita=Aceita("ID-MANHA", "jid-manha")):
     with patch.object(lista_do_dia, "enviar_a_equipe_aceita", return_value=aceita) as envia:
         enviados = lista_do_dia.enviar(AGORA)
     return enviados, {c.args[0]: c.args[1] for c in envia.call_args_list}
@@ -75,7 +75,7 @@ def test_a_lista_das_7_sai_pelo_central_e_fica_guardada(cenario):
 
     linha = ListaDoDiaEnviada.objects.using("owner").get(barbeiro_id=zeca.id)
     assert (str(linha.dia), linha.mensagem_id, linha.remote_jid) == (
-        dia_de_hoje(AGORA), "ID-07H", "jid-07h",
+        dia_de_hoje(AGORA), "ID-MANHA", "jid-manha",
     )
 
 
@@ -107,7 +107,7 @@ def test_cada_barbeiro_recebe_so_os_proprios_horarios(cenario):
 
 def test_o_dono_tambem_recebe_so_os_dele(cenario):
     """O dono ja ve a agenda inteira no painel. Receber a de todo mundo todo
-    dia as sete da manha e ruido, nao servico."""
+    dia as seis e meia da manha e ruido, nao servico."""
     b = cenario["brutus"]
     dono = _barbeiro(b, "Dona Chefe", papel="DONO")
     zeca = _barbeiro(b, "Zeca Silva")
@@ -368,7 +368,7 @@ def test_duas_mudancas_seguidas_a_segunda_apaga_a_lista_da_primeira(cenario):
     zeca = _barbeiro(b, "Zeca Silva")
     primeiro = _agendamento(b, zeca, 14 * 60)
     segundo = _agendamento(b, zeca, 15 * 60)
-    _guardada(b, zeca, "ID-07H", "jid-07h")
+    _guardada(b, zeca, "ID-MANHA", "jid-manha")
 
     _refazer(b, zeca, novos=[primeiro], aceita=Aceita("ID-1", "jid-1"))
     _, apagar, _ = _refazer(b, zeca, novos=[segundo], aceita=Aceita("ID-2", "jid-2"))
@@ -429,19 +429,19 @@ def test_mudanca_de_hoje_depois_das_7_enfileira(cenario, refazer_enfileirado):
     refazer_enfileirado.assert_called_once_with(str(b.id), str(zeca.id), [str(novo.id)], [])
 
 
-def test_mudanca_de_hoje_as_6_59_nao_enfileira(cenario, refazer_enfileirado):
-    """Antes das 07:00 a mudanca entra na lista das 07:00."""
+def test_mudanca_de_hoje_as_6_29_nao_enfileira(cenario, refazer_enfileirado):
+    """Antes das 06:30 a mudanca entra na lista das 06:30."""
     b = cenario["brutus"]
     zeca = _barbeiro(b, "Zeca Silva")
     novo = _agendamento(b, zeca, 15 * 60)
 
     assert _avisar(
-        b, zeca, local_para_utc("2026-09-16", 6 * 60 + 59), novos=[novo],
+        b, zeca, local_para_utc("2026-09-16", 6 * 60 + 29), novos=[novo],
     ) == lista_do_dia.SEM_LISTA
     refazer_enfileirado.assert_not_called()
 
 
-def test_mudanca_de_hoje_as_7_em_ponto_enfileira(cenario, refazer_enfileirado):
+def test_mudanca_de_hoje_as_6_30_em_ponto_enfileira(cenario, refazer_enfileirado):
     b = cenario["brutus"]
     zeca = _barbeiro(b, "Zeca Silva")
     novo = _agendamento(b, zeca, 15 * 60)

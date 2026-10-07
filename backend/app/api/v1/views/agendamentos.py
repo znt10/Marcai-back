@@ -87,10 +87,10 @@ class AgendamentosView(ExigeTenant, APIView):
             tipo=TipoMensagem.CONFIRMACAO,
             cliente_nome=d["nome"],
         )
-        # E o barbeiro, so' o que e' de HOJE: depois que a lista das 07:00
+        # E o barbeiro, so' o que e' de HOJE: depois que a lista das 06:30
         # saiu, ele recebe a lista inteira refeita, com o horario novo
         # marcado. Outro dia nao manda nada — ele ve no painel e na lista das
-        # 07:00 daquele dia. Ate 07/10/2026 todo horario mandava "Novo
+        # 06:30 daquele dia. Ate 07/10/2026 todo horario mandava "Novo
         # horário", e com a casa cheia o WhatsApp dele virava fila de aviso.
         # O aviso curto ficou so' para a fila fora do ar.
         mudanca = lista_do_dia.avisar_mudanca(
@@ -150,7 +150,7 @@ class AgendamentoCancelarPublicoView(ExigeTenant, APIView):
                 tipo=TipoMensagem.CANCELAMENTO,
                 cliente_nome=resultado["cliente_nome"],
             )
-            # Mesma regra de marcar: hoje, depois das 07:00, a lista refeita
+            # Mesma regra de marcar: hoje, depois das 06:30, a lista refeita
             # sem o horario que caiu; outro dia, nada. So' no `tipo == "ok"` —
             # o `ja_cancelado` cai fora deste bloco de proposito, senao dois
             # toques no botao refariam a lista duas vezes.

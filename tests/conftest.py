@@ -160,7 +160,7 @@ def cenario():
 @pytest.fixture(autouse=True)
 def refazer_enfileirado():
     """Nenhum teste fala com o Redis: marcar ou cancelar para HOJE depois das
-    07:00 enfileira `refazer_lista`, e sem broker de verdade o `.delay`
+    06:30 enfileira `refazer_lista`, e sem broker de verdade o `.delay`
     travaria. Os casos que querem saber o que foi enfileirado pedem esta
     fixture pelo nome."""
     from unittest.mock import patch

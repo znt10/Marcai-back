@@ -508,7 +508,7 @@ def test_cancelar_codigo_inexistente_e_404(client, cenario):
 # barbeiro, de qualquer dia, e cada desmarcada mandava "Cancelou" — com a
 # casa cheia, o WhatsApp dele virava uma fila de avisos. Agora so' o que e'
 # de HOJE chega, pela lista refeita; o resto ele ve no painel e na lista das
-# 07:00 daquele dia. O aviso curto ficou so' para a fila fora do ar.
+# 06:30 daquele dia. O aviso curto ficou so' para a fila fora do ar.
 
 
 def _marcar(client, barbeiro, servico, inicio):
@@ -531,7 +531,7 @@ def _cancelar(client, agendamento):
 
 
 def test_marcar_sem_lista_a_refazer_nao_avisa_o_barbeiro(client, cenario):
-    """Outro dia, ou hoje antes das 07:00 (entra na lista das 07:00)."""
+    """Outro dia, ou hoje antes das 06:30 (entra na lista das 06:30)."""
     b = cenario["brutus"]
     barbeiro = _barbeiro(b.id)
     servico = _servico_vinculado(b.id, barbeiro)

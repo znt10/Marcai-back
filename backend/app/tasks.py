@@ -49,7 +49,7 @@ def whatsapp_healthcheck() -> str:
 
 @shared_task
 def lista_do_dia() -> int:
-    """As 07:00 de Sao Paulo (o `CELERY_TIMEZONE` ja e esse), pelo numero
+    """As 06:30 de Sao Paulo (o `CELERY_TIMEZONE` ja e esse), pelo numero
     CENTRAL, nos dois planos.
 
     E a mensagem que faz o plano sem zap valer alguma coisa: la o cliente nao

@@ -288,8 +288,8 @@ CELERY_BEAT_SCHEDULE = {
     "conferir-instancias": {"task": "app.tasks.conferir_instancias", "schedule": 300.0},
     # `crontab` e nao intervalo: esta tem HORA, e uma agenda por intervalo
     # derivaria alguns minutos a cada reinicio do beat ate a lista do dia
-    # chegar as 07:20. O fuso vem do CELERY_TIMEZONE (America/Sao_Paulo).
-    "lista-do-dia": {"task": "app.tasks.lista_do_dia", "schedule": crontab(hour=7, minute=0)},
+    # chegar as 06:50. O fuso vem do CELERY_TIMEZONE (America/Sao_Paulo).
+    "lista-do-dia": {"task": "app.tasks.lista_do_dia", "schedule": crontab(hour=6, minute=30)},
     "zelador": {"task": "app.tasks.zelador", "schedule": 3600.0},
 }
 

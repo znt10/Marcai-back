@@ -1,4 +1,4 @@
-"""A lista de horarios que cada barbeiro recebe as 07:00.
+"""A lista de horarios que cada barbeiro recebe as 06:30.
 
 E a mensagem que faz o plano SEM ZAP valer alguma coisa: naquele plano o
 cliente nao recebe nada, e sem isto o barbeiro tambem nao — ele so saberia da
@@ -12,7 +12,7 @@ Duas regras que foram decididas e que o codigo aqui so obedece:
 
 - **Cada um recebe so os proprios horarios, o dono inclusive.** O dono ja ve a
   agenda inteira no painel; receber por WhatsApp a agenda de todo mundo todo
-  dia as sete da manha e ruido, nao servico.
+  dia as seis e meia da manha e ruido, nao servico.
 - **Dia vazio nao manda nada.** "Voce nao tem horario hoje" e uma mensagem que
   so serve para a pessoa aprender a ignorar as mensagens seguintes.
 """
@@ -36,13 +36,14 @@ from .whatsapp import Aceita, apagar_para_todos, enviar_a_equipe_aceita
 
 logger = logging.getLogger(__name__)
 
-# A hora da lista (o `crontab(hour=7)` do settings). Depois dela, mudanca na
-# agenda de hoje refaz a lista; antes, a mudanca entra na das 07:00.
-HORA_DA_LISTA_MIN = 7 * 60
+# A hora da lista (o `crontab(hour=6, minute=30)` do settings — um teste em
+# test_celery.py prende os dois juntos). Depois dela, mudanca na agenda de
+# hoje refaz a lista; antes, a mudanca entra na das 06:30.
+HORA_DA_LISTA_MIN = 6 * 60 + 30
 
 # O que `avisar_mudanca` responde a quem mexeu na agenda.
 ENFILEIRADA = "enfileirada"  # a lista de hoje vai ser refeita
-SEM_LISTA = "sem_lista"  # outro dia, ou antes das 07:00: nada sai agora
+SEM_LISTA = "sem_lista"  # outro dia, ou antes das 06:30: nada sai agora
 FILA_FORA = "fila_fora"  # era para refazer, e a fila nao aceitou
 
 
@@ -51,8 +52,8 @@ def enviar(agora: datetime) -> int:
     sai de um `now()` la dentro) pelo mesmo motivo de `enviar_pendentes`: hora
     e a variavel que mais precisa ser fixada no teste.
 
-    O dia e' recortado no fuso de Sao Paulo, e nao em UTC. As 07:00 daqui sao
-    10:00 UTC — um recorte em UTC pegaria de 21:00 de ontem ate 21:00 de hoje
+    O dia e' recortado no fuso de Sao Paulo, e nao em UTC. As 06:30 daqui sao
+    09:30 UTC — um recorte em UTC pegaria de 21:00 de ontem ate 21:00 de hoje
     e a lista sairia com os horarios da noite anterior dentro.
     """
     hoje = dia_de_hoje(agora)
@@ -120,8 +121,8 @@ def avisar_mudanca(barbearia_id, barbeiro_id, agora: datetime, *, novos=(), canc
     """Chamada por quem mexe na agenda (site, painel, bloqueio), DEPOIS do
     commit. `novos`/`cancelados`: pares `(agendamento_id, inicio)`.
 
-    Enfileira a lista refeita so' para o que e' de HOJE e so' de 07:00 em
-    diante — antes disso a mudanca entra na lista das 07:00, e a de outro
+    Enfileira a lista refeita so' para o que e' de HOJE e so' de 06:30 em
+    diante — antes disso a mudanca entra na lista das 06:30, e a de outro
     dia, na lista daquele dia. Devolve ENFILEIRADA, SEM_LISTA ou FILA_FORA:
     o site so' manda o aviso curto ("Novo horário"/"Cancelou") no FILA_FORA,
     o unico caso em que o barbeiro nao ficaria sabendo de hoje por outro
@@ -161,7 +162,7 @@ def refazer(
     `refazer_lista`, fora do pedido HTTP.
 
     A trava e' por barbeiro e dia: duas mudancas seguidas saem em ordem, e a
-    segunda apaga a lista da PRIMEIRA (e nao a das 07:00, que a primeira ja
+    segunda apaga a lista da PRIMEIRA (e nao a das 06:30, que a primeira ja
     apagou). Consultiva e nao `select_for_update` porque segura duas idas a
     Evolution, e a linha pode nem existir ainda.
 
