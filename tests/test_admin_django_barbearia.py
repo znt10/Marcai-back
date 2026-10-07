@@ -208,6 +208,30 @@ def test_editar_barbearia_pelo_admin(client, cenario):
     assert Barbearia.objects.using("owner").get(id=b.id).nome == "Brutus Novo"
 
 
+def test_editar_barbearia_sem_horario_resumo(client, cenario):
+    """Barbearia recem-criada nao tem horario (o dono e' quem preenche); o
+    admin tem de deixar trocar o WhatsApp mesmo assim, e o vazio fica nulo."""
+    from tenant.models import Barbearia
+
+    b = cenario["brutus"]
+    _entrar(client, b)
+
+    r = client.post(
+        f"/admin/django/tenant/barbearia/{b.id}/change/",
+        {
+            "id": str(b.id), "slug": "brutus", "nome": "Brutus", "endereco": "Rua Aurora, 88",
+            "horario_resumo": "", "whatsapp_contato": "13988771112", "plano": "SEM_ZAP",
+            "ativo": "on", "criado_em_0": "2026-08-11", "criado_em_1": "09:00:00",
+        },
+        headers={"host": HOST},
+    )
+
+    assert r.status_code == 302
+    salva = Barbearia.objects.using("owner").get(id=b.id)
+    assert salva.whatsapp_contato == "13988771112"
+    assert salva.horario_resumo is None
+
+
 def test_toda_tabela_que_aponta_para_barbearia_sai_junto():
     """Uma tabela de tenant nova, esquecida na ordem de apagar, faria o apagar
     voltar a estourar no banco. Este teste e' quem lembra."""
