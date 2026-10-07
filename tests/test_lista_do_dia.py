@@ -282,7 +282,9 @@ def test_refazer_apaga_a_anterior_e_manda_a_nova_com_o_novo_marcado(cenario):
     assert (linha.mensagem_id, linha.remote_jid) == ("ID-NOVA", "jid-nova")
 
 
-def test_refazer_risca_o_cancelado(cenario):
+def test_refazer_tira_o_cancelado_sem_riscar(cenario):
+    """O cancelado so' some da lista: o barbeiro le a agenda como ficou, sem
+    linha riscada para decifrar."""
     b = cenario["brutus"]
     zeca = _barbeiro(b, "Zeca Silva")
     _agendamento(b, zeca, 9 * 60, cliente_nome="Fica")
@@ -290,15 +292,19 @@ def test_refazer_risca_o_cancelado(cenario):
         b, zeca, 11 * 60, cliente_nome="Desmarcou",
         status=StatusAgendamento.CANCELADO_CLIENTE,
     )
+    _guardada(b, zeca)
 
-    _, _, envia = _refazer(b, zeca, cancelados=[saiu])
+    resultado, apagar, envia = _refazer(b, zeca, cancelados=[saiu])
     texto = envia.call_args.args[1]
-    assert "~Desmarcou · hoje 11:00 ·" in texto and texto.endswith("~ cancelou")
+    assert resultado == "refeita"
+    apagar.assert_called_once_with("jid-antiga", "ID-ANTIGA")
+    assert "Desmarcou" not in texto
+    assert "~" not in texto and "cancelou" not in texto
     assert "\nFica ·" in texto
 
 
 def test_cancelado_de_antes_nao_aparece_na_lista_refeita(cenario):
-    """O riscado vale so' na lista daquela mudanca."""
+    """Nem o cancelado desta mudanca nem o de antes aparecem."""
     b = cenario["brutus"]
     zeca = _barbeiro(b, "Zeca Silva")
     _agendamento(b, zeca, 9 * 60)
@@ -336,9 +342,25 @@ def test_refazer_sem_horario_restante_avisa(cenario):
     b = cenario["brutus"]
     zeca = _barbeiro(b, "Zeca Silva")
     saiu = _agendamento(b, zeca, 11 * 60, status=StatusAgendamento.CANCELADO_BARBEIRO)
+    _guardada(b, zeca)
 
-    _, _, envia = _refazer(b, zeca, cancelados=[saiu])
-    assert envia.call_args.args[1].endswith("Não sobrou horário hoje.")
+    resultado, apagar, envia = _refazer(b, zeca, cancelados=[saiu])
+    assert resultado == "refeita"
+    apagar.assert_called_once_with("jid-antiga", "ID-ANTIGA")
+    assert envia.call_args.args[1] == "Zeca, sua agenda de hoje mudou:\nNão sobrou horário hoje."
+
+
+def test_refazer_sem_mudanca_que_sobrou_nao_manda(cenario):
+    """O horario novo foi desmarcado antes de a fila chegar nele, e o dia nao
+    tem mais nada: nao ha o que dizer. Quem avisa que esvaziou e' a mudanca
+    do cancelamento, que vem logo atras."""
+    b = cenario["brutus"]
+    zeca = _barbeiro(b, "Zeca Silva")
+    sumiu = _agendamento(b, zeca, 15 * 60, status=StatusAgendamento.CANCELADO_CLIENTE)
+
+    resultado, _, envia = _refazer(b, zeca, novos=[sumiu])
+    assert resultado == "vazia"
+    envia.assert_not_called()
 
 
 def test_duas_mudancas_seguidas_a_segunda_apaga_a_lista_da_primeira(cenario):
@@ -403,7 +425,7 @@ def test_mudanca_de_hoje_depois_das_7_enfileira(cenario, refazer_enfileirado):
     zeca = _barbeiro(b, "Zeca Silva")
     novo = _agendamento(b, zeca, 15 * 60)
 
-    assert _avisar(b, zeca, TARDE, novos=[novo]) is True
+    assert _avisar(b, zeca, TARDE, novos=[novo]) == lista_do_dia.ENFILEIRADA
     refazer_enfileirado.assert_called_once_with(str(b.id), str(zeca.id), [str(novo.id)], [])
 
 
@@ -413,7 +435,9 @@ def test_mudanca_de_hoje_as_6_59_nao_enfileira(cenario, refazer_enfileirado):
     zeca = _barbeiro(b, "Zeca Silva")
     novo = _agendamento(b, zeca, 15 * 60)
 
-    assert _avisar(b, zeca, local_para_utc("2026-09-16", 6 * 60 + 59), novos=[novo]) is False
+    assert _avisar(
+        b, zeca, local_para_utc("2026-09-16", 6 * 60 + 59), novos=[novo],
+    ) == lista_do_dia.SEM_LISTA
     refazer_enfileirado.assert_not_called()
 
 
@@ -422,7 +446,7 @@ def test_mudanca_de_hoje_as_7_em_ponto_enfileira(cenario, refazer_enfileirado):
     zeca = _barbeiro(b, "Zeca Silva")
     novo = _agendamento(b, zeca, 15 * 60)
 
-    assert _avisar(b, zeca, AGORA, novos=[novo]) is True
+    assert _avisar(b, zeca, AGORA, novos=[novo]) == lista_do_dia.ENFILEIRADA
 
 
 def test_mudanca_de_amanha_nao_enfileira(cenario, refazer_enfileirado):
@@ -432,7 +456,7 @@ def test_mudanca_de_amanha_nao_enfileira(cenario, refazer_enfileirado):
     zeca = _barbeiro(b, "Zeca Silva")
     amanha = _agendamento(b, zeca, 15 * 60, dia=somar_dias(dia_de_hoje(AGORA), 1))
 
-    assert _avisar(b, zeca, TARDE, novos=[amanha]) is False
+    assert _avisar(b, zeca, TARDE, novos=[amanha]) == lista_do_dia.SEM_LISTA
     refazer_enfileirado.assert_not_called()
 
 
@@ -445,7 +469,7 @@ def test_so_os_de_hoje_vao_para_a_fila(cenario, refazer_enfileirado):
     hoje = _agendamento(b, zeca, 15 * 60)
     amanha = _agendamento(b, zeca, 15 * 60, dia=somar_dias(dia_de_hoje(AGORA), 1))
 
-    assert _avisar(b, zeca, TARDE, cancelados=[hoje, amanha]) is True
+    assert _avisar(b, zeca, TARDE, cancelados=[hoje, amanha]) == lista_do_dia.ENFILEIRADA
     refazer_enfileirado.assert_called_once_with(str(b.id), str(zeca.id), [], [str(hoje.id)])
 
 
@@ -480,13 +504,13 @@ def test_manda_a_nova_antes_de_apagar_a_anterior(cenario):
 
 def test_fila_fora_do_ar_nao_derruba_quem_marcou(cenario, refazer_enfileirado, caplog):
     """`avisar_mudanca` roda depois do commit: uma fila fora do ar nao pode
-    virar 500 numa tela onde o horario ja esta marcado. Devolve False, e o
-    site cai no aviso curto."""
+    virar 500 numa tela onde o horario ja esta marcado. Devolve FILA_FORA, e
+    o site cai no aviso curto."""
     b = cenario["brutus"]
     zeca = _barbeiro(b, "Zeca Silva")
     novo = _agendamento(b, zeca, 15 * 60)
     refazer_enfileirado.side_effect = OSError("broker fora")
 
     with caplog.at_level("ERROR"):
-        assert _avisar(b, zeca, TARDE, novos=[novo]) is False
+        assert _avisar(b, zeca, TARDE, novos=[novo]) == lista_do_dia.FILA_FORA
     assert "broker fora" in caplog.text

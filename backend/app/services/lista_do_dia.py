@@ -20,8 +20,6 @@ Duas regras que foram decididas e que o codigo aqui so obedece:
 import logging
 from datetime import datetime
 
-from django.db.models import Q
-
 from tenant.datas import dia_de_hoje, local_para_utc, utc_para_local
 from tenant.models import (
     Agendamento,
@@ -41,6 +39,11 @@ logger = logging.getLogger(__name__)
 # A hora da lista (o `crontab(hour=7)` do settings). Depois dela, mudanca na
 # agenda de hoje refaz a lista; antes, a mudanca entra na das 07:00.
 HORA_DA_LISTA_MIN = 7 * 60
+
+# O que `avisar_mudanca` responde a quem mexeu na agenda.
+ENFILEIRADA = "enfileirada"  # a lista de hoje vai ser refeita
+SEM_LISTA = "sem_lista"  # outro dia, ou antes das 07:00: nada sai agora
+FILA_FORA = "fila_fora"  # era para refazer, e a fila nao aceitou
 
 
 def enviar(agora: datetime) -> int:
@@ -113,33 +116,35 @@ def _guardar(barbearia_id, barbeiro_id, dia: str, aceita: Aceita | None) -> bool
     return True
 
 
-def avisar_mudanca(barbearia_id, barbeiro_id, agora: datetime, *, novos=(), cancelados=()) -> bool:
+def avisar_mudanca(barbearia_id, barbeiro_id, agora: datetime, *, novos=(), cancelados=()) -> str:
     """Chamada por quem mexe na agenda (site, painel, bloqueio), DEPOIS do
     commit. `novos`/`cancelados`: pares `(agendamento_id, inicio)`.
 
     Enfileira a lista refeita so' para o que e' de HOJE e so' de 07:00 em
-    diante — antes disso a mudanca entra na lista das 07:00. Devolve se
-    enfileirou: quem chama pelo site usa isso para NAO mandar tambem o aviso
-    curto ("Novo horário"/"Cancelou").
+    diante — antes disso a mudanca entra na lista das 07:00, e a de outro
+    dia, na lista daquele dia. Devolve ENFILEIRADA, SEM_LISTA ou FILA_FORA:
+    o site so' manda o aviso curto ("Novo horário"/"Cancelou") no FILA_FORA,
+    o unico caso em que o barbeiro nao ficaria sabendo de hoje por outro
+    caminho.
     """
     hoje, minutos_agora = utc_para_local(agora)
     if minutos_agora < HORA_DA_LISTA_MIN:
-        return False
+        return SEM_LISTA
 
     def de_hoje(pares):
         return [str(i) for i, inicio in pares if utc_para_local(inicio)[0] == hoje]
 
     ids_novos, ids_cancelados = de_hoje(novos), de_hoje(cancelados)
     if not ids_novos and not ids_cancelados:
-        return False
+        return SEM_LISTA
     try:
         _enfileirar_refazer(str(barbearia_id), str(barbeiro_id), ids_novos, ids_cancelados)
     except Exception as e:  # noqa: BLE001 — roda depois do commit
         # A marcacao ja esta gravada: uma fila fora do ar nao pode virar 500
-        # na tela de quem marcou. False faz o site cair no aviso curto.
+        # na tela de quem marcou. FILA_FORA faz o site cair no aviso curto.
         logger.error("[lista-do-dia] nao deu para enfileirar a lista de %s: %s", barbeiro_id, e)
-        return False
-    return True
+        return FILA_FORA
+    return ENFILEIRADA
 
 
 def _enfileirar_refazer(barbearia_id: str, barbeiro_id: str, novos: list, cancelados: list) -> None:
@@ -160,6 +165,10 @@ def refazer(
     apagou). Consultiva e nao `select_for_update` porque segura duas idas a
     Evolution, e a linha pode nem existir ainda.
 
+    O cancelado nao aparece riscado: so' sai da lista, e o barbeiro le a
+    agenda como ficou. `cancelados` so' serve para saber que houve mudanca
+    quando nao sobrou horario — ai a nova diz que o dia esvaziou.
+
     MANDA a nova e so' entao apaga a anterior. Na ordem contraria, um envio
     que falhasse deixaria o barbeiro sem lista nenhuma — e, pelo site, sem o
     aviso curto tambem, que ja foi trocado pela lista. Apagar que falha nao
@@ -175,10 +184,10 @@ def refazer(
             do_dia = list(
                 Agendamento.objects.filter(
                     barbeiro_id=barbeiro_id,
+                    status=StatusAgendamento.CONFIRMADO,
                     inicio__gte=local_para_utc(hoje, 0),
                     inicio__lt=local_para_utc(hoje, 24 * 60),
                 )
-                .filter(Q(status=StatusAgendamento.CONFIRMADO) | Q(id__in=ids_cancelados))
                 .select_related("cliente")
                 .order_by("inicio")
             )
@@ -186,19 +195,16 @@ def refazer(
 
         if barbeiro is None:
             return "sem_barbeiro"
-        if not do_dia:
+        if not do_dia and not ids_cancelados:
             return "vazia"
 
-        linhas = []
-        for a in do_dia:
-            if a.status == StatusAgendamento.CONFIRMADO:
-                marca = "novo" if str(a.id) in ids_novos else None
-            else:
-                marca = "cancelado"
-            linhas.append({
+        linhas = [
+            {
                 "cliente_nome": a.cliente.nome, "servico_nome": a.servico_nome,
-                "inicio": a.inicio, "marca": marca,
-            })
+                "inicio": a.inicio, "marca": "novo" if str(a.id) in ids_novos else None,
+            }
+            for a in do_dia
+        ]
 
         aceita = enviar_a_equipe_aceita(
             barbeiro.whatsapp,
