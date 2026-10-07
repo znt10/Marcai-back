@@ -108,6 +108,18 @@ class BarbeariaAdmin(admin.ModelAdmin):
     list_display = ("slug", "nome", "ativo", "criado_em")
     search_fields = ("slug", "nome")
 
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        campo = super().formfield_for_dbfield(db_field, request, **kwargs)
+        # `horario_resumo` e' nulo ate o dono preencher, mas o model nao tem
+        # `blank=True` e o Django o exigia aqui: sem isto nao dava para
+        # corrigir o WhatsApp de uma barbearia recem-criada. Vazio volta como
+        # None, nunca "" — nulo e string vazia seriam dois jeitos de dizer o
+        # mesmo (ver o model).
+        if db_field.name == "horario_resumo":
+            campo.required = False
+            campo.empty_value = None
+        return campo
+
     def save_model(self, request, obj, form, change):
         obj.save(using="admin")
 
