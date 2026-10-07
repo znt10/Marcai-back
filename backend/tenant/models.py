@@ -124,6 +124,12 @@ class Barbearia(models.Model):
     plano = models.CharField(
         max_length=20, choices=PlanoBarbearia, default=PlanoBarbearia.COM_ZAP,
     )
+    # A hora da lista do dia da equipe, em minutos desde a meia-noite de Sao
+    # Paulo. O DONO escolhe, na tela de WhatsApp do painel: uma barbearia que
+    # abre as 06:00 quer a lista antes disso. As horas que valem e o porque
+    # moram em `lista_do_dia.HORAS_DA_LISTA_MIN`. Segunda coluna que o runtime
+    # escreve (GRANT por coluna na 0009), ao lado de `horario_resumo`.
+    hora_da_lista_min = models.PositiveSmallIntegerField(default=6 * 60 + 30)
     ativo = models.BooleanField(default=True)
     criado_em = models.DateTimeField(default=timezone.now)
 

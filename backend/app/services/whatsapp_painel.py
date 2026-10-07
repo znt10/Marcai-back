@@ -1,6 +1,6 @@
 """O que o painel da barbearia sabe sobre o WhatsApp dela, desde a etapa 1
 do numero central (spec 2026-10-06): o texto pronto da saudacao, com o link,
-e quantas mensagens de cliente nao sairam. Nao ha mais QR nem estado de
+quantas mensagens de cliente nao sairam e a hora da lista do dia da equipe. Nao ha mais QR nem estado de
 conexao — o numero da barbearia nao fica ligado a nada.
 
 `desconectar` e `ligar_bot` ficam para quando o numero da barbearia voltar a
@@ -19,6 +19,7 @@ from tenant.models import (
 from tenant.rls import com_barbearia
 
 from .convite import link_da_vitrine
+from .lista_do_dia import HORAS_DA_LISTA_MIN, hora_da_lista
 from .mensagens import msg_saudacao
 from .whatsapp_instancias import aplicar_assinatura, desconectar_aparelho
 
@@ -29,7 +30,25 @@ def ver(barbearia) -> dict:
     return {
         "saudacao": msg_saudacao(link=link_da_vitrine(barbearia.slug)),
         "naoEnviadas": nao_enviadas,
+        "horaDaLista": hhmm(hora_da_lista(barbearia.id)),
+        "horasDaLista": [hhmm(m) for m in HORAS_DA_LISTA_MIN],
     }
+
+
+def hhmm(minutos: int) -> str:
+    return f"{minutos // 60:02d}:{minutos % 60:02d}"
+
+
+def minutos_de(hora) -> int | None:
+    """Converte "07:30" em 450. None para o que nao for "HH:MM" — a
+    conferencia de que a hora e' uma das escolhiveis fica em
+    `mudar_hora_da_lista`."""
+    if not isinstance(hora, str) or len(hora) != 5 or hora[2] != ":":
+        return None
+    h, m = hora[:2], hora[3:]
+    if not (h.isdigit() and m.isdigit()):
+        return None
+    return int(h) * 60 + int(m)
 
 
 def desconectar(barbearia) -> bool:

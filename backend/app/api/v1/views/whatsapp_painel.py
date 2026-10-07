@@ -2,7 +2,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from app.api.v1.mixins import ExigeDono, ExigeSessao
-from app.services.whatsapp_painel import desconectar, ligar_bot, ver
+from app.services.lista_do_dia import mudar_hora_da_lista
+from app.services.whatsapp_painel import desconectar, hhmm, ligar_bot, minutos_de, ver
 
 MENSAGEM_SO_DONO = "Só o dono conecta o WhatsApp."
 
@@ -50,3 +51,22 @@ class WhatsappBotView(ExigeDono, APIView):
                 status=422,
             )
         return Response({"ok": True, "botAtivo": ativo})
+
+
+class WhatsappHoraDaListaView(ExigeDono, APIView):
+    """POST /api/painel/whatsapp/hora-da-lista — a hora em que cada barbeiro
+    recebe a lista do dia. So' o dono: ela vale para a equipe inteira."""
+
+    mensagem_papel_insuficiente = "Só o dono muda a hora da lista."
+
+    def post(self, request):
+        hora = request.data.get("hora") if isinstance(request.data, dict) else None
+        minutos = minutos_de(hora)
+        try:
+            mudar_hora_da_lista(request.barbearia.id, minutos)
+        except ValueError:
+            return Response(
+                {"erro": "Escolhe uma hora entre 05:00 e 11:30, de meia em meia hora."},
+                status=422,
+            )
+        return Response({"ok": True, "horaDaLista": hhmm(minutos)})

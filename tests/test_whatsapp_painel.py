@@ -106,9 +106,8 @@ def _url_base(monkeypatch):
 def test_todo_barbeiro_ve_a_saudacao_com_o_link_da_barbearia(client, cenario, papel):
     b = cenario["brutus"]
     host = _logar(client, _barbeiro(b.id, papel), b)
-    assert client.get(ROTA, headers={"host": host}).json() == {
-        "saudacao": SAUDACAO, "naoEnviadas": 0,
-    }
+    dados = client.get(ROTA, headers={"host": host}).json()
+    assert (dados["saudacao"], dados["naoEnviadas"]) == (SAUDACAO, 0)
 
 
 def test_conta_as_mensagens_que_nao_sairam(client, cenario):
@@ -129,3 +128,68 @@ def test_nao_ve_as_nao_enviadas_da_outra(client, cenario):
     b = cenario["brutus"]
     host = _logar(client, _barbeiro(b.id, "DONO"), b)
     assert client.get(ROTA, headers={"host": host}).json()["naoEnviadas"] == 0
+
+
+# ------------------------------------------------- a hora da lista do dia
+
+
+def _mudar_hora(client, host, hora):
+    return client.post(
+        f"{ROTA}/hora-da-lista", {"hora": hora}, content_type="application/json",
+        headers={"host": host, "x-brutus-cliente": "web"},
+    )
+
+
+@pytest.mark.parametrize("papel", ["DONO", "BARBEIRO"])
+def test_todo_barbeiro_ve_a_hora_da_lista_e_as_que_podem(client, cenario, papel):
+    b = cenario["brutus"]
+    host = _logar(client, _barbeiro(b.id, papel), b)
+    dados = client.get(ROTA, headers={"host": host}).json()
+    assert dados["horaDaLista"] == "06:30"
+    assert dados["horasDaLista"][0] == "05:00"
+    assert dados["horasDaLista"][-1] == "11:30"
+    assert "07:15" not in dados["horasDaLista"]
+
+
+def test_dono_muda_a_hora_e_ja_ve_a_nova(client, cenario):
+    """Pelo runtime (`brutus_app`): prova o GRANT por coluna da 0009. E
+    ve a nova na hora, e nao depois do cache de slug expirar."""
+    b = cenario["brutus"]
+    host = _logar(client, _barbeiro(b.id, "DONO"), b)
+    client.get(ROTA, headers={"host": host})
+
+    r = _mudar_hora(client, host, "08:00")
+
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "horaDaLista": "08:00"}
+    assert Barbearia.objects.using("owner").get(id=b.id).hora_da_lista_min == 8 * 60
+    assert client.get(ROTA, headers={"host": host}).json()["horaDaLista"] == "08:00"
+
+
+def test_mudar_a_hora_nao_mexe_na_outra_barbearia(client, cenario):
+    b, outra = cenario["brutus"], cenario["dontony"]
+    host = _logar(client, _barbeiro(b.id, "DONO"), b)
+
+    assert _mudar_hora(client, host, "05:30").status_code == 200
+    assert Barbearia.objects.using("owner").get(id=outra.id).hora_da_lista_min == 6 * 60 + 30
+
+
+def test_barbeiro_nao_muda_a_hora(client, cenario):
+    """Ela vale para a equipe inteira."""
+    b = cenario["brutus"]
+    host = _logar(client, _barbeiro(b.id), b)
+
+    assert _mudar_hora(client, host, "08:00").status_code == 403
+    assert Barbearia.objects.using("owner").get(id=b.id).hora_da_lista_min == 6 * 60 + 30
+
+
+@pytest.mark.parametrize("hora", ["07:15", "12:00", "04:30", "8:00", "oito", "", None, 480])
+def test_hora_que_nao_e_das_escolhiveis_da_422(client, cenario, hora):
+    b = cenario["brutus"]
+    host = _logar(client, _barbeiro(b.id, "DONO"), b)
+
+    r = _mudar_hora(client, host, hora)
+
+    assert r.status_code == 422
+    assert "05:00" in r.json()["erro"]
+    assert Barbearia.objects.using("owner").get(id=b.id).hora_da_lista_min == 6 * 60 + 30
