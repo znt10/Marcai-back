@@ -555,8 +555,12 @@ class ListaDoDiaEnviada(models.Model):
     barbearia = models.ForeignKey(
         Barbearia, on_delete=models.RESTRICT, related_name="listas_enviadas",
     )
+    # CASCADE, e nao RESTRICT como o resto: esta linha nao e' historico de
+    # ninguem, so' o endereco da mensagem para a Evolution apagar. RESTRICT
+    # segurava o barbeiro de teste no admin depois de tudo apagado, e ela nao
+    # tem tela para ser apagada a mao (07/10/2026).
     barbeiro = models.ForeignKey(
-        Barbeiro, on_delete=models.RESTRICT, related_name="listas_enviadas",
+        Barbeiro, on_delete=models.CASCADE, related_name="listas_enviadas",
     )
     # A data LOCAL (Sao Paulo) da lista — a mesma de `dia_de_hoje(agora)`.
     dia = models.DateField()
