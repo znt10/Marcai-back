@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
+from app.services.lista_do_dia import ENFILEIRADA, FILA_FORA, SEM_LISTA
 from tenant.datas import dia_semana_de, utc_para_local
 
 
@@ -154,9 +155,9 @@ def _sem_whatsapp_de_verdade(monkeypatch):
 def lista_refeita():
     """Por padrao, nenhuma mudanca cai na lista de hoje: os casos daqui
     marcam "daqui a pouco", e a decisao real dependeria da hora em que a
-    suite roda. Quem testa a troca do aviso curto pela lista liga o
+    suite roda. Quem testa a lista refeita ou a fila fora do ar troca o
     retorno."""
-    with patch("app.services.lista_do_dia.avisar_mudanca", return_value=False) as avisar:
+    with patch("app.services.lista_do_dia.avisar_mudanca", return_value=SEM_LISTA) as avisar:
         yield avisar
 
 
@@ -181,10 +182,9 @@ def test_marca_sem_sessao_e_manda_confirmacao(client, cenario):
         )
     assert r.status_code == 201
     assert "codigo" in r.json()
-    # Dois envios desde que o barbeiro passou a ser avisado
-    # (`test_marcar_avisa_o_barbeiro_alem_do_cliente`). O que ESTE teste
-    # garante e' que o do cliente continua saindo.
-    assert mock_envia.call_count == 2
+    # So' o do cliente: sem lista de hoje para refazer, o barbeiro nao
+    # recebe nada (`test_marcar_sem_lista_a_refazer_nao_avisa_o_barbeiro`).
+    assert mock_envia.call_count == 1
     confirmacao = mock_envia.texto_para("11977778888")
     assert confirmacao.startswith("*Brutus*\nFechou,")
 
@@ -452,12 +452,9 @@ def test_cancelar_dentro_do_prazo_ok_e_avisa(client, cenario):
         )
     assert r.status_code == 200
     assert r.json() == {"ok": True}
-    # Idem: o cliente e o barbeiro. Aqui interessa o aviso do CLIENTE.
-    assert mock_envia.call_count == 2
-    do_cliente = next(
-        texto for numero, texto in mock_envia.pares if numero != barbeiro.whatsapp
-    )
-    assert "cancel" in do_cliente.lower()
+    # Idem: so' o cliente.
+    assert mock_envia.call_count == 1
+    assert "cancel" in mock_envia.pares[0][1].lower()
 
     from tenant.models import Agendamento
 
@@ -505,33 +502,72 @@ def test_cancelar_codigo_inexistente_e_404(client, cenario):
     assert r.status_code == 404
 
 
-# ------------------------------------------------- o barbeiro tambem e' avisado
+# ------------------------------------------------- o barbeiro, so' o que e' de hoje
 #
-# Ate aqui o WhatsApp so falava com o CLIENTE. Alguem marcava as 22h de domingo
-# e o barbeiro so descobria abrindo o painel na segunda.
+# Ate 07/10/2026 todo horario marcado pelo site mandava "Novo horário" ao
+# barbeiro, de qualquer dia, e cada desmarcada mandava "Cancelou" — com a
+# casa cheia, o WhatsApp dele virava uma fila de avisos. Agora so' o que e'
+# de HOJE chega, pela lista refeita; o resto ele ve no painel e na lista das
+# 06:30 daquele dia. O aviso curto ficou so' para a fila fora do ar.
 
 
-def test_marcar_avisa_o_barbeiro_alem_do_cliente(client, cenario):
+def _marcar(client, barbeiro, servico, inicio):
+    return client.post(
+        "/api/agendamentos",
+        {
+            "barbeiroId": barbeiro.id, "servicoId": servico.id,
+            "inicio": inicio.isoformat(), "nome": "José Neto",
+            "whatsapp": "11977778888",
+        },
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+
+
+def _cancelar(client, agendamento):
+    return client.post(
+        f"/api/agendamentos/{agendamento.codigo}/cancelar",
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+
+
+def test_marcar_sem_lista_a_refazer_nao_avisa_o_barbeiro(client, cenario):
+    """Outro dia, ou hoje antes das 06:30 (entra na lista das 06:30)."""
     b = cenario["brutus"]
     barbeiro = _barbeiro(b.id)
     servico = _servico_vinculado(b.id, barbeiro)
     inicio = _proximo_slot_livre(barbeiro, servico)
 
     with _envios() as mock_envia:
-        r = client.post(
-            "/api/agendamentos",
-            {
-                "barbeiroId": barbeiro.id, "servicoId": servico.id,
-                "inicio": inicio.isoformat(), "nome": "José Neto",
-                "whatsapp": "11977778888",
-            },
-            content_type="application/json", headers={"host": HOST, **CABECALHO},
-        )
+        r = _marcar(client, barbeiro, servico, inicio)
     assert r.status_code == 201
+    assert mock_envia.destinos == ["11977778888"]
 
-    destinos = mock_envia.destinos
-    assert "11977778888" in destinos, "o cliente continua recebendo a confirmacao"
-    assert barbeiro.whatsapp in destinos, "o barbeiro precisa saber que entrou horario"
+
+def test_cliente_cancelando_sem_lista_a_refazer_nao_avisa_o_barbeiro(client, cenario):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    servico = _servico_vinculado(b.id, barbeiro)
+    inicio = _proximo_slot_livre(barbeiro, servico, daqui_a_min=180)
+    a = _agendamento(b.id, barbeiro, inicio)
+
+    with _envios() as mock_envia:
+        r = _cancelar(client, a)
+    assert r.status_code == 200
+    assert barbeiro.whatsapp not in mock_envia.destinos
+
+
+def test_marcar_hoje_com_a_fila_fora_cai_no_aviso_curto(client, cenario, lista_refeita):
+    """O horario e' de hoje e a lista nao vai ser refeita: sem o aviso curto
+    o barbeiro so' saberia do cliente quando ele chegasse."""
+    lista_refeita.return_value = FILA_FORA
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    servico = _servico_vinculado(b.id, barbeiro)
+    inicio = _proximo_slot_livre(barbeiro, servico)
+
+    with _envios() as mock_envia:
+        r = _marcar(client, barbeiro, servico, inicio)
+    assert r.status_code == 201
 
     aviso = mock_envia.texto_para(barbeiro.whatsapp)
     assert aviso.startswith("Novo horário")
@@ -540,28 +576,22 @@ def test_marcar_avisa_o_barbeiro_alem_do_cliente(client, cenario):
     assert b.endereco not in aviso
 
 
-def test_cliente_cancelando_avisa_o_barbeiro(client, cenario):
+def test_cliente_cancelando_hoje_com_a_fila_fora_cai_no_aviso_curto(client, cenario, lista_refeita):
+    lista_refeita.return_value = FILA_FORA
     b = cenario["brutus"]
     barbeiro = _barbeiro(b.id)
     servico = _servico_vinculado(b.id, barbeiro)
     inicio = _proximo_slot_livre(barbeiro, servico, daqui_a_min=180)
-    a = _agendamento(b.id, barbeiro, inicio)  # noqa: F841 — o codigo dele e' o alvo
+    a = _agendamento(b.id, barbeiro, inicio)
 
     with _envios() as mock_envia:
-        r = client.post(
-            f"/api/agendamentos/{a.codigo}/cancelar",
-            content_type="application/json", headers={"host": HOST, **CABECALHO},
-        )
+        r = _cancelar(client, a)
     assert r.status_code == 200
-
-    destinos = mock_envia.destinos
-    assert barbeiro.whatsapp in destinos, "a vaga abriu e o barbeiro nao ficou sabendo"
-    aviso = mock_envia.texto_para(barbeiro.whatsapp)
-    assert aviso.startswith("Cancelou")
+    assert mock_envia.texto_para(barbeiro.whatsapp).startswith("Cancelou")
 
 
 def test_marcar_para_hoje_refaz_a_lista_em_vez_do_aviso_curto(client, cenario, lista_refeita):
-    lista_refeita.return_value = True
+    lista_refeita.return_value = ENFILEIRADA
     b = cenario["brutus"]
     barbeiro = _barbeiro(b.id)
     servico = _servico_vinculado(b.id, barbeiro)
@@ -590,7 +620,7 @@ def test_marcar_para_hoje_refaz_a_lista_em_vez_do_aviso_curto(client, cenario, l
 
 
 def test_cliente_cancelando_hoje_refaz_a_lista_em_vez_do_aviso_curto(client, cenario, lista_refeita):
-    lista_refeita.return_value = True
+    lista_refeita.return_value = ENFILEIRADA
     b = cenario["brutus"]
     barbeiro = _barbeiro(b.id)
     servico = _servico_vinculado(b.id, barbeiro)

@@ -87,15 +87,17 @@ class AgendamentosView(ExigeTenant, APIView):
             tipo=TipoMensagem.CONFIRMACAO,
             cliente_nome=d["nome"],
         )
-        # E o barbeiro. Para HOJE, depois que a lista das 07:00 saiu, ele
-        # recebe a lista inteira refeita (com o horario novo marcado) no lugar
-        # do aviso curto — um lugar so' para ler. Para outro dia, o aviso
-        # curto de sempre.
-        refeita = lista_do_dia.avisar_mudanca(
+        # E o barbeiro, so' o que e' de HOJE: depois que a lista das 06:30
+        # saiu, ele recebe a lista inteira refeita, com o horario novo
+        # marcado. Outro dia nao manda nada — ele ve no painel e na lista das
+        # 06:30 daquele dia. Ate 07/10/2026 todo horario mandava "Novo
+        # horário", e com a casa cheia o WhatsApp dele virava fila de aviso.
+        # O aviso curto ficou so' para a fila fora do ar.
+        mudanca = lista_do_dia.avisar_mudanca(
             self.barbearia_id, criado["barbeiro_id"], agora,
             novos=[(criado["id"], criado["inicio"])],
         )
-        if not refeita:
+        if mudanca == lista_do_dia.FILA_FORA:
             enviar_a_equipe_da(
                 self.barbearia_id,
                 criado["barbeiro_whatsapp"],
@@ -148,15 +150,15 @@ class AgendamentoCancelarPublicoView(ExigeTenant, APIView):
                 tipo=TipoMensagem.CANCELAMENTO,
                 cliente_nome=resultado["cliente_nome"],
             )
-            # A vaga abriu: quem ia cortar precisa saber sem abrir o painel.
-            # So' no `tipo == "ok"` — o `ja_cancelado` cai fora deste bloco de
-            # proposito, senao dois toques no botao mandariam dois avisos.
-            # Hoje, depois das 07:00, pela lista refeita; senao, aviso curto.
-            refeita = lista_do_dia.avisar_mudanca(
+            # Mesma regra de marcar: hoje, depois das 06:30, a lista refeita
+            # sem o horario que caiu; outro dia, nada. So' no `tipo == "ok"` —
+            # o `ja_cancelado` cai fora deste bloco de proposito, senao dois
+            # toques no botao refariam a lista duas vezes.
+            mudanca = lista_do_dia.avisar_mudanca(
                 self.barbearia_id, resultado["barbeiro_id"], agora,
                 cancelados=[(resultado["id"], resultado["inicio"])],
             )
-            if not refeita:
+            if mudanca == lista_do_dia.FILA_FORA:
                 enviar_a_equipe_da(
                     self.barbearia_id,
                     resultado["barbeiro_whatsapp"],
