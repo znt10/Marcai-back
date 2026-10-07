@@ -157,21 +157,22 @@ def test_a_confirmacao_vai_ao_cliente_certo_com_o_barbeiro_certo(cena, evolution
     assert evolution.para(ZE_DA_OUTRA)[0].startswith("*Dom Tony*")
 
 
-def test_o_aviso_de_horario_novo_vai_so_ao_barbeiro_do_horario(cena, cenario, evolution):
-    (da_ana,) = evolution.para(ANA)
-    (do_beto,) = evolution.para(BETO)
-
-    assert da_ana.startswith("Novo horário") and "Xavier Prado" in da_ana and "Yara" not in da_ana
-    assert do_beto.startswith("Novo horário") and "Yara Melo" in do_beto and "Xavier" not in do_beto
-    assert "Ze Campos" in evolution.para(TONY)[0]
-    # O barbeiro sem horario nenhum nao recebe nada.
+def test_marcar_nao_leva_nada_do_cliente_ao_barbeiro_do_colega(cena, evolution):
+    """SE o barbeiro e' avisado de um horario de outro dia e' regra de outro
+    lugar (o PR do "so' o que e' de hoje" a muda); aqui o que se prende e' que
+    nada de um cliente chega ao barbeiro de outro."""
+    assert all("Yara" not in t for t in evolution.para(ANA))
+    assert all("Xavier" not in t for t in evolution.para(BETO))
+    assert all("Xavier" not in t and "Yara" not in t for t in evolution.para(TONY))
+    # O barbeiro sem horario nenhum nao recebe nada, e numero de fora tambem nao.
     assert evolution.para("11911112222") == []
+    assert {n for n, _ in evolution.enviadas} <= {XAVIER, YARA, ZE_DA_OUTRA, ANA, BETO, TONY}
 
 
 # --------------------------------------------------------- lista do dia
 
 
-def test_a_lista_das_7_cada_um_recebe_so_os_seus(cena, evolution):
+def test_a_lista_da_manha_cada_um_recebe_so_os_seus(cena, evolution):
     evolution.esquecer()
 
     lista_do_dia.enviar(local_para_utc(cena["dia"], 7 * 60))
@@ -213,10 +214,11 @@ def test_o_cliente_cancelando_avisa_so_o_barbeiro_dele(client, cena, evolution):
     assert r.status_code == 200
 
     (da_yara,) = evolution.para(YARA)
-    (do_beto,) = evolution.para(BETO)
     assert "Beto Souza" in da_yara
-    assert do_beto.startswith("Cancelou") and "Yara Melo" in do_beto
-    assert {n for n, _ in evolution.enviadas} == {YARA, BETO}
+    # Se o Beto e' avisado de um cancelamento de outro dia e' a mesma regra
+    # de fora do teste de marcar; a Ana, de todo jeito, nao fica sabendo.
+    assert all("Yara Melo" in t for t in evolution.para(BETO))
+    assert {n for n, _ in evolution.enviadas} <= {YARA, BETO}
 
 
 def test_o_barbeiro_nao_cancela_o_horario_do_colega(client, cena, evolution):
