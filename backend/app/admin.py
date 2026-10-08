@@ -107,6 +107,10 @@ class BarbeariaAdmin(admin.ModelAdmin):
 
     list_display = ("slug", "nome", "ativo", "criado_em")
     search_fields = ("slug", "nome")
+    # A hora da lista e' do DONO, na tela de WhatsApp do painel, que so'
+    # oferece as horas em que o beat dispara. Aqui ela seria um numero de
+    # minutos solto, e um 425 nunca casaria com disparo nenhum.
+    exclude = ("hora_da_lista_min",)
 
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         campo = super().formfield_for_dbfield(db_field, request, **kwargs)

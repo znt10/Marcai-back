@@ -514,3 +514,95 @@ def test_fila_fora_do_ar_nao_derruba_quem_marcou(cenario, refazer_enfileirado, c
     with caplog.at_level("ERROR"):
         assert _avisar(b, zeca, TARDE, novos=[novo]) == lista_do_dia.FILA_FORA
     assert "broker fora" in caplog.text
+
+
+# ------------------------------------------------- a hora de cada barbearia
+
+
+def _hora_da_lista(barbearia, minutos):
+    Barbearia.objects.using("owner").filter(id=barbearia.id).update(hora_da_lista_min=minutos)
+
+
+def _rodar_as(minutos, aceita=Aceita("ID-MANHA", "jid-manha")):
+    with patch.object(lista_do_dia, "enviar_a_equipe_aceita", return_value=aceita) as envia, \
+            patch.object(lista_do_dia, "apagar_para_todos") as apagar:
+        lista_do_dia.enviar(local_para_utc("2026-09-16", minutos))
+    return [c.args[0] for c in envia.call_args_list], apagar
+
+
+def test_cada_barbearia_recebe_na_hora_que_escolheu(cenario):
+    """Uma barbearia que abre as 06:00 quer a lista antes; outra que abre as
+    09:00 nao quer ser acordada as 06:30."""
+    cedo, tarde = cenario["brutus"], cenario["dontony"]
+    _hora_da_lista(cedo, 5 * 60 + 30)
+    _hora_da_lista(tarde, 8 * 60)
+    zeca, tony = _barbeiro(cedo, "Zeca Silva"), _barbeiro(tarde, "Tony Melo")
+    _agendamento(cedo, zeca, 9 * 60)
+    _agendamento(tarde, tony, 9 * 60)
+
+    assert _rodar_as(5 * 60 + 30)[0] == [zeca.whatsapp]
+    assert _rodar_as(6 * 60 + 30)[0] == []
+    assert _rodar_as(8 * 60)[0] == [tony.whatsapp]
+
+
+def test_a_tarefa_atrasada_ainda_manda_a_da_sua_meia_hora(cenario):
+    """O beat dispara as 08:00 e a fila cheia so' roda as 08:12."""
+    b = cenario["brutus"]
+    _hora_da_lista(b, 8 * 60)
+    zeca = _barbeiro(b, "Zeca Silva")
+    _agendamento(b, zeca, 9 * 60)
+
+    assert _rodar_as(8 * 60 + 12)[0] == [zeca.whatsapp]
+    assert _rodar_as(8 * 60 + 30)[0] == []
+
+
+def test_a_lista_que_sai_de_novo_apaga_a_de_antes(cenario):
+    """O dono atrasou a hora depois que a de hoje ja tinha saido: a nova sai
+    e a anterior some, para nao ficarem duas "Bom dia" no WhatsApp."""
+    b = cenario["brutus"]
+    _hora_da_lista(b, 8 * 60)
+    zeca = _barbeiro(b, "Zeca Silva")
+    _agendamento(b, zeca, 9 * 60)
+    _guardada(b, zeca)
+
+    _, apagar = _rodar_as(8 * 60)
+
+    apagar.assert_called_once_with("jid-antiga", "ID-ANTIGA")
+    linha = ListaDoDiaEnviada.objects.using("owner").get(barbeiro_id=zeca.id)
+    assert linha.mensagem_id == "ID-MANHA"
+
+
+def test_lista_que_nao_saiu_nao_apaga_a_de_antes(cenario):
+    b = cenario["brutus"]
+    zeca = _barbeiro(b, "Zeca Silva")
+    _agendamento(b, zeca, 9 * 60)
+    _guardada(b, zeca)
+
+    _, apagar = _rodar_as(6 * 60 + 30, aceita=None)
+
+    apagar.assert_not_called()
+
+
+def test_a_mudanca_espera_a_hora_da_propria_barbearia(cenario, refazer_enfileirado):
+    """Antes das 08:00 de quem escolheu 08:00, a mudanca entra na lista das
+    08:00 — mesmo ja passando das 06:30."""
+    b = cenario["brutus"]
+    _hora_da_lista(b, 8 * 60)
+    zeca = _barbeiro(b, "Zeca Silva")
+    novo = _agendamento(b, zeca, 15 * 60)
+
+    assert _avisar(
+        b, zeca, local_para_utc("2026-09-16", 7 * 60 + 59), novos=[novo],
+    ) == lista_do_dia.SEM_LISTA
+    assert _avisar(
+        b, zeca, local_para_utc("2026-09-16", 8 * 60), novos=[novo],
+    ) == lista_do_dia.ENFILEIRADA
+
+
+@pytest.mark.parametrize("minutos", [4 * 60 + 30, 7 * 60 + 15, 12 * 60, None])
+def test_hora_fora_das_escolhiveis_e_recusada(cenario, minutos):
+    """Uma hora sem disparo do beat seria uma lista que nunca sai."""
+    b = cenario["brutus"]
+    with pytest.raises(ValueError):
+        lista_do_dia.mudar_hora_da_lista(b.id, minutos)
+    assert Barbearia.objects.using("owner").get(id=b.id).hora_da_lista_min == 6 * 60 + 30

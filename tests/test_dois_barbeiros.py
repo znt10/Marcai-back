@@ -175,7 +175,7 @@ def test_marcar_nao_leva_nada_do_cliente_ao_barbeiro_do_colega(cena, evolution):
 def test_a_lista_da_manha_cada_um_recebe_so_os_seus(cena, evolution):
     evolution.esquecer()
 
-    lista_do_dia.enviar(local_para_utc(cena["dia"], 7 * 60))
+    lista_do_dia.enviar(local_para_utc(cena["dia"], lista_do_dia.HORA_PADRAO_MIN))
 
     (da_ana,) = evolution.para(ANA)
     (do_beto,) = evolution.para(BETO)

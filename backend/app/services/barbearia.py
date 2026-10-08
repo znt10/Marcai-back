@@ -15,7 +15,8 @@ def ler(barbearia_id: str) -> dict:
 
 def atualizar_horario_resumo(barbearia_id: str, horario_resumo: str) -> None:
     """`brutus_app` so tem GRANT UPDATE na coluna `horarioResumo` de
-    `Barbearia` (migration `20260807120000_frase_do_horario`) — e' a UNICA
-    coluna que o runtime escreve; o resto e' so o admin da plataforma."""
+    `Barbearia` (migration `20260807120000_frase_do_horario`) e na
+    `hora_da_lista_min` (0009, ver `lista_do_dia.mudar_hora_da_lista`) — o
+    resto e' so o admin da plataforma."""
     with com_barbearia(barbearia_id):
         Barbearia.objects.filter(id=barbearia_id).update(horario_resumo=horario_resumo)

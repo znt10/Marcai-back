@@ -59,17 +59,19 @@ def test_o_beat_tem_as_tres_na_agenda():
     assert agenda["zelador"]["schedule"] == 3600.0
 
 
-def test_a_lista_do_dia_sai_as_6_30_e_e_dessa_hora_que_a_mudanca_refaz():
-    """Duas horas que tem de ser a mesma: a do beat e a de `lista_do_dia`. Se
-    so' o beat andasse para mais cedo, quem marcasse para hoje entre as duas
-    nao seria avisado — a mudanca esperaria uma lista que ja tinha saido."""
+def test_o_beat_dispara_em_cada_hora_que_o_dono_pode_escolher():
+    """As horas do beat e as de `lista_do_dia` tem de ser as mesmas. Uma hora
+    escolhivel sem disparo e' uma barbearia que nunca recebe a lista; um
+    disparo sem hora e' so' uma tarefa vazia, mas avisa que as duas
+    descolaram."""
     from django.conf import settings
 
-    from app.services.lista_do_dia import HORA_DA_LISTA_MIN
+    from app.services.lista_do_dia import HORA_PADRAO_MIN, HORAS_DA_LISTA_MIN
 
     agenda = settings.CELERY_BEAT_SCHEDULE["lista-do-dia"]["schedule"]
-    assert (agenda.hour, agenda.minute) == ({6}, {30})
-    assert HORA_DA_LISTA_MIN == 6 * 60 + 30
+    disparos = {h * 60 + m for h in agenda.hour for m in agenda.minute}
+    assert disparos == set(HORAS_DA_LISTA_MIN)
+    assert HORA_PADRAO_MIN in HORAS_DA_LISTA_MIN
 
 
 def test_tratar_mensagem_chama_o_bot_e_esta_registrada():

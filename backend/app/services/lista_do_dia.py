@@ -1,4 +1,5 @@
-"""A lista de horarios que cada barbeiro recebe as 06:30.
+"""A lista de horarios que cada barbeiro recebe de manha, na hora que o dono
+escolheu (06:30 se ele nao mexeu).
 
 E a mensagem que faz o plano SEM ZAP valer alguma coisa: naquele plano o
 cliente nao recebe nada, e sem isto o barbeiro tambem nao — ele so saberia da
@@ -36,14 +37,18 @@ from .whatsapp import Aceita, apagar_para_todos, enviar_a_equipe_aceita
 
 logger = logging.getLogger(__name__)
 
-# A hora da lista (o `crontab(hour=6, minute=30)` do settings — um teste em
-# test_celery.py prende os dois juntos). Depois dela, mudanca na agenda de
-# hoje refaz a lista; antes, a mudanca entra na das 06:30.
-HORA_DA_LISTA_MIN = 6 * 60 + 30
+# As horas que o dono pode escolher (`Barbearia.hora_da_lista_min`), de meia
+# em meia hora, das 05:00 as 11:30. Meia hora porque o beat dispara em CADA
+# uma delas (`crontab(minute="0,30", hour="5-11")` no settings — um teste em
+# test_celery.py prende os dois juntos); so' de manha porque a lista abre com
+# "Bom dia". Depois da hora da barbearia, mudanca na agenda de hoje refaz a
+# lista; antes, a mudanca entra na lista que ainda vai sair.
+HORAS_DA_LISTA_MIN = tuple(range(5 * 60, 12 * 60, 30))
+HORA_PADRAO_MIN = 6 * 60 + 30
 
 # O que `avisar_mudanca` responde a quem mexeu na agenda.
 ENFILEIRADA = "enfileirada"  # a lista de hoje vai ser refeita
-SEM_LISTA = "sem_lista"  # outro dia, ou antes das 06:30: nada sai agora
+SEM_LISTA = "sem_lista"  # outro dia, ou antes da hora da lista: nada sai agora
 FILA_FORA = "fila_fora"  # era para refazer, e a fila nao aceitou
 
 
@@ -52,17 +57,29 @@ def enviar(agora: datetime) -> int:
     sai de um `now()` la dentro) pelo mesmo motivo de `enviar_pendentes`: hora
     e a variavel que mais precisa ser fixada no teste.
 
+    Roda a cada meia hora da manha e so' manda para as barbearias cuja hora e'
+    ESTA meia hora. Recortada para baixo, e nao comparada ao minuto: o beat
+    dispara as :00 e as :30, e a tarefa pode comecar uns segundos (ou, com a
+    fila cheia, uns minutos) depois.
+
     O dia e' recortado no fuso de Sao Paulo, e nao em UTC. As 06:30 daqui sao
     09:30 UTC — um recorte em UTC pegaria de 21:00 de ontem ate 21:00 de hoje
     e a lista sairia com os horarios da noite anterior dentro.
     """
-    hoje = dia_de_hoje(agora)
+    hoje, minutos_agora = utc_para_local(agora)
+    meia_hora = minutos_agora - minutos_agora % 30
     inicio_do_dia = local_para_utc(hoje, 0)
     fim_do_dia = local_para_utc(hoje, 24 * 60)
     enviados = 0
 
-    for b in Barbearia.objects.filter(ativo=True):
+    for b in Barbearia.objects.filter(ativo=True, hora_da_lista_min=meia_hora):
         with com_barbearia(b.id):
+            # O dono que atrasa a hora DEPOIS de a lista sair (06:30 -> 08:00)
+            # faz a de hoje sair de novo: a anterior e' apagada, como na
+            # lista refeita, para nao ficarem duas "Bom dia" no WhatsApp.
+            anteriores = {
+                lista.barbeiro_id: lista for lista in ListaDoDiaEnviada.objects.filter(dia=hoje)
+            }
             agendamentos = list(
                 Agendamento.objects.filter(
                     status=StatusAgendamento.CONFIRMADO,
@@ -98,7 +115,9 @@ def enviar(agora: datetime) -> int:
                     agora=agora,
                 ),
             )
-            _guardar(b.id, barbeiro.id, hoje, aceita)
+            anterior = anteriores.get(barbeiro.id)
+            if _guardar(b.id, barbeiro.id, hoje, aceita) and anterior is not None:
+                apagar_para_todos(anterior.remote_jid, anterior.mensagem_id)
             enviados += 1
 
     return enviados
@@ -117,26 +136,47 @@ def _guardar(barbearia_id, barbeiro_id, dia: str, aceita: Aceita | None) -> bool
     return True
 
 
+def hora_da_lista(barbearia_id) -> int:
+    """Do BANCO, e nao do `request.barbearia` (cache de slug por
+    `TTL_CACHE_TENANT_S`): o dono que acabou de mudar a hora nao pode ver a
+    mudanca valer so' daqui a um minuto."""
+    with com_barbearia(barbearia_id):
+        hora = (
+            Barbearia.objects.filter(id=barbearia_id)
+            .values_list("hora_da_lista_min", flat=True).first()
+        )
+    return HORA_PADRAO_MIN if hora is None else hora
+
+
+def mudar_hora_da_lista(barbearia_id, minutos: int) -> None:
+    """So' as horas de `HORAS_DA_LISTA_MIN`: uma fora dela nunca casaria com
+    um disparo do beat, e a lista deixaria de sair sem ninguem saber."""
+    if minutos not in HORAS_DA_LISTA_MIN:
+        raise ValueError(minutos)
+    with com_barbearia(barbearia_id):
+        Barbearia.objects.filter(id=barbearia_id).update(hora_da_lista_min=minutos)
+
+
 def avisar_mudanca(barbearia_id, barbeiro_id, agora: datetime, *, novos=(), cancelados=()) -> str:
     """Chamada por quem mexe na agenda (site, painel, bloqueio), DEPOIS do
     commit. `novos`/`cancelados`: pares `(agendamento_id, inicio)`.
 
-    Enfileira a lista refeita so' para o que e' de HOJE e so' de 06:30 em
-    diante — antes disso a mudanca entra na lista das 06:30, e a de outro
-    dia, na lista daquele dia. Devolve ENFILEIRADA, SEM_LISTA ou FILA_FORA:
-    o site so' manda o aviso curto ("Novo horário"/"Cancelou") no FILA_FORA,
-    o unico caso em que o barbeiro nao ficaria sabendo de hoje por outro
-    caminho.
+    Enfileira a lista refeita so' para o que e' de HOJE e so' da hora da
+    lista da barbearia em diante — antes disso a mudanca entra na lista que
+    ainda vai sair, e a de outro dia, na lista daquele dia. Devolve
+    ENFILEIRADA, SEM_LISTA ou FILA_FORA: o site so' manda o aviso curto
+    ("Novo horário"/"Cancelou") no FILA_FORA, o unico caso em que o barbeiro
+    nao ficaria sabendo de hoje por outro caminho.
     """
     hoje, minutos_agora = utc_para_local(agora)
-    if minutos_agora < HORA_DA_LISTA_MIN:
-        return SEM_LISTA
 
     def de_hoje(pares):
         return [str(i) for i, inicio in pares if utc_para_local(inicio)[0] == hoje]
 
     ids_novos, ids_cancelados = de_hoje(novos), de_hoje(cancelados)
     if not ids_novos and not ids_cancelados:
+        return SEM_LISTA
+    if minutos_agora < hora_da_lista(barbearia_id):
         return SEM_LISTA
     try:
         _enfileirar_refazer(str(barbearia_id), str(barbeiro_id), ids_novos, ids_cancelados)

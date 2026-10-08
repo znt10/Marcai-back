@@ -289,7 +289,13 @@ CELERY_BEAT_SCHEDULE = {
     # `crontab` e nao intervalo: esta tem HORA, e uma agenda por intervalo
     # derivaria alguns minutos a cada reinicio do beat ate a lista do dia
     # chegar as 06:50. O fuso vem do CELERY_TIMEZONE (America/Sao_Paulo).
-    "lista-do-dia": {"task": "app.tasks.lista_do_dia", "schedule": crontab(hour=6, minute=30)},
+    # Cada meia hora da manha, e nao so' as 06:30: cada barbearia escolhe a
+    # sua (`lista_do_dia.HORAS_DA_LISTA_MIN`), e o disparo manda so' para as
+    # que escolheram aquela meia hora.
+    "lista-do-dia": {
+        "task": "app.tasks.lista_do_dia",
+        "schedule": crontab(minute="0,30", hour="5-11"),
+    },
     "zelador": {"task": "app.tasks.zelador", "schedule": 3600.0},
 }
 
