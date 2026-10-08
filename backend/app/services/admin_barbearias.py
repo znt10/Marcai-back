@@ -16,12 +16,15 @@ from tenant.models import (
     HorarioTrabalho,
     ListaDoDiaEnviada,
     MensagemNaoEnviada,
+    Paleta,
     PlanoBarbearia,
     Servico,
+    TipoNegocio,
     WhatsappInstancia,
 )
 from tenant.rls import com_barbearia_admin
 from tenant.telefone import normalizar
+from tenant.tipos import PALETA_PADRAO
 
 from .convite import gerar_convite
 from .whatsapp_instancias import (
@@ -53,6 +56,8 @@ def listar_com_contagem() -> list[dict]:
                 "nome": b.nome,
                 "ativo": b.ativo,
                 "plano": b.plano,
+                "tipo": b.tipo,
+                "paleta": b.paleta,
                 "barbeiros": barbeiros,
                 "agendamentos": agendamentos,
             }
@@ -75,6 +80,15 @@ def criar(dados: dict) -> dict:
     plano = str(dados.get("plano") or PlanoBarbearia.COM_ZAP)
     if plano not in PlanoBarbearia.values:
         return {"tipo": "plano_invalido"}
+
+    # Os dois opcionais: sem eles, e' a barbearia de sempre. Sem paleta, a
+    # sugerida pelo tipo — a mesma que a tela do admin ja mostra escolhida.
+    tipo_negocio = str(dados.get("tipo") or TipoNegocio.BARBEARIA)
+    if tipo_negocio not in TipoNegocio.values:
+        return {"tipo": "tipo_invalido"}
+    paleta = str(dados.get("paleta") or PALETA_PADRAO[tipo_negocio])
+    if paleta not in Paleta.values:
+        return {"tipo": "paleta_invalida"}
 
     contato = normalizar(dados.get("whatsappContato"))
     nome = dados.get("nome")
@@ -103,6 +117,8 @@ def criar(dados: dict) -> dict:
             horario_resumo=None,  # sem horario: o dono preenche pela tela dele.
             whatsapp_contato=contato,
             plano=plano,
+            tipo=tipo_negocio,
+            paleta=paleta,
         )
         with connections["admin"].cursor() as cur:
             cur.execute(
@@ -138,6 +154,7 @@ def criar(dados: dict) -> dict:
         "id": barbearia.id,
         "slug": barbearia.slug,
         "nome": barbearia.nome,
+        "tipo_negocio": barbearia.tipo,
         "contato": contato,
         "dono_nome": dono_nome,
         "convite": convite,
@@ -263,6 +280,7 @@ def reemitir_convite(barbearia_id: str) -> dict:
         "tipo": "ok",
         "slug": barbearia.slug,
         "nome": barbearia.nome,
+        "tipo_negocio": barbearia.tipo,
         "dono_nome": atual.nome,
         "dono_whatsapp": atual.whatsapp,
         "convite": convite,

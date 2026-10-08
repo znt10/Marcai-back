@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from app.services.mensagens import (
     msg_cancelamento_pela_barbearia,
     msg_confirmacao,
@@ -108,6 +110,19 @@ def test_msg_convite_leva_o_link_uma_vez_e_o_prazo():
     assert texto.startswith("Oi, João!")
     assert texto.count("http://x/y") == 1
     assert "48 horas" in texto
+
+
+@pytest.mark.parametrize("tipo, nome, equipe", [
+    (None, "Brutus", "equipe da Brutus."),
+    ("BARBEARIA", "Brutus", "equipe da Brutus."),
+    ("SOBRANCELHA", "Ana Sobrancelhas", "equipe do estúdio Ana Sobrancelhas."),
+    ("OUTRO", "Lu Unhas", "equipe do espaço Lu Unhas."),
+])
+def test_msg_convite_fala_do_estabelecimento_pelo_tipo(tipo, nome, equipe):
+    """Na barbearia, o "da Brutus" de sempre. Nos outros o nome nao diz o
+    genero ("do Ana Sobrancelhas"), entao a palavra do lugar vai junto."""
+    texto = msg_convite(nome="Ana", barbearia_nome=nome, link="http://x/y", tipo=tipo)
+    assert f"Você entrou na {equipe}" in texto
 
 
 # ------------------------------------------------- avisos para o BARBEIRO

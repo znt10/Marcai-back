@@ -48,6 +48,30 @@ class PlanoBarbearia(models.TextChoices):
     COM_ZAP = "COM_ZAP"
 
 
+class TipoNegocio(models.TextChoices):
+    """O ramo do estabelecimento (spec 2026-10-08). Muda as PALAVRAS que o
+    cliente e a equipe leem ("o estudio", "a profissional") — nunca o que o
+    sistema faz: agenda, lista do dia e lembrete sao os mesmos nos tres. As
+    palavras de cada um moram em `tenant/tipos.py` (aqui) e `src/lib/tipos.ts`
+    (front). Tipo novo entra pelos dois lados."""
+
+    BARBEARIA = "BARBEARIA"
+    SOBRANCELHA = "SOBRANCELHA"
+    OUTRO = "OUTRO"
+
+
+class Paleta(models.TextChoices):
+    """As cores das telas do cliente (e o destaque do painel). Escolhida pelo
+    admin da plataforma ao criar; o tipo so' sugere a padrao
+    (`tipos.PALETA_PADRAO`). Os valores de cada uma moram no front
+    (`src/lib/paletas.ts`): o back so' guarda qual."""
+
+    PRETO_AMARELO = "PRETO_AMARELO", "Preto e amarelo"
+    BRANCO_ROSE = "BRANCO_ROSE", "Branco e rosé"
+    PRETO_ROSE = "PRETO_ROSE", "Preto e rosé"
+    BRANCO_DOURADO = "BRANCO_DOURADO", "Branco e dourado"
+
+
 class EstadoInstancia(models.TextChoices):
     """O ciclo de vida do vinculo com o WhatsApp da barbearia.
 
@@ -130,6 +154,11 @@ class Barbearia(models.Model):
     # moram em `lista_do_dia.HORAS_DA_LISTA_MIN`. Segunda coluna que o runtime
     # escreve (GRANT por coluna na 0009), ao lado de `horario_resumo`.
     hora_da_lista_min = models.PositiveSmallIntegerField(default=6 * 60 + 30)
+    # Os dois so' o admin da plataforma escreve (GRANT de tabela da 0004): o
+    # dono nao troca o ramo nem as cores. Os padroes sao o que toda barbearia
+    # ja era antes de existirem.
+    tipo = models.CharField(max_length=20, choices=TipoNegocio, default=TipoNegocio.BARBEARIA)
+    paleta = models.CharField(max_length=20, choices=Paleta, default=Paleta.PRETO_AMARELO)
     ativo = models.BooleanField(default=True)
     criado_em = models.DateTimeField(default=timezone.now)
 

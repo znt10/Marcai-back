@@ -17,7 +17,21 @@ def test_devolve_a_barbearia_do_host(client, cenario):
         "endereco": b.endereco,
         "horarioResumo": b.horario_resumo,
         "whatsappContato": b.whatsapp_contato,
+        "tipo": "BARBEARIA",
+        "paleta": "PRETO_AMARELO",
     }
+
+
+def test_devolve_o_tipo_e_a_paleta_de_um_estudio(client, cenario):
+    """O front escolhe as palavras e as cores por estes dois."""
+    from tenant.models import Barbearia
+
+    b = cenario["brutus"]
+    Barbearia.objects.using("owner").filter(id=b.id).update(tipo="SOBRANCELHA", paleta="BRANCO_ROSE")
+
+    corpo = client.get("/api/barbearia", headers={"host": "brutus.localhost"}).json()
+
+    assert (corpo["tipo"], corpo["paleta"]) == ("SOBRANCELHA", "BRANCO_ROSE")
 
 
 def test_camelcase_no_corpo(client, cenario):

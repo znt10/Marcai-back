@@ -124,8 +124,8 @@ def test_post_celular_repetido_ativo_da_409(client, cenario):
         content_type="application/json", headers={"host": host, **CABECALHO},
     )
     assert r.status_code == 409
-    assert "Existente" in r.json()["erro"]
-    assert "desativado" not in r.json()["erro"]
+    # "de", e nao "do": o nome nao diz o genero ("do Ana" estaria errado).
+    assert r.json()["erro"] == "Esse celular já é de Existente."
 
 
 # ---------------------------------------------------------------- PATCH
@@ -372,7 +372,23 @@ def test_reconvidar_barbeiro_desativado_e_recusado(client, cenario):
         headers={"host": host, **CABECALHO},
     )
     assert r.status_code == 409
-    assert "desativado" in r.json()["erro"]
+    assert r.json()["erro"].startswith("Esse barbeiro está desativado.")
+
+
+def test_reconvidar_profissional_desativada_de_um_estudio(client, cenario):
+    """O genero de quem atende muda com o ramo: "Essa profissional esta
+    desativada"."""
+    from tenant.models import Barbearia
+
+    b = cenario["brutus"]
+    Barbearia.objects.using("owner").filter(id=b.id).update(tipo="SOBRANCELHA")
+    dono = _barbeiro(b.id, papel="DONO")
+    host = _logar(client, dono, b.id)
+    alvo = _barbeiro(b.id, "Ana", ativo=False)
+
+    r = client.post(f"/api/painel/equipe/{alvo.id}/convite", headers={"host": host, **CABECALHO})
+    assert r.status_code == 409
+    assert r.json()["erro"].startswith("Essa profissional está desativada.")
 
 
 # ---------------------------------------------------------------- isolamento

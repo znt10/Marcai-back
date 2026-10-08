@@ -9,7 +9,7 @@ def ler(barbearia_id: str) -> dict:
     que ele quer ver que deu certo."""
     with com_barbearia(barbearia_id):
         return Barbearia.objects.filter(id=barbearia_id).values(
-            "nome", "endereco", "horario_resumo", "whatsapp_contato"
+            "nome", "endereco", "horario_resumo", "whatsapp_contato", "tipo", "paleta"
         ).first()
 
 
