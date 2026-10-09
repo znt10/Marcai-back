@@ -382,7 +382,23 @@ def test_barbearia_inativa_aparece_marcada(client, cenario):
     r = client.get("/admin/django/escolher-barbearia", headers={"host": HOST_ADMIN})
     corpo = r.content.decode()
     assert "zumbi" in corpo
-    assert "(inativa)" in corpo
+    assert "(fora do ar)" in corpo
+
+
+def test_o_seletor_separa_por_categoria(client, cenario):
+    """Em blocos, como a entrada do admin da plataforma: cada um embaixo do
+    titulo da sua categoria, e categoria vazia nao aparece."""
+    from tenant.models import Barbearia
+
+    Barbearia.objects.using("owner").filter(id=cenario["dontony"].id).update(tipo="SOBRANCELHA")
+    _logar_admin(client)
+
+    corpo = client.get("/admin/django/escolher-barbearia", headers={"host": HOST_ADMIN}).content.decode()
+
+    assert corpo.startswith("<h1>Qual estabelecimento?</h1>")
+    barbearias, sobrancelha = corpo.index("<h2>Barbearias</h2>"), corpo.index("<h2>Sobrancelha</h2>")
+    assert barbearias < corpo.index(">brutus<") < sobrancelha < corpo.index(">dontony<")
+    assert "<h2>Outros</h2>" not in corpo
 
 
 # ------------------------------------------------------ os ModelAdmin (task 4)
