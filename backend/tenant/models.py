@@ -162,6 +162,12 @@ class Barbearia(models.Model):
     ativo = models.BooleanField(default=True)
     criado_em = models.DateTimeField(default=timezone.now)
 
+    class Meta:
+        # O nome que o admin do Django mostra. A classe segue `Barbearia`, mas
+        # o estabelecimento pode ser um estudio de sobrancelha (tenant/tipos.py).
+        verbose_name = "estabelecimento"
+        verbose_name_plural = "estabelecimentos"
+
     def __str__(self):
         # Sem isto o Django escreve "Barbearia object (uuid)" em TODO lugar que
         # mostra o objeto: cabecalho de formulario, <select> de chave
@@ -221,6 +227,10 @@ class Barbeiro(models.Model):
     criado_em = models.DateTimeField(default=timezone.now)
 
     class Meta:
+        # Mesmo motivo do `Barbearia.Meta`: num estudio, quem atende e' a
+        # profissional.
+        verbose_name = "profissional"
+        verbose_name_plural = "profissionais"
         constraints = [
             models.UniqueConstraint(
                 fields=["barbearia", "whatsapp"], name="barbeiro_whatsapp_por_tenant",
