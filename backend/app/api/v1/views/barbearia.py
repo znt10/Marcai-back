@@ -37,5 +37,7 @@ class BarbeariaView(ExigeTenant, APIView):
                 "endereco": dados["endereco"],
                 "horarioResumo": dados["horario_resumo"],
                 "whatsappContato": dados["whatsapp_contato"],
+                "tipo": dados["tipo"],
+                "paleta": dados["paleta"],
             }
         )

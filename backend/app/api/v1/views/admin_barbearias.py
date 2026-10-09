@@ -32,6 +32,10 @@ class AdminBarbeariasView(ExigeAdmin, APIView):
             return Response({"erro": "Faltou preencher algum campo."}, status=422)
         if resultado["tipo"] == "plano_invalido":
             return Response({"erro": "Plano inválido."}, status=422)
+        if resultado["tipo"] == "tipo_invalido":
+            return Response({"erro": "Tipo de negócio inválido."}, status=422)
+        if resultado["tipo"] == "paleta_invalida":
+            return Response({"erro": "Paleta inválida."}, status=422)
         if resultado["tipo"] == "slug_duplicado":
             # Nao e' evasivo como no login: quem le esta resposta e' o dono
             # do site, nao um estranho tentando descobrir slug alheio.
@@ -47,7 +51,8 @@ class AdminBarbeariasView(ExigeAdmin, APIView):
             resultado["id"],
             resultado["contato"],
             msg_convite(
-                nome=resultado["dono_nome"], barbearia_nome=resultado["nome"], link=link
+                nome=resultado["dono_nome"], barbearia_nome=resultado["nome"], link=link,
+                tipo=resultado["tipo_negocio"],
             ),
         )
         return Response(
@@ -98,7 +103,8 @@ class AdminBarbeariaConviteView(ExigeAdmin, APIView):
             id,
             resultado["dono_whatsapp"],
             msg_convite(
-                nome=resultado["dono_nome"], barbearia_nome=resultado["nome"], link=link
+                nome=resultado["dono_nome"], barbearia_nome=resultado["nome"], link=link,
+                tipo=resultado["tipo_negocio"],
             ),
         )
         return Response({"linkConvite": link})

@@ -12,6 +12,7 @@ from app.api.v1.serializers.equipe import (
 from app.services.convite import link_do_convite
 from app.services.equipe import atualizar, criar, desativar, listar, reativar, reconvidar
 from app.services.mensagens import msg_convite
+from tenant.tipos import palavras
 from app.services.whatsapp import enviar_a_equipe_da
 from tenant.telefone import normalizar
 
@@ -43,11 +44,13 @@ class EquipeView(ExigeDono, APIView):
 
         resultado = criar(self.barbearia_id, d["nome"], whatsapp, d["papel"])
         if resultado["tipo"] == "repetido":
+            # "de {nome}", e nao "do": o nome nao diz o genero, e num
+            # estudio de sobrancelha "Esse celular ja e' do Ana" e' o comum.
             msg = (
-                f"Esse celular já é do {resultado['nome']}."
+                f"Esse celular já é de {resultado['nome']}."
                 if resultado["ativo"]
                 else (
-                    f"Esse celular é do {resultado['nome']}, que está desativado. "
+                    f"Esse celular é de {resultado['nome']}, que está fora da equipe. "
                     "Reativa em vez de cadastrar de novo."
                 )
             )
@@ -59,7 +62,10 @@ class EquipeView(ExigeDono, APIView):
         enviar_a_equipe_da(
             self.barbearia_id,
             whatsapp,
-            msg_convite(nome=d["nome"], barbearia_nome=request.barbearia.nome, link=link),
+            msg_convite(
+                nome=d["nome"], barbearia_nome=request.barbearia.nome, link=link,
+                tipo=request.barbearia.tipo,
+            ),
         )
         return Response({"id": resultado["id"], "linkConvite": link}, status=201)
 
@@ -133,8 +139,9 @@ class EquipeConviteView(ExigeDono, APIView):
         if resultado["tipo"] == "nao_encontrado":
             return Response(NAO_ENCONTRADO, status=404)
         if resultado["tipo"] == "desativado":
+            p = palavras(request.barbearia.tipo)
             return Response(
-                {"erro": "Esse barbeiro está desativado. Reativa antes de mandar convite."},
+                {"erro": f"{p['esse_prof']} está {p['desativado']}. Reativa antes de mandar convite."},
                 status=409,
             )
 
@@ -142,6 +149,9 @@ class EquipeConviteView(ExigeDono, APIView):
         enviar_a_equipe_da(
             self.barbearia_id,
             resultado["whatsapp"],
-            msg_convite(nome=resultado["nome"], barbearia_nome=request.barbearia.nome, link=link),
+            msg_convite(
+                nome=resultado["nome"], barbearia_nome=request.barbearia.nome, link=link,
+                tipo=request.barbearia.tipo,
+            ),
         )
         return Response({"linkConvite": link})

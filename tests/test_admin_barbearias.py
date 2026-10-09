@@ -520,3 +520,90 @@ def test_reativar_nao_cria_instancia_com_o_interruptor_desligado(
     assert r.status_code == 200
     assert _instancia_de(b.id) is None
     assert evolution_simulada["garantir"].call_count == 0
+
+
+# ------------------------------------------------------- tipo e paleta (08/10)
+
+
+def _criar(client, **extra):
+    _logar_admin(client)
+    with patch("app.api.v1.views.admin_barbearias.enviar_a_equipe_da") as mock_envia:
+        r = client.post(
+            "/api/admin/barbearias", {**_corpo_valido(), **extra},
+            content_type="application/json", headers={"host": HOST, **CABECALHO},
+        )
+    return r, mock_envia
+
+
+def _guardada(corpo):
+    from tenant.models import Barbearia
+
+    return Barbearia.objects.using("owner").get(id=corpo["id"])
+
+
+def test_criar_sem_tipo_e_a_barbearia_de_sempre(client):
+    r, _ = _criar(client)
+    assert r.status_code == 201
+    b = _guardada(r.json())
+    assert (b.tipo, b.paleta) == ("BARBEARIA", "PRETO_AMARELO")
+
+
+def test_sobrancelha_sem_paleta_nasce_branco_e_rose(client):
+    """A paleta que a tela do admin ja mostra escolhida ao trocar o tipo."""
+    r, mock_envia = _criar(client, tipo="SOBRANCELHA", nome="Ana Sobrancelhas")
+    assert r.status_code == 201
+    b = _guardada(r.json())
+    assert (b.tipo, b.paleta) == ("SOBRANCELHA", "BRANCO_ROSE")
+    texto = mock_envia.call_args.args[2]
+    assert "equipe do estúdio Ana Sobrancelhas." in texto
+
+
+def test_paleta_escolhida_ganha_da_sugerida(client):
+    r, _ = _criar(client, tipo="SOBRANCELHA", paleta="PRETO_ROSE")
+    assert r.status_code == 201
+    assert _guardada(r.json()).paleta == "PRETO_ROSE"
+
+
+def test_outro_nasce_branco_e_dourado(client):
+    r, _ = _criar(client, tipo="OUTRO")
+    assert _guardada(r.json()).paleta == "BRANCO_DOURADO"
+
+
+@pytest.mark.parametrize("extra, erro", [
+    ({"tipo": "MANICURE"}, "Tipo de negócio inválido."),
+    ({"paleta": "VERDE"}, "Paleta inválida."),
+])
+def test_tipo_ou_paleta_inventados_dao_422(client, extra, erro):
+    from tenant.models import Barbearia
+
+    r, mock_envia = _criar(client, **extra)
+    assert r.status_code == 422
+    assert r.json() == {"erro": erro}
+    mock_envia.assert_not_called()
+    assert not Barbearia.objects.using("owner").filter(slug="nova-barbearia").exists()
+
+
+def test_listagem_mostra_tipo_e_paleta(client, cenario):
+    from tenant.models import Barbearia
+
+    b = cenario["brutus"]
+    Barbearia.objects.using("owner").filter(id=b.id).update(tipo="SOBRANCELHA", paleta="PRETO_ROSE")
+    _logar_admin(client)
+
+    r = client.get("/api/admin/barbearias", headers={"host": HOST})
+    achada = next(x for x in r.json()["barbearias"] if x["id"] == b.id)
+    assert (achada["tipo"], achada["paleta"]) == ("SOBRANCELHA", "PRETO_ROSE")
+
+
+def test_reemitir_convite_de_estudio_fala_do_estudio(client, cenario):
+    from tenant.models import Barbearia
+
+    b = cenario["brutus"]
+    Barbearia.objects.using("owner").filter(id=b.id).update(tipo="SOBRANCELHA")
+    _barbeiro(b.id, papel="DONO")
+    _logar_admin(client)
+
+    with patch("app.api.v1.views.admin_barbearias.enviar_a_equipe_da") as mock_envia:
+        r = client.post(f"/api/admin/barbearias/{b.id}/convite", headers={"host": HOST, **CABECALHO})
+    assert r.status_code == 200
+    assert f"equipe do estúdio {b.nome}." in mock_envia.call_args.args[2]

@@ -472,6 +472,20 @@ def test_cancelar_fora_do_prazo_da_422_com_o_zap_da_barbearia(client, cenario):
     r = client.post(f"/api/agendamentos/{a.codigo}/cancelar", headers={"host": HOST, **CABECALHO})
     assert r.status_code == 422
     assert "Passou do prazo de 1h" in r.json()["erro"]
+    assert "Chama a barbearia no zap" in r.json()["erro"]
+
+
+def test_cancelar_fora_do_prazo_num_estudio_chama_o_estudio(client, cenario):
+    from tenant.models import Barbearia
+
+    b = cenario["brutus"]
+    Barbearia.objects.using("owner").filter(id=b.id).update(tipo="SOBRANCELHA")
+    barbeiro = _barbeiro(b.id)
+    a = _agendamento(b.id, barbeiro, datetime.now(timezone.utc) + timedelta(minutes=30))
+
+    r = client.post(f"/api/agendamentos/{a.codigo}/cancelar", headers={"host": HOST, **CABECALHO})
+    assert r.status_code == 422
+    assert "Chama o estúdio no zap" in r.json()["erro"]
 
     from tenant.models import Agendamento
 

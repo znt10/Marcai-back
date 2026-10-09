@@ -27,6 +27,7 @@ from app.services.trava_ip import ip_de
 from app.services.whatsapp import enviar_a_equipe_da, enviar_ao_cliente, numero_existe
 from tenant.models import TipoMensagem
 from tenant.telefone import formatar, normalizar
+from tenant.tipos import palavras
 
 NAO_ENCONTRADO = {"erro": "Agendamento não encontrado."}
 
@@ -135,8 +136,9 @@ class AgendamentoCancelarPublicoView(ExigeTenant, APIView):
             return Response(NAO_ENCONTRADO, status=404)
         if resultado["tipo"] == "fora_do_prazo":
             contato = formatar(request.barbearia.whatsapp_contato)
+            o_lugar = palavras(request.barbearia.tipo)["o_lugar"]
             return Response(
-                {"erro": f"Passou do prazo de 1h. Chama a barbearia no zap: {contato}"},
+                {"erro": f"Passou do prazo de 1h. Chama {o_lugar} no zap: {contato}"},
                 status=422,
             )
         if resultado["tipo"] == "ok":

@@ -162,10 +162,11 @@ def atualizar(barbearia_id: str, sessao: dict, barbeiro_id: str, campos: dict) -
         if novo_whatsapp is not None and novo_whatsapp != atual["whatsapp"]:
             ja_tem = Barbeiro.objects.filter(whatsapp=novo_whatsapp).values("nome", "ativo").first()
             if ja_tem:
+                # "de", e nao "do": ver `EquipeView.post`.
                 msg = (
-                    f"Esse celular já é do {ja_tem['nome']}."
+                    f"Esse celular já é de {ja_tem['nome']}."
                     if ja_tem["ativo"]
-                    else f"Esse celular é do {ja_tem['nome']}, que está desativado."
+                    else f"Esse celular é de {ja_tem['nome']}, que está fora da equipe."
                 )
                 return {"tipo": "recusado", "erro": msg}
 

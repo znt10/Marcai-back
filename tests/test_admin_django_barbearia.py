@@ -199,7 +199,7 @@ def test_editar_barbearia_pelo_admin(client, cenario):
         {
             "id": str(b.id), "slug": "brutus", "nome": "Brutus Novo", "endereco": "Rua Aurora, 88",
             "horario_resumo": "seg a sab, 9h as 19h", "whatsapp_contato": "11999998888", "plano": "SEM_ZAP",
-            "ativo": "on", "criado_em_0": "2026-08-11", "criado_em_1": "09:00:00",
+            "tipo": "BARBEARIA", "paleta": "PRETO_AMARELO", "ativo": "on", "criado_em_0": "2026-08-11", "criado_em_1": "09:00:00",
         },
         headers={"host": HOST},
     )
@@ -221,7 +221,7 @@ def test_editar_barbearia_sem_horario_resumo(client, cenario):
         {
             "id": str(b.id), "slug": "brutus", "nome": "Brutus", "endereco": "Rua Aurora, 88",
             "horario_resumo": "", "whatsapp_contato": "13988771112", "plano": "SEM_ZAP",
-            "ativo": "on", "criado_em_0": "2026-08-11", "criado_em_1": "09:00:00",
+            "tipo": "BARBEARIA", "paleta": "PRETO_AMARELO", "ativo": "on", "criado_em_0": "2026-08-11", "criado_em_1": "09:00:00",
         },
         headers={"host": HOST},
     )
@@ -230,6 +230,30 @@ def test_editar_barbearia_sem_horario_resumo(client, cenario):
     salva = Barbearia.objects.using("owner").get(id=b.id)
     assert salva.whatsapp_contato == "13988771112"
     assert salva.horario_resumo is None
+
+
+def test_trocar_tipo_e_paleta_pelo_admin(client, cenario):
+    """E' por aqui que o admin da plataforma troca o ramo ou as cores de quem
+    ja existe (spec 2026-10-08): a tela de criar so' escolhe na criacao."""
+    from tenant.models import Barbearia
+
+    b = cenario["brutus"]
+    _entrar(client, b)
+
+    r = client.post(
+        f"/admin/django/tenant/barbearia/{b.id}/change/",
+        {
+            "id": str(b.id), "slug": "brutus", "nome": "Brutus", "endereco": "Rua Aurora, 88",
+            "horario_resumo": "", "whatsapp_contato": "11999998888", "plano": "SEM_ZAP",
+            "tipo": "SOBRANCELHA", "paleta": "PRETO_ROSE", "ativo": "on",
+            "criado_em_0": "2026-08-11", "criado_em_1": "09:00:00",
+        },
+        headers={"host": HOST},
+    )
+
+    assert r.status_code == 302
+    salva = Barbearia.objects.using("owner").get(id=b.id)
+    assert (salva.tipo, salva.paleta) == ("SOBRANCELHA", "PRETO_ROSE")
 
 
 def test_toda_tabela_que_aponta_para_barbearia_sai_junto():

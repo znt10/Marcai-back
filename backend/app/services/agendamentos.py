@@ -86,7 +86,9 @@ def marcar(
             .first()
         )
         if vinculo is None or not vinculo.ativo or not vinculo.servico.ativo:
-            raise ErroCliente(422, "Esse barbeiro não faz esse serviço.")
+            # Neutra, e nao "Esse barbeiro...": `marcar()` so' tem o id da
+            # barbearia (nao o ramo), e a frase tambem chega pelo bot.
+            raise ErroCliente(422, "Quem você escolheu não faz esse serviço.")
 
         # A duracao vem do banco. O que veio no corpo e' sugestao de atacante.
         # O preco tambem — e pode ser None: o barbeiro pode nao ter

@@ -5,6 +5,7 @@ from tenant.datas import (
     formatar_hora_falada,
 )
 from tenant.telefone import formatar
+from tenant.tipos import do_nome
 
 # Todo texto que sai pelo WhatsApp mora aqui — espalhar template pelas rotas e
 # como duas mensagens do mesmo evento acabam divergindo.
@@ -137,10 +138,13 @@ def msg_lembrete(
     )
 
 
-def msg_convite(*, nome: str, barbearia_nome: str, link: str) -> str:
+def msg_convite(*, nome: str, barbearia_nome: str, link: str, tipo=None) -> str:
+    """`tipo` decide o "da"/"do" antes do nome (`tenant.tipos.do_nome`): "da
+    Brutus" e' o de sempre; "do Ana Sobrancelhas" estaria errado, entao o
+    estudio vai com a palavra junto ("do estúdio Ana Sobrancelhas")."""
     primeiro_nome = nome.split(" ")[0]
     return (
-        f"Oi, {primeiro_nome}! Você entrou na equipe da {barbearia_nome}. "
+        f"Oi, {primeiro_nome}! Você entrou na equipe {do_nome(tipo, barbearia_nome)}. "
         f"Cria sua senha por aqui pra ver sua agenda:\n\n{link}\n\n"
         f"O link vale por 48 horas."
     )
