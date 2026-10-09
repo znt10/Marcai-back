@@ -105,7 +105,10 @@ class BarbeariaAdmin(admin.ModelAdmin):
     sao RESTRICT, e ela sempre tem pelo menos o dono.
     """
 
-    list_display = ("slug", "nome", "ativo", "criado_em")
+    # O tipo e a paleta na lista, e o filtro por tipo ao lado (09/10/2026):
+    # e' por aqui que o admin da plataforma troca os dois depois de criar.
+    list_display = ("slug", "nome", "tipo", "paleta", "ativo", "criado_em")
+    list_filter = ("tipo",)
     search_fields = ("slug", "nome")
     # A hora da lista e' do DONO, na tela de WhatsApp do painel, que so'
     # oferece as horas em que o beat dispara. Aqui ela seria um numero de

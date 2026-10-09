@@ -256,6 +256,24 @@ def test_trocar_tipo_e_paleta_pelo_admin(client, cenario):
     assert (salva.tipo, salva.paleta) == ("SOBRANCELHA", "PRETO_ROSE")
 
 
+def test_a_lista_mostra_o_tipo_e_filtra_por_ele(client, cenario):
+    from tenant.models import Barbearia
+
+    b, d = cenario["brutus"], cenario["dontony"]
+    Barbearia.objects.using("owner").filter(id=d.id).update(tipo="SOBRANCELHA", paleta="BRANCO_ROSE")
+    _entrar(client, b)
+
+    tudo = client.get("/admin/django/tenant/barbearia/", headers={"host": HOST}).content.decode()
+    assert "Sobrancelha" in tudo and "Branco e rosé" in tudo
+    assert f">{b.slug}<" in tudo
+
+    so_sobrancelha = client.get(
+        "/admin/django/tenant/barbearia/?tipo__exact=SOBRANCELHA", headers={"host": HOST},
+    ).content.decode()
+    assert d.nome in so_sobrancelha
+    assert f">{b.slug}<" not in so_sobrancelha
+
+
 def test_toda_tabela_que_aponta_para_barbearia_sai_junto():
     """Uma tabela de tenant nova, esquecida na ordem de apagar, faria o apagar
     voltar a estourar no banco. Este teste e' quem lembra."""

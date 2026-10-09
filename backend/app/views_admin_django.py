@@ -17,7 +17,16 @@ from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
 
 from tenant.middleware import AdminDjangoMiddleware
-from tenant.models import Barbearia
+from tenant.models import Barbearia, TipoNegocio
+
+# Os blocos da escolha, na ordem dos tipos — os mesmos nomes das categorias
+# do admin da plataforma (`src/lib/categorias.ts` no front). Tipo novo sem
+# nome aqui ainda aparece, com o rotulo do proprio enum.
+_CATEGORIAS = {
+    TipoNegocio.BARBEARIA: "Barbearias",
+    TipoNegocio.SOBRANCELHA: "Sobrancelha",
+    TipoNegocio.OUTRO: "Outros",
+}
 
 # A conexao "admin" (`brutus_admin`) e' quem enxerga `tenant_barbearia`:
 # `brutus_app` tem REVOKE de escrita ali, e a leitura passa pelos dois — mas
@@ -60,20 +69,29 @@ def escolher_barbearia(request):
         return HttpResponseRedirect("/admin/django/")
 
     atual = request.session.get(AdminDjangoMiddleware.CHAVE_SESSAO)
-    linhas = []
+    # Em blocos por categoria (pedido de 09/10/2026), como a entrada do admin
+    # da plataforma. Categoria vazia nao aparece: um titulo sem nada embaixo
+    # so' faria a pessoa procurar o que nao existe.
+    por_tipo: dict = {}
     for b in Barbearia.objects.using(_CONEXAO).order_by("slug"):
         marca = " ← atual" if str(b.id) == str(atual) else ""
-        # Uma barbearia inativa e' recusada pelo `TenantMiddleware` em
-        # producao (`_buscar_por_slug` filtra `ativo=True`): escolhe-la aqui
+        # Um estabelecimento inativo e' recusado pelo `TenantMiddleware` em
+        # producao (`_buscar_por_slug` filtra `ativo=True`): escolhe-lo aqui
         # daria um admin funcional sobre um tenant que, do lado do
-        # subdominio, nao existe mais. Listar todas continua certo — e' a
+        # subdominio, nao existe mais. Listar todos continua certo — e' a
         # ferramenta do dono da plataforma — mas sem o aviso ninguem notaria
-        # o descompasso antes de mexer em dado.
-        aviso = "" if b.ativo else " (inativa)"
-        linhas.append(
+        # o descompasso antes de mexer em dado. "Fora do ar", e nao
+        # "inativa": vale para barbearia e estudio sem trocar o genero.
+        aviso = "" if b.ativo else " (fora do ar)"
+        por_tipo.setdefault(b.tipo, []).append(
             f'<li><button name="barbearia_id" value="{escape(str(b.id))}">'
             f"{escape(b.slug)}</button> {escape(b.nome)}{aviso}{marca}</li>"
         )
+    blocos = [
+        f"<h2>{escape(_CATEGORIAS.get(t, TipoNegocio(t).label))}</h2><ul>{''.join(por_tipo[t])}</ul>"
+        for t in TipoNegocio.values
+        if t in por_tipo
+    ]
     # `get_token(request)` (e nao `django.middleware.csrf.rotate_token`, nem
     # ler um cookie que ainda nao existe): esta pagina e' servida pela MESMA
     # origem que recebe o POST dela, e e' exatamente esse o caso em que o
@@ -84,11 +102,11 @@ def escolher_barbearia(request):
     # de teste padrao nao pegaria isso, porque ele desliga essa checagem.
     token = get_token(request)
     return HttpResponse(
-        "<h1>De qual barbearia?</h1>"
-        "<p>O admin mostra uma barbearia por vez — é o isolamento do banco, "
-        "não um filtro da tela.</p>"
+        "<h1>Qual estabelecimento?</h1>"
+        "<p>O admin mostra um estabelecimento por vez — é o isolamento do "
+        "banco, não um filtro da tela.</p>"
         f'<form method="post"><input type="hidden" name="csrfmiddlewaretoken" '
         f'value="{escape(token)}">'
-        f"<ul>{''.join(linhas)}</ul></form>",
+        f"{''.join(blocos)}</form>",
         content_type="text/html; charset=utf-8",
     )
