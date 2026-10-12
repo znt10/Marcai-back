@@ -34,26 +34,28 @@ def _cliente(barbearia_id, nome="Cliente"):
     )
 
 
-def _servico(barbearia_id, nome="Corte"):
+def _servico(barbearia_id, nome="Corte", ordem=0):
     from tenant.models import Servico
 
     return Servico.objects.using("owner").create(
         id=str(uuid.uuid4()), barbearia_id=barbearia_id,
         nome=f"{nome} {uuid.uuid4().hex[:6]}",
-        duracao_minima_min=15, duracao_sugerida_min=30,
+        duracao_minima_min=15, duracao_sugerida_min=30, ordem=ordem,
     )
 
 
 def _agendamento(barbearia_id, barbeiro, cliente, servico, inicio,
-                 duracao_min=30, status="CONFIRMADO"):
+                 duracao_min=30, status="CONFIRMADO", preco_centavos=None,
+                 servico_nome=None):
     from tenant.models import Agendamento
 
     return Agendamento.objects.using("owner").create(
         id=str(uuid.uuid4()), barbearia_id=barbearia_id,
         codigo=uuid.uuid4().hex[:10], barbeiro_id=barbeiro.id,
-        cliente_id=cliente.id, servico_id=servico.id, servico_nome=servico.nome,
+        cliente_id=cliente.id, servico_id=servico.id,
+        servico_nome=servico_nome or servico.nome,
         inicio=inicio, fim=inicio + timedelta(minutes=duracao_min),
-        duracao_min=duracao_min, status=status,
+        duracao_min=duracao_min, status=status, preco_centavos=preco_centavos,
     )
 
 
@@ -218,6 +220,155 @@ def test_total_de_clientes_e_distinto_na_barbearia(cenario):
     assert _linha_de(saida, tuca.id)["clientes"] == 1
 
 
+# ---------------------------------------------------------------- servicos
+#
+# A pizza do resumo: quantos de cada servico, e quanto entrou por eles. Os
+# horarios vao em sequencia a partir das 9h locais (12h UTC), todos passados
+# com AGORA as 14h.
+
+
+def _as(minutos):
+    return datetime(2026, 9, 5, 12, 0, tzinfo=timezone.utc) + timedelta(minutes=minutos)
+
+
+def _servicos(itens):
+    """So' o que o teste afirma: sem o `servicoId`, que e' uuid novo a cada
+    rodada."""
+    return [(s["nome"], s["cortes"], s["centavos"]) for s in itens]
+
+
+def test_servicos_de_cada_barbeiro_e_do_salao(cenario):
+    b = cenario["brutus"]
+    zeca = _barbeiro(b.id, "Zeca")
+    tuca = _barbeiro(b.id, "Tuca")
+    corte = _servico(b.id, "Corte", ordem=1)
+    barba = _servico(b.id, "Barba", ordem=2)
+    cliente = _cliente(b.id)
+
+    _agendamento(b.id, zeca, cliente, corte, _as(0), preco_centavos=4000)
+    _agendamento(b.id, zeca, cliente, corte, _as(30), preco_centavos=4000)
+    _agendamento(b.id, zeca, cliente, barba, _as(60), preco_centavos=2500)
+    _agendamento(b.id, tuca, cliente, corte, _as(0), preco_centavos=4500)
+
+    saida = cortes_por_barbeiro(b.id, DIA, DIA, AGORA)
+    assert _servicos(_linha_de(saida, zeca.id)["servicos"]) == [
+        (corte.nome, 2, 8000), (barba.nome, 1, 2500),
+    ]
+    assert _servicos(_linha_de(saida, tuca.id)["servicos"]) == [(corte.nome, 1, 4500)]
+    assert _servicos(saida["totais"]["servicos"]) == [
+        (corte.nome, 3, 12500), (barba.nome, 1, 2500),
+    ]
+    assert saida["totais"]["centavos"] == 15000
+    assert _linha_de(saida, zeca.id)["servicos"][0]["servicoId"] == str(corte.id)
+
+
+def test_servicos_seguem_a_ordem_do_catalogo_e_nao_o_volume(cenario):
+    """A ordem da tela de Servicos, e nao a de quem vendeu mais: e' ela que
+    prende a cor de cada servico no front, e volume muda de um mes para o
+    outro."""
+    b = cenario["brutus"]
+    zeca = _barbeiro(b.id, "Zeca")
+    primeiro = _servico(b.id, "Primeiro", ordem=1)
+    segundo = _servico(b.id, "Segundo", ordem=2)
+    cliente = _cliente(b.id)
+
+    _agendamento(b.id, zeca, cliente, primeiro, _as(0))
+    _agendamento(b.id, zeca, cliente, segundo, _as(30))
+    _agendamento(b.id, zeca, cliente, segundo, _as(60))
+
+    nomes = [s["nome"] for s in _linha_de(cortes_por_barbeiro(b.id, DIA, DIA, AGORA), zeca.id)["servicos"]]
+    assert nomes == [primeiro.nome, segundo.nome]
+
+
+def test_valor_e_o_preco_gravado_no_agendamento(cenario):
+    """O preco do servico pode ter mudado depois; o que entrou foi o daquele
+    dia."""
+    b = cenario["brutus"]
+    zeca = _barbeiro(b.id, "Zeca")
+    corte = _servico(b.id, "Corte")
+    cliente = _cliente(b.id)
+
+    _agendamento(b.id, zeca, cliente, corte, _as(0), preco_centavos=3500)
+    _agendamento(b.id, zeca, cliente, corte, _as(30), preco_centavos=4000)
+
+    assert _servicos(
+        _linha_de(cortes_por_barbeiro(b.id, DIA, DIA, AGORA), zeca.id)["servicos"]
+    ) == [(corte.nome, 2, 7500)]
+
+
+def test_servico_sem_preco_fica_sem_valor(cenario):
+    """Sem preco nenhum, `None` (a tela escreve "—"), e nao zero: zero diria
+    que o servico foi de graca. Com parte sem preco, soma o que tem."""
+    b = cenario["brutus"]
+    zeca = _barbeiro(b.id, "Zeca")
+    sem = _servico(b.id, "Sem preco", ordem=1)
+    misto = _servico(b.id, "Misto", ordem=2)
+    cliente = _cliente(b.id)
+
+    _agendamento(b.id, zeca, cliente, sem, _as(0))
+    _agendamento(b.id, zeca, cliente, misto, _as(30), preco_centavos=2000)
+    _agendamento(b.id, zeca, cliente, misto, _as(60))
+
+    saida = cortes_por_barbeiro(b.id, DIA, DIA, AGORA)
+    assert _servicos(_linha_de(saida, zeca.id)["servicos"]) == [
+        (sem.nome, 1, None), (misto.nome, 2, 2000),
+    ]
+    assert saida["totais"]["centavos"] == 2000
+
+
+def test_sem_preco_nenhum_o_total_tambem_e_none(cenario):
+    b = cenario["brutus"]
+    zeca = _barbeiro(b.id, "Zeca")
+    _agendamento(b.id, zeca, _cliente(b.id), _servico(b.id), _as(0))
+
+    assert cortes_por_barbeiro(b.id, DIA, DIA, AGORA)["totais"]["centavos"] is None
+
+
+def test_servico_renomeado_continua_um_so(cenario):
+    """O agendamento guarda o nome da epoca ("Sobracelha"); o dono corrigiu
+    para "Sobrancelha" depois. Agrupar pelo nome gravado partiria o mesmo
+    servico em duas fatias. Agrupa pelo servico, com o nome de hoje."""
+    b = cenario["brutus"]
+    zeca = _barbeiro(b.id, "Zeca")
+    servico = _servico(b.id, "Sobrancelha")
+    cliente = _cliente(b.id)
+
+    _agendamento(b.id, zeca, cliente, servico, _as(0), servico_nome="Sobracelha")
+    _agendamento(b.id, zeca, cliente, servico, _as(30))
+
+    assert _servicos(
+        _linha_de(cortes_por_barbeiro(b.id, DIA, DIA, AGORA), zeca.id)["servicos"]
+    ) == [(servico.nome, 2, None)]
+
+
+def test_servicos_contam_so_o_que_foi_feito(cenario):
+    """Mesma regra das contagens: cancelado e futuro ficam fora da pizza."""
+    b = cenario["brutus"]
+    zeca = _barbeiro(b.id, "Zeca")
+    corte = _servico(b.id, "Corte")
+    cliente = _cliente(b.id)
+
+    _agendamento(b.id, zeca, cliente, corte, _as(0), preco_centavos=4000)
+    _agendamento(b.id, zeca, cliente, corte, _as(30), preco_centavos=4000,
+                 status="CANCELADO_CLIENTE")
+    _agendamento(b.id, zeca, cliente, corte,
+                 datetime(2026, 9, 5, 21, 0, tzinfo=timezone.utc), preco_centavos=4000)
+
+    saida = cortes_por_barbeiro(b.id, DIA, DIA, AGORA)
+    assert _servicos(_linha_de(saida, zeca.id)["servicos"]) == [(corte.nome, 1, 4000)]
+    assert saida["totais"]["centavos"] == 4000
+
+
+def test_barbeiro_sem_corte_tem_lista_de_servicos_vazia(cenario):
+    b = cenario["brutus"]
+    parado = _barbeiro(b.id, "Parado")
+
+    saida = cortes_por_barbeiro(b.id, DIA, DIA, AGORA)
+    assert _linha_de(saida, parado.id)["servicos"] == []
+    assert saida["totais"]["servicos"] == []
+    assert saida["totais"]["centavos"] is None
+
+
 # ---------------------------------------------------------------- isolamento
 
 
@@ -295,8 +446,9 @@ def test_rota_responde_o_resumo(client, cenario):
     b = cenario["brutus"]
     dono = _barbeiro(b.id, "Dono", papel="DONO")
     host = _logar(client, dono, b.id)
-    _agendamento(b.id, dono, _cliente(b.id), _servico(b.id),
-                 datetime(2026, 9, 5, 12, 0, tzinfo=timezone.utc))
+    servico = _servico(b.id)
+    _agendamento(b.id, dono, _cliente(b.id), servico,
+                 datetime(2026, 9, 5, 12, 0, tzinfo=timezone.utc), preco_centavos=4000)
 
     r = client.get("/api/painel/resumo", {"de": DIA, "ate": DIA}, headers={"host": host})
     assert r.status_code == 200
@@ -305,6 +457,10 @@ def test_rota_responde_o_resumo(client, cenario):
     linha = next(l for l in corpo["linhas"] if l["barbeiroId"] == str(dono.id))
     assert linha["cortes"] == 1
     assert linha["clientes"] == 1
+    assert linha["servicos"] == [
+        {"servicoId": str(servico.id), "nome": servico.nome, "cortes": 1, "centavos": 4000},
+    ]
+    assert corpo["totais"]["centavos"] == 4000
 
 
 def test_rota_recusa_barbeiro_comum(client, cenario):
