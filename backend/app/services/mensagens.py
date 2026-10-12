@@ -128,13 +128,17 @@ def msg_lembrete(
             f"Endereço: {endereco}"
         )
     # Pelo central: o nome da barbearia entra na linha em negrito (a que a
-    # previa da notificacao mostra), e a ultima diz para onde avisar que nao
-    # vai — sem ela, quem desiste avisaria um numero que ninguem le.
+    # previa da notificacao mostra), e o fim diz para onde avisar que nao
+    # vai. So' o numero dela nao bastava: nada dizia que ESTE numero, o que
+    # mandou, ninguem le — e responder o lembrete aqui e' o gesto natural.
+    # Dai a ultima linha, em italico para pesar menos que o numero (pedido do
+    # dono, 12/10).
     return (
         f"*{barbearia_nome} — lembrete: {servico_nome.lower()} hoje às {hora}*\n"
         f"com {barbeiro_nome}\n"
-        f"Endereço: {endereco}\n"
-        f"Não vai dar? Chama: {formatar(contato)}"
+        f"Endereço: {endereco}\n\n"
+        f"Caso não possa ir, chama: {formatar(contato)}\n"
+        f"_Este número só envia avisos, não precisa responder aqui._"
     )
 
 

@@ -194,8 +194,9 @@ def test_lembrete_pelo_central():
     assert texto == (
         "*Dom Tony — lembrete: cabelo hoje às 8:00*\n"
         "com Jose Cicero\n"
-        "Endereço: Rua Aurora, 88\n"
-        "Não vai dar? Chama: (83) 9 9999-0000"
+        "Endereço: Rua Aurora, 88\n\n"
+        "Caso não possa ir, chama: (83) 9 9999-0000\n"
+        "_Este número só envia avisos, não precisa responder aqui._"
     )
 
 
