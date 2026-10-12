@@ -1,5 +1,5 @@
-"""O resumo do painel: quantos cortes cada barbeiro fez, e para quantas
-pessoas diferentes, num periodo.
+"""O resumo do painel: quantos cortes cada barbeiro fez, para quantas
+pessoas diferentes, e de quais servicos (com o valor), num periodo.
 
 'Corte feito' e' `CONFIRMADO` com `fim <= agora`, e nao 'tudo que esta' na
 agenda'. A diferenca aparece dentro do proprio dia: as 14h, o horario das 18h
@@ -11,11 +11,11 @@ tras. Contando so' o que terminou, ele so' cresce, que e' como o dono le.
 import re
 from datetime import date, datetime
 
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 
 from tenant.config import RESUMO_JANELA_MAXIMA_DIAS
 from tenant.datas import local_para_utc, somar_dias
-from tenant.models import Agendamento, Barbeiro
+from tenant.models import Agendamento, Barbeiro, Servico
 from tenant.rls import com_barbearia
 
 _DIA = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -49,10 +49,11 @@ def periodo_pedido(de: str | None, ate: str | None, hoje: str) -> tuple[str, str
 
 
 def cortes_por_barbeiro(barbearia_id, de: str, ate: str, agora: datetime) -> dict:
-    """Uma linha por barbeiro, mais os totais da barbearia.
+    """Uma linha por barbeiro, mais os totais da barbearia. Cada linha, e os
+    totais, levam os servicos feitos: quantos e quanto entrou por eles.
 
-    Sao TRES consultas, e nao uma, de proposito. A versao de uma consulta
-    (`Barbeiro.objects.filter(Q(ativo=True) | Q(agendamentos__...))
+    As contagens sao TRES consultas, e nao uma, de proposito. A versao de
+    uma consulta (`Barbeiro.objects.filter(Q(ativo=True) | Q(agendamentos__...))
     .annotate(Count("agendamentos", filter=...))`) filtra e anota sobre a
     MESMA relacao, e o ORM emite dois JOINs sobre `tenant_agendamento`: a
     contagem sai multiplicada. O sintoma e' o pior possivel numa tela de
@@ -108,6 +109,49 @@ def cortes_por_barbeiro(barbearia_id, de: str, ate: str, agora: datetime) -> dic
             cortes=Count("id"), clientes=Count("cliente_id", distinct=True),
         )
 
+        # A pizza de servicos. Agrupa pelo SERVICO, e nao pelo `servico_nome`
+        # gravado no agendamento: o dono que corrige "Sobracelha" para
+        # "Sobrancelha" veria o mesmo servico partido em duas fatias. O nome
+        # que aparece e' o de hoje. O valor, ao contrario, e' o GRAVADO
+        # (`preco_centavos`): o que entrou foi o preco daquele dia.
+        por_servico = list(
+            Agendamento.objects.filter(**feitos)
+            .values("barbeiro_id", "servico_id")
+            .annotate(cortes=Count("id"), centavos=Sum("preco_centavos"))
+        )
+        # A ordem e' a da tela de Servicos, e nao a de volume: e' ela que
+        # prende a cor de cada servico no front, e volume muda todo mes.
+        catalogo = {
+            s["id"]: s
+            for s in Servico.objects.filter(
+                id__in={r["servico_id"] for r in por_servico},
+            ).values("id", "nome", "ordem")
+        }
+
+    def _servicos(grupos) -> list[dict]:
+        """Junta os grupos (barbeiro, servico) por servico. `centavos` fica
+        None quando NENHUM agendamento do servico tem preco — zero diria que
+        foi de graca; com parte sem preco, soma o que tem."""
+        juntos: dict = {}
+        for g in grupos:
+            s = juntos.setdefault(g["servico_id"], {"cortes": 0, "centavos": None})
+            s["cortes"] += g["cortes"]
+            if g["centavos"] is not None:
+                s["centavos"] = (s["centavos"] or 0) + g["centavos"]
+        ordem = sorted(juntos, key=lambda i: (catalogo[i]["ordem"], catalogo[i]["nome"]))
+        return [
+            {
+                "servicoId": str(i),
+                "nome": catalogo[i]["nome"],
+                "cortes": juntos[i]["cortes"],
+                "centavos": juntos[i]["centavos"],
+            }
+            for i in ordem
+        ]
+
+    servicos_do_salao = _servicos(por_servico)
+    valores = [s["centavos"] for s in servicos_do_salao if s["centavos"] is not None]
+
     return {
         "de": de,
         "ate": ate,
@@ -125,6 +169,7 @@ def cortes_por_barbeiro(barbearia_id, de: str, ate: str, agora: datetime) -> dic
                 "ativo": b["ativo"],
                 "cortes": contagem.get(b["id"], {}).get("cortes", 0),
                 "clientes": contagem.get(b["id"], {}).get("clientes", 0),
+                "servicos": _servicos(r for r in por_servico if r["barbeiro_id"] == b["id"]),
             }
             for b in barbeiros
         ],
@@ -132,5 +177,10 @@ def cortes_por_barbeiro(barbearia_id, de: str, ate: str, agora: datetime) -> dic
         # `or 0` aqui e' rede morta, nao correcao de um `null` de verdade.
         # Fica como defesa caso a agregacao ganhe um `Sum`/`Avg` um dia: esses,
         # sim, devolvem None sem linha nenhuma para agregar.
-        "totais": {"cortes": totais["cortes"] or 0, "clientes": totais["clientes"] or 0},
+        "totais": {
+            "cortes": totais["cortes"] or 0,
+            "clientes": totais["clientes"] or 0,
+            "servicos": servicos_do_salao,
+            "centavos": sum(valores) if valores else None,
+        },
     }

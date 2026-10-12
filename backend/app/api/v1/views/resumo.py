@@ -10,7 +10,8 @@ from tenant.datas import dia_de_hoje
 
 class ResumoView(ExigeDono, APIView):
     """GET /api/painel/resumo?de=YYYY-MM-DD&ate=YYYY-MM-DD — quantos cortes
-    cada barbeiro fez no periodo, e para quantas pessoas diferentes.
+    cada barbeiro fez no periodo, para quantas pessoas diferentes, e de quais
+    servicos (quantos e quanto entrou por eles).
 
     `ExigeDono` e nao `ExigeSessao`: o resumo compara a equipe inteira lado a
     lado, e isso e' informacao de quem administra. Um barbeiro vendo a coluna
