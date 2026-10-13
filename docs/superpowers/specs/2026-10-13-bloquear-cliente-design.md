@@ -81,8 +81,9 @@ A recusa vem **depois** das checagens que já existem (formulário, número
 válido, `numero_existe`), para o erro só aparecer no último passo, como as
 outras recusas. Nada é gravado na recusa.
 
-### Bloquear (`POST /api/painel/clientes/bloquear`, `ExigeSessao`)
-- Entrada: o id do agendamento de onde o botão foi apertado. O barbeiro só
+### Bloquear (`POST /api/painel/agendamentos/<id>/bloquear-cliente`, `ExigeSessao`)
+- Entrada: o id do agendamento de onde o botão foi apertado (na rota, como o
+  cancelar). O barbeiro só
   pode usar agendamento dele (`filtro_do_barbeiro`, igual ao cancelar); o dono,
   qualquer um.
 - Numa transação: marca o cliente (`bloqueado_em`, `bloqueado_por`) e cancela
@@ -92,7 +93,7 @@ outras recusas. Nada é gravado na recusa.
   `lista_do_dia.avisar_mudanca`, para a lista do dia sair refeita (a mesma
   regra de quando o painel cancela um horário de hoje).
 - Bloquear quem já está bloqueado não muda nada e devolve ok.
-- A prévia da confirmação (`GET .../clientes/bloquear?agendamento=<id>`)
+- A prévia da confirmação (`GET` na mesma rota)
   devolve nome, número e quantos horários futuros seriam cancelados.
 
 ### Desbloquear e listar (`ExigeDono`)
