@@ -394,6 +394,12 @@ class Cliente(models.Model):
     nome = models.TextField()
     whatsapp = models.TextField()
     criado_em = models.DateTimeField(default=timezone.now)
+    # Bloqueado = `bloqueado_em` preenchido (spec 2026-10-13). O site recusa
+    # marcar com este numero, e com qualquer aparelho que ja' marcou com ele.
+    bloqueado_em = models.DateTimeField(null=True, blank=True)
+    bloqueado_por = models.ForeignKey(
+        "Barbeiro", null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
 
     class Meta:
         constraints = [
@@ -453,6 +459,9 @@ class Agendamento(models.Model):
     # `agora` aqui na criacao (a confirmacao JA e' o lembrete), e o cron
     # nunca ve esse agendamento.
     lembrete_enviado_em = models.DateTimeField(null=True)
+    # A marca do navegador que marcou pelo site (cookie `aparelho`). Nulo
+    # para o painel, o bot e tudo que veio antes de 13/10/2026.
+    aparelho = models.TextField(null=True, blank=True)
 
     def __str__(self):
         # Quem e', quando, e o que — nessa ordem, porque e' assim que se procura

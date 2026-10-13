@@ -65,7 +65,7 @@ def _upsert_cliente(barbearia_id: str, whatsapp: str, nome: str) -> str:
 
 def marcar(
     *, barbearia_id: str, barbeiro_id: str, servico_id: str, inicio: datetime,
-    nome: str, whatsapp: str, agora: datetime,
+    nome: str, whatsapp: str, agora: datetime, aparelho: str | None = None,
 ) -> dict:
     """POST /painel/agendamentos — e tambem o motor de `POST /agendamentos`
     (fluxo publico, bloco C da travessia): as duas rotas chamam esta MESMA
@@ -124,6 +124,7 @@ def marcar(
             # Dentro da janela do lembrete, a confirmacao que sai a seguir JA
             # e' o lembrete: nasce avisado, o cron nunca o ve.
             lembrete_enviado_em=lembrete_ao_criar(inicio, agora),
+            aparelho=aparelho,
         )
 
     return {
