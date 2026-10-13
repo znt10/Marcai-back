@@ -1,4 +1,7 @@
+import secrets
 from datetime import datetime, timezone
+
+from django.conf import settings
 
 from django.db import IntegrityError
 from rest_framework.response import Response
@@ -17,6 +20,7 @@ from app.services.agendamentos import (
     eh_sobreposicao,
     marcar,
 )
+from app.services.clientes_bloqueados import esta_bloqueado
 from app.services.mensagens import (
     msg_barbeiro_cancelado,
     msg_barbeiro_novo,
@@ -30,6 +34,12 @@ from tenant.telefone import formatar, normalizar
 from tenant.tipos import palavras
 
 NAO_ENCONTRADO = {"erro": "Agendamento não encontrado."}
+
+# A marca do navegador que marca pelo site (spec 2026-10-13). Gravada pelo
+# SERVIDOR, e nao por script: o Safari apaga em 7 dias o que o script grava,
+# mas nao o cookie que vem na resposta. Host-only, como o de sessao.
+COOKIE_APARELHO = "aparelho"
+APARELHO_MAX_AGE = 2 * 365 * 24 * 3600
 
 
 class AgendamentosView(ExigeTenant, APIView):
@@ -57,12 +67,28 @@ class AgendamentosView(ExigeTenant, APIView):
                 {"erro": "Esse número não tem WhatsApp. Confere pra gente?"}, status=422
             )
 
+        # Bloqueado (o numero, ou o aparelho que ja' marcou com um numero
+        # bloqueado): a mesma cara das outras recusas, sem dizer por que. A
+        # frase manda chamar a barbearia, que e' o que a equipe quer.
+        aparelho = request.COOKIES.get(COOKIE_APARELHO) or None
+        if esta_bloqueado(self.barbearia_id, whatsapp, aparelho):
+            o_lugar = palavras(request.barbearia.tipo)["o_lugar"]
+            return Response(
+                {
+                    "erro": "Não foi possível concluir o agendamento. "
+                    f"Chama {o_lugar}: {formatar(request.barbearia.whatsapp_contato)}"
+                },
+                status=422,
+            )
+        novo_aparelho = None if aparelho else secrets.token_urlsafe(16)
+
         agora = datetime.now(timezone.utc)
         try:
             criado = marcar(
                 barbearia_id=self.barbearia_id, barbeiro_id=d["barbeiroId"],
                 servico_id=d["servicoId"], inicio=d["inicio"],
                 nome=d["nome"], whatsapp=whatsapp, agora=agora,
+                aparelho=aparelho or novo_aparelho,
             )
         except ErroCliente as e:
             return Response({"erro": e.mensagem}, status=e.status)
@@ -107,7 +133,13 @@ class AgendamentosView(ExigeTenant, APIView):
                     inicio=criado["inicio"], agora=datetime.now(timezone.utc),
                 ),
             )
-        return Response({"codigo": criado["codigo"]}, status=201)
+        resposta = Response({"codigo": criado["codigo"]}, status=201)
+        if novo_aparelho:
+            resposta.set_cookie(
+                COOKIE_APARELHO, novo_aparelho, max_age=APARELHO_MAX_AGE, path="/",
+                httponly=True, samesite="Lax", secure=not settings.DEBUG,
+            )
+        return resposta
 
 
 class AgendamentoDetalheView(ExigeTenant, APIView):
