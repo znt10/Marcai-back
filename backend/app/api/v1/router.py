@@ -22,6 +22,11 @@ from .views.barbeiro_servicos import BarbeiroServicosView
 from .views.barbeiros import BarbeirosView
 from .views.bloqueios import BloqueioDetalheView, BloqueiosView
 from .views.conflitos import ConflitosView
+from .views.clientes_bloqueados import (
+    BloquearClienteView,
+    ClientesBloqueadosView,
+    DesbloquearClienteView,
+)
 from .views.cron import LembretesView
 from .views.dia import DiaView
 from .views.equipe import (
@@ -170,6 +175,23 @@ urlpatterns = [
         "painel/agendamentos/<id:id>/cancelar",
         AgendamentoCancelarView.as_view(),
         name="painel-agendamentos-cancelar",
+    ),
+    # Bloquear cliente (spec 2026-10-13): pela agenda, a partir de um horario,
+    # como o cancelar. Listar e desbloquear sao so' do dono.
+    path(
+        "painel/agendamentos/<id:id>/bloquear-cliente",
+        BloquearClienteView.as_view(),
+        name="painel-agendamentos-bloquear-cliente",
+    ),
+    path(
+        "painel/clientes/bloqueados",
+        ClientesBloqueadosView.as_view(),
+        name="painel-clientes-bloqueados",
+    ),
+    path(
+        "painel/clientes/<id:id>/desbloquear",
+        DesbloquearClienteView.as_view(),
+        name="painel-clientes-desbloquear",
     ),
     path("painel/barbearia", BarbeariaPainelView.as_view(), name="painel-barbearia"),
     # O resumo do dono — quantos cortes cada barbeiro fez no periodo. Le so'
