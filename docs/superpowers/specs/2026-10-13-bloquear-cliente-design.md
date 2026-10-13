@@ -67,6 +67,14 @@ Continua liberado. Se o barbeiro marcar pelo painel (`FormMarcar`), a decisão
 - Chega ao Django pelo rewrite `/api/*` do Next, igual ao cookie de sessão do
   painel.
 
+### A marca que a recusa deixa
+Quem marcou antes desta mudança tem agendamentos com `aparelho` nulo e o
+celular sem cookie. Por isso a recusa pelo número grava um cookie assinado
+(`ref`, nome neutro, mesmos atributos do `aparelho`) com o id do cliente
+bloqueado, e a recusa também confere esse cookie. Sem isso, a pessoa trocava
+de número no mesmo celular e passava. Nada vai para o banco; desbloquear solta
+também quem ficou marcado assim.
+
 ### A recusa (só no `POST /api/agendamentos`, a rota do site)
 Antes de `marcar()`, recusa se:
 1. o `Cliente` desse número nesta barbearia tem `bloqueado_em`; **ou**
