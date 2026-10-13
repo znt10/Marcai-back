@@ -15,15 +15,35 @@ from tenant.models import Agendamento, Cliente
 from tenant.rls import com_barbearia
 
 
-def esta_bloqueado(barbearia_id, whatsapp: str, aparelho: str | None) -> bool:
+def esta_bloqueado(
+    barbearia_id, whatsapp: str, aparelho: str | None, marcado_por=None,
+) -> bool:
+    """`marcado_por`: o id do cliente bloqueado que a propria recusa deixou
+    no navegador (cookie assinado, ver a view). Cobre quem marcou antes de
+    a marca do aparelho existir: os agendamentos antigos tem `aparelho` nulo,
+    e sem isto bastaria trocar de numero no mesmo celular."""
     with com_barbearia(barbearia_id):
         if Cliente.objects.filter(whatsapp=whatsapp, bloqueado_em__isnull=False).exists():
+            return True
+        if marcado_por and Cliente.objects.filter(
+            id=marcado_por, bloqueado_em__isnull=False,
+        ).exists():
             return True
         if not aparelho:
             return False
         return Agendamento.objects.filter(
             aparelho=aparelho, cliente__bloqueado_em__isnull=False,
         ).exists()
+
+
+def id_do_bloqueado(barbearia_id, whatsapp: str):
+    """O id do cliente bloqueado com este numero, ou None."""
+    with com_barbearia(barbearia_id):
+        return (
+            Cliente.objects.filter(whatsapp=whatsapp, bloqueado_em__isnull=False)
+            .values_list("id", flat=True)
+            .first()
+        )
 
 
 def _cliente_do_agendamento(agendamento_id, filtro_barbeiro_id):

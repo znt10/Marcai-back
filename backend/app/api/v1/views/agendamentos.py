@@ -2,6 +2,7 @@ import secrets
 from datetime import datetime, timezone
 
 from django.conf import settings
+from django.core import signing
 
 from django.db import IntegrityError
 from rest_framework.response import Response
@@ -20,7 +21,7 @@ from app.services.agendamentos import (
     eh_sobreposicao,
     marcar,
 )
-from app.services.clientes_bloqueados import esta_bloqueado
+from app.services.clientes_bloqueados import esta_bloqueado, id_do_bloqueado
 from app.services.mensagens import (
     msg_barbeiro_cancelado,
     msg_barbeiro_novo,
@@ -31,6 +32,7 @@ from app.services.trava_ip import ip_de
 from app.services.whatsapp import enviar_a_equipe_da, enviar_ao_cliente, numero_existe
 from tenant.models import TipoMensagem
 from tenant.telefone import formatar, normalizar
+from tenant.identidade import como_uuid
 from tenant.tipos import palavras
 
 NAO_ENCONTRADO = {"erro": "Agendamento não encontrado."}
@@ -40,6 +42,21 @@ NAO_ENCONTRADO = {"erro": "Agendamento não encontrado."}
 # mas nao o cookie que vem na resposta. Host-only, como o de sessao.
 COOKIE_APARELHO = "aparelho"
 APARELHO_MAX_AGE = 2 * 365 * 24 * 3600
+
+# A marca que a RECUSA deixa: o id do cliente bloqueado, assinado. Cobre quem
+# marcou antes de existir a marca do aparelho (agendamento antigo com
+# `aparelho` nulo, celular sem cookie): sem ela, recusada pelo numero, a
+# pessoa trocava de numero no mesmo celular e passava. Nome neutro de
+# proposito — quem abre o navegador nao le "bloqueado" em lugar nenhum.
+COOKIE_MARCA = "ref"
+_SAL_MARCA = "marcai.cliente-bloqueado"
+
+
+def _marcado_por(request):
+    try:
+        return como_uuid(signing.loads(request.COOKIES.get(COOKIE_MARCA, ""), salt=_SAL_MARCA))
+    except signing.BadSignature:
+        return None
 
 
 class AgendamentosView(ExigeTenant, APIView):
@@ -71,15 +88,23 @@ class AgendamentosView(ExigeTenant, APIView):
         # bloqueado): a mesma cara das outras recusas, sem dizer por que. A
         # frase manda chamar a barbearia, que e' o que a equipe quer.
         aparelho = request.COOKIES.get(COOKIE_APARELHO) or None
-        if esta_bloqueado(self.barbearia_id, whatsapp, aparelho):
+        if esta_bloqueado(self.barbearia_id, whatsapp, aparelho, _marcado_por(request)):
             o_lugar = palavras(request.barbearia.tipo)["o_lugar"]
-            return Response(
+            recusa = Response(
                 {
                     "erro": "Não foi possível concluir o agendamento. "
                     f"Chama {o_lugar}: {formatar(request.barbearia.whatsapp_contato)}"
                 },
                 status=422,
             )
+            bloqueado = id_do_bloqueado(self.barbearia_id, whatsapp)
+            if bloqueado is not None:
+                recusa.set_cookie(
+                    COOKIE_MARCA, signing.dumps(str(bloqueado), salt=_SAL_MARCA),
+                    max_age=APARELHO_MAX_AGE, path="/",
+                    httponly=True, samesite="Lax", secure=not settings.DEBUG,
+                )
+            return recusa
         novo_aparelho = None if aparelho else secrets.token_urlsafe(16)
 
         agora = datetime.now(timezone.utc)

@@ -143,3 +143,59 @@ def test_o_painel_continua_marcando_para_o_numero_bloqueado(client, cenario):
             content_type="application/json", headers={"host": HOST, **CABECALHO},
         )
     assert r.status_code == 201
+
+
+def test_cliente_antigo_sem_marca_no_aparelho_nao_escapa_trocando_de_numero(client, cenario):
+    """A cliente que motivou o bloqueio marcou ANTES da marca do aparelho
+    existir: os agendamentos dela tem `aparelho` nulo e o celular dela nao tem
+    cookie. Recusada pelo numero, ela troca de numero no mesmo celular — e
+    continua recusada, porque a propria recusa deixa a marca."""
+    from datetime import datetime, timezone
+
+    from test_clientes_bloqueados import _agendamento as _antigo, _cliente
+
+    b = cenario["brutus"]
+    zeca = _barbeiro(b.id)
+    servico = _servico_vinculado(b.id, zeca)
+    primeiro, segundo = _dois_horarios(zeca, servico)
+    maria = _cliente(b.id, whatsapp="11977778888")
+    velho = _antigo(b.id, zeca, maria, datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc))
+    bloquear(b.id, velho.id, None, zeca.id, datetime.now(timezone.utc))
+
+    r, _ = _marcar(client, zeca, servico, primeiro, "11977778888")
+    assert r.status_code == 422
+
+    r, _ = _marcar(client, zeca, servico, segundo, "11966665555")
+    assert r.status_code == 422
+
+
+def test_desbloquear_solta_tambem_quem_ficou_marcado_pela_recusa(client, cenario):
+    from datetime import datetime, timezone
+
+    from app.services.clientes_bloqueados import desbloquear
+    from test_clientes_bloqueados import _agendamento as _antigo, _cliente
+
+    b = cenario["brutus"]
+    zeca = _barbeiro(b.id)
+    servico = _servico_vinculado(b.id, zeca)
+    primeiro, segundo = _dois_horarios(zeca, servico)
+    maria = _cliente(b.id, whatsapp="11977778888")
+    velho = _antigo(b.id, zeca, maria, datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc))
+    bloquear(b.id, velho.id, None, zeca.id, datetime.now(timezone.utc))
+    r, _ = _marcar(client, zeca, servico, primeiro, "11977778888")
+    assert r.status_code == 422
+
+    desbloquear(b.id, maria.id)
+    r, _ = _marcar(client, zeca, servico, segundo, "11966665555")
+    assert r.status_code == 201
+
+
+def test_marca_da_recusa_forjada_e_ignorada(client, cenario):
+    """O valor e' assinado: um cookie inventado nao bloqueia ninguem (nem
+    derruba a rota)."""
+    b = cenario["brutus"]
+    zeca = _barbeiro(b.id)
+    servico = _servico_vinculado(b.id, zeca)
+    client.cookies["ref"] = "qualquer-coisa"
+    r, _ = _marcar(client, zeca, servico, _proximo_slot_livre(zeca, servico), "11977778888")
+    assert r.status_code == 201
