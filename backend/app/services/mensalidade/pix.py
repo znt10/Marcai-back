@@ -33,6 +33,14 @@ def crc16(texto):
     return f"{crc:04X}"
 
 
+def normalizar_chave(chave):
+    """A chave na forma em que e gravada e comparada: sem espaco e em
+    minusculas (e-mail e chave aleatoria nao diferenciam caixa). A mesma
+    forma vai para o copia e cola e para o indice de centavos, ou "A@b.com" e
+    "a@b.com" disputariam centavos como se fossem chaves diferentes."""
+    return "".join((chave or "").split()).lower()
+
+
 def identificador(public_id):
     """"MC" + 23 hex do public_id: so letras e numeros, ate 25, como o txid
     do Pix estatico exige. Ha banco que mostra isso no extrato de quem

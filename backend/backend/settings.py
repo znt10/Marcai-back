@@ -274,6 +274,13 @@ MENSALIDADE_VALOR_PADRAO_CENTAVOS = int(
     os.environ.get("MENSALIDADE_VALOR_PADRAO_CENTAVOS", "0")
 )
 
+# O Pix da mensalidade: a chave que recebe e o nome/cidade que aparecem no
+# app do banco de quem paga. Vazia = nao se gera cobranca (ninguem trava por
+# falta de configuracao).
+PIX_CHAVE = os.environ.get("PIX_CHAVE", "")
+PIX_NOME_RECEBEDOR = os.environ.get("PIX_NOME_RECEBEDOR", "")
+PIX_CIDADE = os.environ.get("PIX_CIDADE", "")
+
 CELERY_BROKER_URL = os.environ.get("REDIS_URL", "redis://redis:6379/1")
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_TIMEZONE = "America/Sao_Paulo"

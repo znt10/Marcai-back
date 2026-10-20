@@ -85,3 +85,11 @@ def test_identificador_vem_em_maiuscula():
 
 def test_qr_devolve_um_svg_pronto_para_img():
     assert qr_svg(gerar()).startswith("data:image/svg+xml")
+
+
+def test_normalizar_chave_tira_espaco_e_caixa():
+    from app.services.mensalidade.pix import normalizar_chave
+
+    assert normalizar_chave("  Dono@Marcai.COM ") == "dono@marcai.com"
+    assert normalizar_chave("1234 5678-aBcD") == "12345678-abcd"
+    assert normalizar_chave("") == ""
