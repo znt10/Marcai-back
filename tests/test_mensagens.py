@@ -259,3 +259,21 @@ def test_lista_refeita_sem_horario_restante_diz_que_esvaziou():
 
     texto = msg_lista_refeita(barbeiro_nome="Zeca Silva", linhas=[], agora=AGORA)
     assert texto == "Zeca, sua agenda de hoje mudou:\nNão sobrou horário hoje."
+
+
+def test_msg_codigo_conta():
+    from app.services.mensagens import msg_codigo_conta
+
+    assert msg_codigo_conta("048213") == (
+        "*Marcaí*\nSeu código: *048213*\n"
+        "Vale por 10 minutos. Não passa esse código pra ninguém."
+    )
+
+
+def test_msg_link_nova_senha():
+    from app.services.mensagens import msg_link_nova_senha
+
+    assert msg_link_nova_senha("https://marcai.app/conta/nova-senha?t=abc") == (
+        "*Marcaí*\nPra criar uma senha nova, abre: https://marcai.app/conta/nova-senha?t=abc\n"
+        "O link vale por 30 minutos. Se não foi você, é só ignorar."
+    )
