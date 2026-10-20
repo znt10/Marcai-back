@@ -54,6 +54,12 @@ ele marcou e o cancelamento a partir dali, sem depender do link.
   Deslogado, leva para entrar/criar conta. Logado, abre o histórico.
 - **Histórico separado por estabelecimento:** um bloco por lugar ("Brutus",
   "Cicinha"...), nunca tudo misturado.
+- **O código e o link só existem no back.** O back gera, guarda (só o hash)
+  e confere. Nenhuma resposta da API devolve o código ou o token, nem em
+  debug ou em teste de ponta a ponta. O front só manda o que a pessoa digitou
+  e recebe "certo" ou "errado". A conta só vira confirmada, e a sessão só
+  nasce, depois que o back conferiu. Nada no front decide isso, porque
+  qualquer coisa decidida no front dá pra burlar.
 - **Esqueci a senha, simples:** a pessoa digita o WhatsApp e recebe um
   **link** no WhatsApp para criar uma senha nova, no mesmo espírito do link de
   convite do barbeiro (`DefinirSenha.tsx`, `/auth/convite/<token>`). É
