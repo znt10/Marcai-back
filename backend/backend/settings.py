@@ -268,6 +268,12 @@ CACHES = {
     )
 }
 
+# Mensalidade do Marcai, em centavos. 0 = barbearia nova nasce isenta; acima
+# de 0, nasce com o primeiro mes gratis e depois paga este valor.
+MENSALIDADE_VALOR_PADRAO_CENTAVOS = int(
+    os.environ.get("MENSALIDADE_VALOR_PADRAO_CENTAVOS", "0")
+)
+
 CELERY_BROKER_URL = os.environ.get("REDIS_URL", "redis://redis:6379/1")
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_TIMEZONE = "America/Sao_Paulo"

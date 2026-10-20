@@ -56,6 +56,8 @@ x-django: &django
     WHATSAPP_WEBHOOK_SEGREDO: ${WHATSAPP_WEBHOOK_SEGREDO:?}
     WHATSAPP_WEBHOOK_URL: http://api:8000/api/interno/whatsapp/evento
     URL_BASE: https://${DOMINIO_BASE}
+    # Sem `:?`: 0 e' valido (barbearia nova nasce isenta).
+    MENSALIDADE_VALOR_PADRAO_CENTAVOS: ${MENSALIDADE_VALOR_PADRAO_CENTAVOS:-0}
 
 services:
   db:
