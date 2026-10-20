@@ -106,6 +106,30 @@ def test_leitura_nao_cria_cobranca(b):
 
 # --- cobranca_do_ciclo ---
 
+def test_em_dia_nao_abre_cobranca(b):
+    from app.services.mensalidade import operacoes
+    from tenant.models import Cobranca
+
+    # paga ate 10/10, hoje 01/10: faltam 9 dias, fora da janela de 5
+    assert operacoes.cobranca_do_ciclo(b, agora=momento(2026, 10, 1)) is None
+    assert not Cobranca.objects.using("admin").filter(barbearia_id=b).exists()
+
+
+def test_vencendo_abre_cobranca(b):
+    from app.services.mensalidade import operacoes
+
+    assert operacoes.cobranca_do_ciclo(b, agora=momento(2026, 10, 7)) is not None
+
+
+def test_em_dia_com_cobranca_aberta_devolve_none_e_deixa_a_linha(b):
+    from app.services.mensalidade import operacoes
+    from tenant.models import Cobranca
+
+    operacoes.cobranca_do_ciclo(b, agora=momento(2026, 10, 7))
+    assert operacoes.cobranca_do_ciclo(b, agora=momento(2026, 10, 1)) is None
+    assert Cobranca.objects.using("admin").filter(barbearia_id=b, status="ABERTA").count() == 1
+
+
 def test_cobranca_nasce_com_centavo_chave_normalizada_e_copia_e_cola(b):
     from app.services.mensalidade import operacoes
 

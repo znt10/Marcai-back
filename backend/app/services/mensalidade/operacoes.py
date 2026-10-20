@@ -54,8 +54,8 @@ def _abertas_da_mensalidade(barbearia_id):
     )
 
 
-def _barbearia_ativa(barbearia_id):
-    return Barbearia.objects.using(ALIAS).filter(id=barbearia_id, ativo=True).exists()
+def _barbearia_ativa(barbearia_id, using=ALIAS):
+    return Barbearia.objects.using(using).filter(id=barbearia_id, ativo=True).exists()
 
 
 def _travar_assinatura(barbearia_id):
@@ -71,10 +71,12 @@ def _travar_assinatura(barbearia_id):
     )
 
 
-def leitura(barbearia_id, *, agora, considerar_aviso=True) -> Leitura:
+def leitura(barbearia_id, *, agora, considerar_aviso=True, using=ALIAS) -> Leitura:
+    """`using` so' muda por onde se LE: o crivo do painel passa "default"
+    (o `brutus_app` tem SELECT nas tres tabelas); escrita fica sempre no admin."""
     hoje = hoje_em_sao_paulo(agora)
-    ativa = _barbearia_ativa(barbearia_id)
-    assinatura = Assinatura.objects.using(ALIAS).filter(pk=barbearia_id).first()
+    ativa = _barbearia_ativa(barbearia_id, using)
+    assinatura = Assinatura.objects.using(using).filter(pk=barbearia_id).first()
     if assinatura is None:
         # So acontece com dado torto (a criacao sempre faz a linha). Falta de
         # dado nao cobra nem tranca ninguem: vale como isenta.
@@ -85,7 +87,12 @@ def leitura(barbearia_id, *, agora, considerar_aviso=True) -> Leitura:
     aviso_em = None
     if considerar_aviso:
         aviso_em = (
-            _abertas_da_mensalidade(barbearia_id)
+            Cobranca.objects.using(using)
+            .filter(
+                barbearia_id=barbearia_id,
+                motivo=MotivoCobranca.MENSALIDADE,
+                status=StatusCobranca.ABERTA,
+            )
             .exclude(informada_em=None)
             .values_list("informada_em", flat=True)
             .first()
@@ -145,9 +152,19 @@ def _abrir_cobranca(assinatura):
     )
 
 
-def _garantir_cobranca(assinatura):
+# So' dentro da janela de pagamento ha Pix na tela: em dia, nao se abre
+# cobranca (ocuparia um centavo da chave por semanas a toa).
+JANELA_DE_PAGAMENTO = frozenset({
+    Situacao.VENCENDO, Situacao.ATRASADA, Situacao.BLOQUEADA, Situacao.AGUARDANDO,
+})
+
+
+def _garantir_cobranca(assinatura, agora):
     """A cobranca aberta da barbearia, criada se faltar. Quem chama ja
-    travou a assinatura. None quando nao ha o que cobrar."""
+    travou a assinatura. None quando nao ha o que cobrar ou fora da janela
+    de pagamento (a linha ja aberta, se houver, fica como esta)."""
+    if leitura(assinatura.barbearia_id, agora=agora).situacao not in JANELA_DE_PAGAMENTO:
+        return None
     aberta = _abertas_da_mensalidade(assinatura.barbearia_id).first()
     if aberta is not None:
         return aberta
@@ -168,7 +185,7 @@ def cobranca_do_ciclo(barbearia_id, *, agora):
         assinatura = _travar_assinatura(barbearia_id)
         if assinatura is None:
             return None
-        return _garantir_cobranca(assinatura)
+        return _garantir_cobranca(assinatura, agora)
 
 
 def informar_pagamento(barbearia_id, barbeiro_id, *, agora):
@@ -181,7 +198,7 @@ def informar_pagamento(barbearia_id, barbeiro_id, *, agora):
         assinatura = _travar_assinatura(barbearia_id)
         if assinatura is None or assinatura.isenta:
             raise RecusaDaMensalidade(SEM_MENSALIDADE)
-        cobranca = _garantir_cobranca(assinatura)
+        cobranca = _garantir_cobranca(assinatura, agora)
         if cobranca is None:
             raise RecusaDaMensalidade(SEM_MENSALIDADE)
         if (

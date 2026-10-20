@@ -61,7 +61,7 @@ def test_isenta_volta_nulos(client, cenario):
     assert r.status_code == 200
     assert r.json() == {
         "situacao": "ISENTA", "dias": None, "bloqueiaEm": None, "pagaAte": None,
-        "valorCentavos": None, "souDono": True, "pix": None,
+        "valorCentavos": None, "souDono": True, "pix": None, "pixErro": None,
     }
 
 
@@ -164,3 +164,31 @@ def test_ja_paguei_de_isenta_e_400(client, cenario):
     r = _ja_paguei(client)
     assert r.status_code == 400
     assert r.json() == {"erro": "Esta barbearia não tem mensalidade a pagar."}
+
+
+def test_sem_centavo_livre_responde_200_com_pix_erro(client, cenario):
+    from unittest.mock import patch
+
+    from app.services.mensalidade.centavos import SemCentavoLivre
+
+    b = cenario["brutus"]
+    _logar(client, _barbeiro(b.id), b.id)
+    _paga_ate(b.id, -7)
+
+    with patch("app.services.mensalidade.operacoes.centavos.escolher", side_effect=SemCentavoLivre):
+        r = _ver(client)
+    assert r.status_code == 200
+    corpo = r.json()
+    assert corpo["situacao"] == "BLOQUEADA"
+    assert corpo["pix"] is None
+    assert "Não foi possível gerar o Pix" in corpo["pixErro"]
+
+
+def test_em_dia_nao_tem_pix(client, cenario):
+    b = cenario["brutus"]
+    _logar(client, _barbeiro(b.id), b.id)
+    _paga_ate(b.id, 20)
+
+    corpo = _ver(client).json()
+    assert corpo["situacao"] == "EM_DIA"
+    assert corpo["pix"] is None and corpo["pixErro"] is None

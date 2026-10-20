@@ -255,7 +255,7 @@ def _bloqueada_pela_mensalidade(barbearia_id) -> bool:
     from app.services.mensalidade import operacoes
     from app.services.mensalidade.situacao import Situacao
 
-    leitura = operacoes.leitura(barbearia_id, agora=timezone.now())
+    leitura = operacoes.leitura(barbearia_id, agora=timezone.now(), using="default")
     return leitura.situacao == Situacao.BLOQUEADA
 
 

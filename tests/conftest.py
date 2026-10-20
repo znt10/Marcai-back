@@ -176,23 +176,3 @@ def refazer_enfileirado():
     with patch("app.services.lista_do_dia._enfileirar_refazer") as enfileirar:
         yield enfileirar
 
-
-def pytest_collection_modifyitems(items):
-    """Todo teste de banco ganha o alias `admin`.
-
-    O crivo do painel consulta a mensalidade (`Assinatura`, fora do RLS) pelo
-    alias `admin` a cada pedido, entao qualquer teste que bata em `/api/painel`
-    passa a tocar nele. Sem isto, cada arquivo antigo teria de declarar
-    `databases=[..., "admin"]` so' para nao estourar `DatabaseOperationForbidden`.
-    O `admin` aponta para o mesmo banco: nao muda isolamento, so' o que o
-    pytest-django deixa consultar.
-    """
-    for item in items:
-        marca = item.get_closest_marker("django_db")
-        if marca is None:
-            continue
-        bancos = marca.kwargs.get("databases")
-        if bancos == "__all__" or (bancos is not None and "admin" in bancos):
-            continue
-        novos = {**marca.kwargs, "databases": [*(bancos or ["default"]), "admin"]}
-        item.add_marker(pytest.mark.django_db(*marca.args, **novos), append=False)

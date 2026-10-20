@@ -19,7 +19,14 @@ def _corpo(barbearia_id, papel, *, agora):
     lido = operacoes.leitura(barbearia_id, agora=agora)
     assinatura = Assinatura.objects.using("admin").filter(pk=barbearia_id).first()
     sou_dono = papel == "DONO"
-    cobranca = operacoes.cobranca_do_ciclo(barbearia_id, agora=agora) if sou_dono else None
+    cobranca, pix_erro = None, None
+    if sou_dono:
+        try:
+            cobranca = operacoes.cobranca_do_ciclo(barbearia_id, agora=agora)
+        except RecusaDaMensalidade as recusa:
+            # Sem centavo livre agora: o dono bloqueado so' alcanca esta rota,
+            # entao ela responde com a situacao e o motivo em vez de 500.
+            pix_erro = recusa.mensagem
     return {
         "situacao": str(lido.situacao),
         "dias": lido.dias,
@@ -27,6 +34,7 @@ def _corpo(barbearia_id, papel, *, agora):
         "pagaAte": _data(assinatura.paga_ate) if assinatura and not assinatura.isenta else None,
         "valorCentavos": assinatura.valor_centavos if assinatura and not assinatura.isenta else None,
         "souDono": sou_dono,
+        "pixErro": pix_erro,
         "pix": None if cobranca is None else {
             "copiaECola": cobranca.copia_e_cola,
             "qrSvg": pix.qr_svg(cobranca.copia_e_cola),
