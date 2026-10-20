@@ -7,6 +7,13 @@ from .views.admin_barbearias import (
     AdminBarbeariaDetalheView,
     AdminBarbeariasView,
 )
+from .views.admin_mensalidades import (
+    AdminCobrancaConfirmarView,
+    AdminCobrancaRecusarView,
+    AdminMensalidadeDetalheView,
+    AdminMensalidadeRegistrarView,
+    AdminMensalidadesView,
+)
 from .views.admin_whatsapp_central import AdminWhatsappCentralView
 from .views.agenda_painel import AgendaPainelView
 from .views.agendamentos import (
@@ -226,6 +233,27 @@ urlpatterns = [
         "admin/barbearias/<id:id>/convite",
         AdminBarbeariaConviteView.as_view(),
         name="admin-barbearias-convite",
+    ),
+    path("admin/mensalidades", AdminMensalidadesView.as_view(), name="admin-mensalidades"),
+    path(
+        "admin/mensalidades/<id:id>",
+        AdminMensalidadeDetalheView.as_view(),
+        name="admin-mensalidades-detalhe",
+    ),
+    path(
+        "admin/mensalidades/<id:id>/registrar",
+        AdminMensalidadeRegistrarView.as_view(),
+        name="admin-mensalidades-registrar",
+    ),
+    path(
+        "admin/cobrancas/<id:id>/confirmar",
+        AdminCobrancaConfirmarView.as_view(),
+        name="admin-cobrancas-confirmar",
+    ),
+    path(
+        "admin/cobrancas/<id:id>/recusar",
+        AdminCobrancaRecusarView.as_view(),
+        name="admin-cobrancas-recusar",
     ),
     path(
         "admin/whatsapp-central",
