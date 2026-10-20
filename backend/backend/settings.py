@@ -275,8 +275,9 @@ MENSALIDADE_VALOR_PADRAO_CENTAVOS = int(
 )
 
 # O Pix da mensalidade: a chave que recebe e o nome/cidade que aparecem no
-# app do banco de quem paga. Vazia = nao se gera cobranca (ninguem trava por
-# falta de configuracao).
+# app do banco de quem paga. Faltando qualquer um dos tres, nao ha como
+# pagar: nao se gera cobranca e toda barbearia le como ISENTA (nao trava nem
+# recebe aviso) — ver `operacoes.cobravel`.
 PIX_CHAVE = os.environ.get("PIX_CHAVE", "")
 PIX_NOME_RECEBEDOR = os.environ.get("PIX_NOME_RECEBEDOR", "")
 PIX_CIDADE = os.environ.get("PIX_CIDADE", "")

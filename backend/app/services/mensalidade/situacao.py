@@ -29,9 +29,6 @@ class Situacao(StrEnum):
     BLOQUEADA = "BLOQUEADA"
 
 
-TRAVAM_O_PAINEL = frozenset({Situacao.DESATIVADA, Situacao.BLOQUEADA})
-
-
 def hoje_em_sao_paulo(agora):
     """A data de Brasilia de um instante. Entre 00:00 e 03:00 UTC ainda e o
     dia anterior aqui, e ler a data em UTC trava a barbearia (ou a solta)

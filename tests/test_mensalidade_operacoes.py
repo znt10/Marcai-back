@@ -396,3 +396,47 @@ def test_registrar_manual_sem_aberta_nem_chave(b):
             b, paga_ate=date(2026, 12, 5), valor_centavos=9000, agora=momento(2026, 10, 12),
         )
     assert c.chave_pix == "" and c.status == "PAGA"
+
+
+# --- ja paguei depois de recusado; o que nao e' cobravel ---
+
+def test_ja_paguei_recusado_nao_pode_ser_repetido_na_mesma_cobranca(b, barbeiro):
+    from app.services.mensalidade import operacoes
+
+    c = operacoes.informar_pagamento(b, barbeiro, agora=momento(2026, 10, 12))
+    operacoes.recusar(c.id, agora=momento(2026, 10, 12, 15))
+    with pytest.raises(operacoes.RecusaDaMensalidade) as r:
+        operacoes.informar_pagamento(b, barbeiro, agora=momento(2026, 10, 12, 16))
+    assert r.value.mensagem == "O pagamento informado foi recusado. Fale com o Marcaí."
+    # Nem dias depois: a recusa e' uma resposta, nao uma espera.
+    with pytest.raises(operacoes.RecusaDaMensalidade):
+        operacoes.informar_pagamento(b, barbeiro, agora=momento(2026, 10, 20))
+    assert _recarregar(c).informada_em is None
+
+
+def test_ja_paguei_sem_resposta_em_tres_dias_pode_avisar_de_novo(b, barbeiro):
+    from app.services.mensalidade import operacoes
+
+    c = operacoes.informar_pagamento(b, barbeiro, agora=momento(2026, 10, 12))
+    de_novo = operacoes.informar_pagamento(b, barbeiro, agora=momento(2026, 10, 15, 12, 1))
+    assert de_novo.id == c.id and de_novo.informada_em == momento(2026, 10, 15, 12, 1)
+
+
+@pytest.mark.parametrize("config", [
+    {"PIX_CHAVE": ""}, {"PIX_NOME_RECEBEDOR": ""}, {"PIX_CIDADE": ""},
+])
+def test_sem_pix_completo_le_como_isenta(b, config):
+    from app.services.mensalidade import operacoes
+    from app.services.mensalidade.situacao import Situacao
+
+    with override_settings(**config):
+        assert operacoes.leitura(b, agora=momento(2026, 10, 20)).situacao == Situacao.ISENTA
+        assert operacoes.cobranca_do_ciclo(b, agora=momento(2026, 10, 20)) is None
+
+
+def test_valor_zero_le_como_isenta(b):
+    from app.services.mensalidade import operacoes
+    from app.services.mensalidade.situacao import Situacao
+
+    _paga(b, valor=0)
+    assert operacoes.leitura(b, agora=momento(2026, 10, 20)).situacao == Situacao.ISENTA

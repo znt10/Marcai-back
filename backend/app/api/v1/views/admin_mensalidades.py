@@ -62,7 +62,11 @@ class AdminMensalidadeDetalheView(ExigeAdmin, APIView):
         if not campos:
             return _erro("Nada para alterar.")
 
-        if id is None or not servico.atualizar(id, campos):
+        try:
+            achou = id is not None and servico.atualizar(id, campos)
+        except RecusaDaMensalidade as recusa:
+            return _erro(recusa.mensagem)
+        if not achou:
             return Response(NAO_ENCONTRADA, status=404)
         return Response(servico.linha(id))
 

@@ -3,6 +3,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+from django.test import override_settings
 from django.utils import timezone
 
 from app.services.sessao import COOKIE_SESSAO, emitir
@@ -15,6 +16,13 @@ CORPO_402 = {
     "erro": "O painel está bloqueado pela mensalidade.",
     "code": "mensalidade_bloqueada",
 }
+PIX = {"PIX_CHAVE": "dono@marcai.com", "PIX_NOME_RECEBEDOR": "Marcai", "PIX_CIDADE": "Patos"}
+
+
+@pytest.fixture(autouse=True)
+def _pix():
+    with override_settings(**PIX):
+        yield
 
 
 def _barbeiro(barbearia_id, papel="DONO"):
@@ -32,12 +40,12 @@ def _logar(client, barbeiro, barbearia_id):
     )
 
 
-def _atrasar(barbearia_id, dias):
+def _atrasar(barbearia_id, dias, valor=10000):
     """Paga ate `dias` atras (data de Sao Paulo, como a trava le), com valor."""
     from tenant.models import Assinatura
 
     Assinatura.objects.using("owner").filter(barbearia_id=barbearia_id).update(
-        isenta=False, valor_centavos=10000,
+        isenta=False, valor_centavos=valor,
         paga_ate=timezone.localdate() - timedelta(days=dias),
     )
 
@@ -135,3 +143,25 @@ def test_a_outra_barbearia_nao_e_afetada(client, cenario):
     _atrasar(b.id, 7)
 
     assert _agenda(client, host="dontony.localhost").status_code == 200
+
+
+def test_valor_zero_nao_trava(client, cenario):
+    """Sem nada a pagar nao ha como sair do bloqueio: nao se tranca."""
+    b = cenario["brutus"]
+    _logar(client, _barbeiro(b.id), b.id)
+    _atrasar(b.id, 30, valor=0)
+
+    assert _agenda(client).status_code == 200
+    assert client.get("/api/painel/mensalidade", headers={"host": HOST}).json()["situacao"] == "ISENTA"
+
+
+@pytest.mark.parametrize("config", [{"PIX_CHAVE": ""}, {"PIX_CIDADE": ""}])
+def test_pix_sem_configurar_nao_trava(client, cenario, config):
+    b = cenario["brutus"]
+    _logar(client, _barbeiro(b.id), b.id)
+    _atrasar(b.id, 30)
+
+    with override_settings(**config):
+        assert _agenda(client).status_code == 200
+        r = client.get("/api/painel/mensalidade", headers={"host": HOST})
+    assert r.json()["situacao"] == "ISENTA"

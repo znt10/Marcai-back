@@ -4,8 +4,11 @@ pagamento (confirmar, recusar, registrar na mao).
 
 Tudo pelo alias `admin` (`Assinatura` e `Cobranca` ficam fora do RLS e o
 `brutus_app` so le). A conta da situacao e' a de `ler_situacao`, a mesma da
-trava do painel; aqui ela roda sobre dados lidos em bloco, para a lista nao
-fazer tres consultas por barbearia."""
+trava do painel, com a mesma pergunta de `operacoes.cobravel` no lugar do
+`isenta`; aqui ela roda sobre dados lidos em bloco, para a lista nao fazer
+tres consultas por barbearia."""
+
+SEM_VALOR = "Defina o valor da mensalidade antes de cobrar."
 
 from django.db import transaction
 from django.utils import timezone
@@ -21,7 +24,7 @@ from tenant.models import (
 from tenant.rls import com_barbearia_admin
 
 from .mensalidade import operacoes
-from .mensalidade.datas import dia_de_vencimento_para
+from .mensalidade.datas import dia_de_vencimento_para, mes_seguinte
 from .mensalidade.situacao import Situacao, hoje_em_sao_paulo, ler_situacao
 
 ALIAS = "admin"
@@ -77,7 +80,7 @@ def _linhas(agora, barbearia_id=None):
             )
         else:
             leitura = ler_situacao(
-                barbearia_ativa=b.ativo, isenta=a.isenta,
+                barbearia_ativa=b.ativo, isenta=not operacoes.cobravel(a),
                 nunca_bloquear=a.nunca_bloquear, paga_ate=a.paga_ate,
                 aviso_em=info.informada_em if info else None, hoje=hoje, agora=agora,
             )
@@ -129,7 +132,8 @@ def linha(barbearia_id, *, agora=None):
 
 def atualizar(barbearia_id, campos, *, agora=None):
     """Aplica o subconjunto de `campos` (ja validados) na assinatura, criando
-    a linha se faltar. False se a barbearia nao existe."""
+    a linha se faltar. False se a barbearia nao existe; levanta
+    `RecusaDaMensalidade` (e nada muda) ao ligar a cobranca com valor zero."""
     agora = agora or timezone.now()
     with transaction.atomic(using=ALIAS):
         if not Barbearia.objects.using(ALIAS).filter(id=barbearia_id).exists():
@@ -144,21 +148,43 @@ def atualizar(barbearia_id, campos, *, agora=None):
                 dia_de_vencimento=dia_de_vencimento_para(hoje), paga_ate=hoje,
                 isenta=True,
             )
-        mudou_cobranca = False
+        mudou_valor = False
+        fim_do_ciclo = False
+        voltou_a_cobrar = False
         if "valorCentavos" in campos and campos["valorCentavos"] != assinatura.valor_centavos:
             assinatura.valor_centavos = campos["valorCentavos"]
-            mudou_cobranca = True
+            mudou_valor = True
         if "isenta" in campos and campos["isenta"] != assinatura.isenta:
             assinatura.isenta = campos["isenta"]
-            mudou_cobranca = True
+            if assinatura.isenta:
+                fim_do_ciclo = True
+            else:
+                voltou_a_cobrar = True
+        if "isenta" in campos and not campos["isenta"] and assinatura.valor_centavos <= 0:
+            # Cobrar zero nao tem Pix: a barbearia leria isenta mas o admin
+            # veria a caixa desmarcada. Melhor dizer na hora.
+            raise operacoes.RecusaDaMensalidade(SEM_VALOR)
         if "nuncaBloquear" in campos:
             assinatura.nunca_bloquear = campos["nuncaBloquear"]
         if "pagaAte" in campos:
+            fim_do_ciclo = fim_do_ciclo or campos["pagaAte"] != assinatura.paga_ate
             assinatura.paga_ate = campos["pagaAte"]
             assinatura.dia_de_vencimento = dia_de_vencimento_para(campos["pagaAte"])
+        elif voltou_a_cobrar:
+            # O `paga_ate` de quem era isenta ficou parado no tempo (meses
+            # atras, as vezes): usa-lo trancaria o painel no ato. Ligar a
+            # cobranca sem data recomeca como barbearia nova, um mes a frente.
+            hoje = hoje_em_sao_paulo(agora)
+            dia = dia_de_vencimento_para(hoje)
+            assinatura.paga_ate = mes_seguinte(hoje, dia)
+            assinatura.dia_de_vencimento = dia
         assinatura.atualizada_em = agora
         assinatura.save(using=ALIAS)
-        if mudou_cobranca:
+        if fim_do_ciclo:
+            # Isenta ou com o `paga_ate` movido na mao: o ciclo da cobranca
+            # aberta acabou, avisada ou nao.
+            operacoes.cancelar_aberta(barbearia_id)
+        elif mudou_valor or voltou_a_cobrar:
             # O Pix aberto e ainda nao avisado carrega o valor velho: some, e a
             # proxima leitura do painel abre outro com o valor novo. O ja
             # avisado fica, porque o dono pode ter pago aquele valor.

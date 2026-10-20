@@ -2,7 +2,6 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from app.services.mensalidade.situacao import (
-    TRAVAM_O_PAINEL,
     Situacao,
     hoje_em_sao_paulo,
     ler_situacao,
@@ -55,7 +54,6 @@ def test_cinco_dias_depois_ainda_e_carencia():
 def test_seis_dias_depois_bloqueia():
     leitura = ler(PAGA_ATE + timedelta(days=6))
     assert (leitura.situacao, leitura.dias) == (Situacao.BLOQUEADA, 6)
-    assert leitura.situacao in TRAVAM_O_PAINEL
 
 
 def test_bloqueia_em_e_o_primeiro_dia_bloqueado():
@@ -77,7 +75,6 @@ def test_isenta_sempre():
 def test_desativada_ganha_de_tudo():
     leitura = ler(PAGA_ATE, barbearia_ativa=False, isenta=True)
     assert leitura.situacao == Situacao.DESATIVADA
-    assert leitura.situacao in TRAVAM_O_PAINEL
 
 
 def test_aviso_de_dois_dias_segura_o_bloqueio():

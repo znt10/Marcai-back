@@ -258,3 +258,15 @@ def test_registrar_manual_nao_manda_nada(b):
             b, paga_ate=date(2026, 12, 10), valor_centavos=4990, agora=momento(2026, 10, 11),
         )
     envio.assert_not_called()
+
+
+@pytest.mark.parametrize("config", [
+    {"PIX_CHAVE": ""}, {"PIX_NOME_RECEBEDOR": ""}, {"PIX_CIDADE": ""},
+])
+def test_sem_pix_completo_nao_avisa(b, config):
+    """Nao tranca (nao ha como pagar), entao tambem nao ameaca trancar."""
+    for dia in (5, 10, 16):
+        with override_settings(**config):
+            n, e = _rodar(momento(2026, 10, dia))
+        assert n == 0
+        e.assert_not_called()

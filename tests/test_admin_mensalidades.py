@@ -380,3 +380,81 @@ def test_recusar_sem_aviso_da_400(client):
     c = _aberta(b.id)
     r = _post(client, f"/api/admin/cobrancas/{c.id}/recusar")
     assert r.status_code == 400 and r.json()["erro"]
+
+
+# ------------------------------------------- ligar a cobranca e o "nao cobravel"
+
+
+def test_tirar_a_isencao_comeca_um_ciclo_novo_e_nao_tranca(client):
+    """Isenta ha tempo, o `paga_ate` ficou para tras: ligar a cobranca sem
+    dizer ate quando esta pago comeca do zero, como barbearia nova."""
+    from app.services.mensalidade.datas import dia_de_vencimento_para, mes_seguinte
+
+    _logar_admin(client)
+    h = hoje()
+    b = _nova("volta", paga_ate=h - timedelta(days=30), isenta=True)
+    r = _patch(client, b.id, {"isenta": False})
+    assert r.status_code == 200
+    assert r.json()["situacao"] == "EM_DIA"
+    a = _assinatura(b.id)
+    dia = dia_de_vencimento_para(h)
+    assert (a.paga_ate, a.dia_de_vencimento, a.isenta) == (mes_seguinte(h, dia), dia, False)
+
+
+def test_tirar_a_isencao_com_paga_ate_usa_a_data_dada(client):
+    _logar_admin(client)
+    b = _nova("voltadata", paga_ate=hoje() - timedelta(days=30), isenta=True)
+    r = _patch(client, b.id, {"isenta": False, "pagaAte": "2027-02-14"})
+    assert r.status_code == 200
+    a = _assinatura(b.id)
+    assert (a.paga_ate, a.dia_de_vencimento) == (date(2027, 2, 14), 14)
+
+
+def test_cobrar_com_valor_zero_da_400_e_nao_muda_nada(client):
+    _logar_admin(client)
+    b = _nova("zero", paga_ate=hoje() - timedelta(days=30), valor=0, isenta=True)
+    r = _patch(client, b.id, {"isenta": False})
+    assert r.status_code == 400
+    assert r.json() == {"erro": "Defina o valor da mensalidade antes de cobrar."}
+    assert _assinatura(b.id).isenta is True
+    r = _patch(client, b.id, {"isenta": False, "valorCentavos": 0})
+    assert r.status_code == 400
+
+
+def test_lista_le_como_isenta_quem_nao_tem_o_que_pagar(client):
+    """Valor zero ou Pix sem configurar: nao ha como pagar, entao a lista diz
+    ISENTA, igual a trava (que nao tranca) e aos avisos (que nao saem)."""
+    _logar_admin(client)
+    b = _nova("semvalor", paga_ate=hoje() - timedelta(days=30), valor=0)
+    linha = next(x for x in _get(client).json()["barbearias"] if x["barbeariaId"] == str(b.id))
+    assert linha["situacao"] == "ISENTA"
+    _patch(client, b.id, {"valorCentavos": 5000})
+    with override_settings(PIX_CIDADE=""):
+        linha = next(x for x in _get(client).json()["barbearias"] if x["barbeariaId"] == str(b.id))
+    assert linha["situacao"] == "ISENTA"
+    assert _get(client).json()["contadores"]["bloqueadas"] == 1
+
+
+def test_isentar_cancela_ate_a_cobranca_ja_avisada(client):
+    _logar_admin(client)
+    b = _nova("isentaavisada", paga_ate=hoje())
+    c = _aberta(b.id, informada_em=timezone.now())
+    _patch(client, b.id, {"isenta": True})
+    assert _status(c) == "CANCELADA"
+
+
+def test_mover_o_paga_ate_cancela_a_cobranca_aberta(client):
+    _logar_admin(client)
+    b = _nova("move", paga_ate=hoje())
+    c = _aberta(b.id, informada_em=timezone.now())
+    _patch(client, b.id, {"pagaAte": (hoje() + timedelta(days=40)).isoformat()})
+    assert _status(c) == "CANCELADA"
+
+
+def test_desativar_a_barbearia_cancela_a_cobranca_aberta(client):
+    from app.services.admin_barbearias import atualizar_ativo
+
+    b = _nova("desliga", paga_ate=hoje())
+    c = _aberta(b.id, informada_em=timezone.now())
+    assert atualizar_ativo(str(b.id), False)
+    assert _status(c) == "CANCELADA"

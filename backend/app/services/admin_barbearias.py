@@ -31,6 +31,7 @@ from tenant.telefone import normalizar
 from tenant.tipos import PALETA_PADRAO
 
 from .convite import gerar_convite
+from .mensalidade import operacoes
 from .mensalidade.datas import dia_de_vencimento_para, mes_seguinte
 from .mensalidade.situacao import hoje_em_sao_paulo
 from .whatsapp_instancias import (
@@ -236,6 +237,11 @@ def atualizar_ativo(barbearia_id: str, ativo: bool) -> bool:
         return False
 
     Barbearia.objects.using("admin").filter(id=barbearia_id).update(ativo=ativo)
+    if not ativo:
+        # O Pix aberto da mensalidade deixa de valer (avisado ou nao): ao
+        # reativar, a barbearia comeca de uma cobranca nova, e o centavo
+        # dela nao fica preso na chave enquanto ela esta desligada.
+        operacoes.cancelar_aberta(barbearia.id)
 
     if barbearia.plano == PlanoBarbearia.COM_ZAP:
         if ativo:

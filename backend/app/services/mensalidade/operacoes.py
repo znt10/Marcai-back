@@ -1,6 +1,8 @@
 """O que se faz com a mensalidade: ler, gerar o Pix, avisar que pagou,
-confirmar, recusar e registrar na mao. Nao conhece HTTP nem manda aviso
-nenhum; as views, a tela Plataforma e o vigia chamam aqui.
+confirmar, recusar e registrar na mao. Nao conhece HTTP; as views, a tela
+Plataforma e o vigia chamam aqui. Os avisos que nascem de uma acao (o "ja
+paguei" para o Jose, confirmou/recusou para o dono) saem daqui, depois do
+commit; os do calendario ficam em `avisos`.
 
 `Assinatura` e `Cobranca` ficam fora do RLS e o `brutus_app` so le: toda
 leitura e escrita daqui vai pelo alias `admin`, e toda busca filtra pela
@@ -116,6 +118,21 @@ def _travar_assinatura(barbearia_id):
     )
 
 
+def cobravel(assinatura) -> bool:
+    """Ha como pagar esta mensalidade? Precisa de valor e do Pix completo
+    (chave, nome e cidade: sem um deles o BR Code sai invalido no banco).
+    Quem nao tem como pagar le como ISENTA em todo lugar — a trava, a tela,
+    a lista do admin e os avisos perguntam aqui —, porque trancar quem nao
+    tem como sair do bloqueio e' trancar para sempre."""
+    return (
+        not assinatura.isenta
+        and assinatura.valor_centavos > 0
+        and bool(pix.normalizar_chave(settings.PIX_CHAVE))
+        and bool(settings.PIX_NOME_RECEBEDOR)
+        and bool(settings.PIX_CIDADE)
+    )
+
+
 def leitura(barbearia_id, *, agora, considerar_aviso=True, using=ALIAS) -> Leitura:
     """`using` so' muda por onde se LE: o crivo do painel passa "default"
     (o `brutus_app` tem SELECT nas tres tabelas); escrita fica sempre no admin."""
@@ -144,7 +161,7 @@ def leitura(barbearia_id, *, agora, considerar_aviso=True, using=ALIAS) -> Leitu
         )
     return ler_situacao(
         barbearia_ativa=ativa,
-        isenta=assinatura.isenta,
+        isenta=not cobravel(assinatura),
         nunca_bloquear=assinatura.nunca_bloquear,
         paga_ate=assinatura.paga_ate,
         aviso_em=aviso_em,
@@ -213,12 +230,7 @@ def _garantir_cobranca(assinatura, agora):
     aberta = _abertas_da_mensalidade(assinatura.barbearia_id).first()
     if aberta is not None:
         return aberta
-    if (
-        assinatura.isenta
-        or assinatura.valor_centavos <= 0
-        or not pix.normalizar_chave(settings.PIX_CHAVE)
-        or not _barbearia_ativa(assinatura.barbearia_id)
-    ):
+    if not cobravel(assinatura) or not _barbearia_ativa(assinatura.barbearia_id):
         return None
     return _abrir_cobranca(assinatura)
 
@@ -241,11 +253,19 @@ def informar_pagamento(barbearia_id, barbeiro_id, *, agora):
         # A trava e' o que impede dois avisos no duplo clique: o segundo
         # pedido espera o primeiro e ja encontra a cobranca informada.
         assinatura = _travar_assinatura(barbearia_id)
-        if assinatura is None or assinatura.isenta:
+        if assinatura is None or not cobravel(assinatura):
             raise RecusaDaMensalidade(SEM_MENSALIDADE)
         cobranca = _garantir_cobranca(assinatura, agora)
         if cobranca is None:
             raise RecusaDaMensalidade(SEM_MENSALIDADE)
+        # Recusado uma vez, o aviso nao volta para a mesma cobranca: o Jose ja
+        # olhou e nao achou o Pix, e um novo "ja paguei" so' seguraria o
+        # painel mais 3 dias. A conversa segue fora do painel; uma cobranca
+        # nova (registro, data movida) libera o botao outra vez.
+        if cobranca.recusada_em is not None:
+            raise RecusaDaMensalidade(
+                "O pagamento informado foi recusado. Fale com o Marcaí."
+            )
         if (
             cobranca.informada_em is not None
             and cobranca.informada_em >= agora - ESPERA_DA_CONFIRMACAO
@@ -255,10 +275,7 @@ def informar_pagamento(barbearia_id, barbeiro_id, *, agora):
             )
         cobranca.informada_em = agora
         cobranca.informada_por_id = barbeiro_id
-        cobranca.recusada_em = None
-        cobranca.save(using=ALIAS, update_fields=[
-            "informada_em", "informada_por", "recusada_em",
-        ])
+        cobranca.save(using=ALIAS, update_fields=["informada_em", "informada_por"])
         if settings.MENSALIDADE_WHATSAPP_AVISO:
             valor = cobranca.valor_centavos
             _avisar_depois_do_commit(lambda: (
@@ -349,6 +366,13 @@ def recusar(cobranca_id, *, agora):
         ])
         _avisar_o_dono(assinatura.barbearia_id, mensagens.msg_mensalidade_recusada)
         return cobranca
+
+
+def cancelar_aberta(barbearia_id):
+    """A cobranca aberta deixa de valer, mesmo ja avisada: a barbearia ficou
+    isenta, foi desativada ou o admin mudou o `paga_ate` na mao — o ciclo
+    daquela cobranca acabou. O centavo dela volta a ficar livre."""
+    _abertas_da_mensalidade(barbearia_id).update(status=StatusCobranca.CANCELADA)
 
 
 def registrar_manual(barbearia_id, *, paga_ate, valor_centavos, observacao="", agora):

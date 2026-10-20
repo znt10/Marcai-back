@@ -63,7 +63,8 @@ def enviar_do_dia(*, agora) -> int:
     )
     for assinatura in pagantes:
         barbearia = assinatura.barbearia
-        if not barbearia.ativo:
+        # Mesma pergunta da trava: sem como pagar, nao se ameaca trancar.
+        if not barbearia.ativo or not operacoes.cobravel(assinatura):
             continue
         leitura = operacoes.leitura(barbearia.id, agora=agora)
         nivel = _nivel_de_hoje(leitura)
