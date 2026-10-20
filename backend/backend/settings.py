@@ -281,6 +281,10 @@ PIX_CHAVE = os.environ.get("PIX_CHAVE", "")
 PIX_NOME_RECEBEDOR = os.environ.get("PIX_NOME_RECEBEDOR", "")
 PIX_CIDADE = os.environ.get("PIX_CIDADE", "")
 
+# Quem recebe o "ja paguei" das barbearias (digitos com DDD). Vazio = ninguem
+# e' avisado; o aviso continua aparecendo na tela Plataforma.
+MENSALIDADE_WHATSAPP_AVISO = os.environ.get("MENSALIDADE_WHATSAPP_AVISO", "")
+
 CELERY_BROKER_URL = os.environ.get("REDIS_URL", "redis://redis:6379/1")
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_TIMEZONE = "America/Sao_Paulo"
@@ -310,6 +314,12 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="0,30", hour="5-11"),
     },
     "zelador": {"task": "app.tasks.zelador", "schedule": 3600.0},
+    # Uma vez por dia, de manha: os avisos da mensalidade sao por dia (faltam
+    # 5, vence hoje, bloqueou), nao por hora.
+    "avisos-da-mensalidade": {
+        "task": "app.tasks.avisos_da_mensalidade",
+        "schedule": crontab(hour=9, minute=0),
+    },
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

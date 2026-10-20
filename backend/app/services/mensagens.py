@@ -1,3 +1,5 @@
+from django.conf import settings
+
 from tenant.datas import (
     formatar_dia_com_semana,
     formatar_dia_relativo,
@@ -390,4 +392,71 @@ def msg_saudacao(*, link: str) -> str:
     return (
         f"Oi! Pra marcar seu horário, é só tocar no link: {link}\n"
         "Se preferir, espera uns minutinhos que já vamos te responder."
+    )
+
+
+# --- Mensalidade do Marcai ------------------------------------------------
+#
+# Avisos do que a barbearia paga ao Marcai. Ao DONO: curtos, sempre com o nome
+# da barbearia (um dono pode ter mais de uma) e dizendo onde resolver — o
+# painel, sem link, porque ele ja sabe o endereco. Ao Jose: so' o link da tela
+# onde se confirma.
+
+
+def _reais(centavos: int) -> str:
+    inteiro, resto = divmod(centavos, 100)
+    return f"R$ {inteiro:,}".replace(",", ".") + f",{resto:02d}"
+
+
+def _dia_mes(dia) -> str:
+    return f"{dia.day:02d}/{dia.month:02d}"
+
+
+def msg_mensalidade_vencendo(barbearia_nome: str, valor_centavos: int, vence_em, dias: int) -> str:
+    prazo = "1 dia" if dias == 1 else f"{dias} dias"
+    return (
+        f"*{barbearia_nome}*\n"
+        f"A mensalidade do Marcaí ({_reais(valor_centavos)}) vence em {prazo}, "
+        f"dia {_dia_mes(vence_em)}. O Pix está no painel do Marcaí."
+    )
+
+
+def msg_mensalidade_vence_hoje(barbearia_nome: str, valor_centavos: int) -> str:
+    return (
+        f"*{barbearia_nome}*\n"
+        f"A mensalidade do Marcaí ({_reais(valor_centavos)}) vence hoje. "
+        f"O Pix está no painel do Marcaí."
+    )
+
+
+def msg_mensalidade_bloqueada(barbearia_nome: str) -> str:
+    # O site de marcar continua de pe: o cliente nao paga pelo atraso do dono.
+    return (
+        f"*{barbearia_nome}*\n"
+        f"O painel foi bloqueado por falta de pagamento da mensalidade. "
+        f"O site de agendamento continua funcionando para os seus clientes; "
+        f"só o painel fica travado até o pagamento. Pague pelo painel do Marcaí."
+    )
+
+
+def msg_mensalidade_confirmada(barbearia_nome: str, paga_ate) -> str:
+    return (
+        f"*{barbearia_nome}*\n"
+        f"Pagamento confirmado, obrigado! Mensalidade em dia até {_dia_mes(paga_ate)}."
+    )
+
+
+def msg_mensalidade_recusada(barbearia_nome: str) -> str:
+    return (
+        f"*{barbearia_nome}*\n"
+        f"Não encontramos o seu pagamento da mensalidade. Confere o Pix "
+        f"no painel do Marcaí e, se já pagou, avisa de novo por lá."
+    )
+
+
+def msg_mensalidade_ja_paguei(barbearia_nome: str, valor_centavos: int, quem: str) -> str:
+    return (
+        f"{barbearia_nome} avisou que pagou a mensalidade ({_reais(valor_centavos)}), "
+        f"por {quem}. Confere e confirma:\n"
+        f"https://admin.{settings.DOMINIO_BASE}/mensalidades"
     )

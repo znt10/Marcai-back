@@ -6,20 +6,26 @@ nenhum; as views, a tela Plataforma e o vigia chamam aqui.
 leitura e escrita daqui vai pelo alias `admin`, e toda busca filtra pela
 barbearia no codigo. O relogio vem de fora (`agora`), sempre."""
 
+import logging
 import uuid
 from decimal import Decimal
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
 
+from app.services import mensagens
+from app.services.whatsapp import enviar_a_equipe
 from tenant.models import (
     Assinatura,
     Barbearia,
+    Barbeiro,
     Cobranca,
     ComoFoiPaga,
     MotivoCobranca,
     StatusCobranca,
 )
+
+from tenant.rls import com_barbearia_admin
 
 from . import centavos, pix
 from .centavos import SemCentavoLivre
@@ -33,6 +39,8 @@ from .situacao import (
     novo_paga_ate,
 )
 
+logger = logging.getLogger(__name__)
+
 ALIAS = "admin"
 TENTATIVAS_DE_CENTAVO = 3
 SEM_MENSALIDADE = "Esta barbearia não tem mensalidade a pagar."
@@ -44,6 +52,43 @@ class RecusaDaMensalidade(Exception):
     def __init__(self, mensagem):
         self.mensagem = mensagem
         super().__init__(mensagem)
+
+
+def _whatsapp_do_dono(barbearia_id) -> str | None:
+    from .avisos import whatsapp_do_dono  # avisos importa este modulo
+
+    return whatsapp_do_dono(barbearia_id)
+
+
+def _avisar_depois_do_commit(montar):
+    """Agenda o envio para DEPOIS do commit: so' sai aviso de mudanca que
+    ficou, e uma falha do zap nunca desfaz a operacao. `montar` devolve
+    (numero, texto) e roda la' (as leituras do dono sao no banco e nao devem
+    ocupar a transacao da operacao)."""
+    def enviar():
+        try:
+            numero, texto = montar()
+            if numero:
+                enviar_a_equipe(numero, texto)
+        except Exception:
+            logger.exception("[mensalidade] aviso nao saiu")
+
+    transaction.on_commit(enviar, using=ALIAS)
+
+
+def _avisar_o_dono(barbearia_id, texto_para):
+    """`texto_para(nome_da_barbearia)` vai ao dono ativo, se houver."""
+    _avisar_depois_do_commit(lambda: (
+        _whatsapp_do_dono(barbearia_id),
+        texto_para(_nome_da_barbearia(barbearia_id)),
+    ))
+
+
+def _nome_da_barbearia(barbearia_id) -> str:
+    return (
+        Barbearia.objects.using(ALIAS)
+        .filter(id=barbearia_id).values_list("nome", flat=True).first() or ""
+    )
 
 
 def _abertas_da_mensalidade(barbearia_id):
@@ -214,7 +259,28 @@ def informar_pagamento(barbearia_id, barbeiro_id, *, agora):
         cobranca.save(using=ALIAS, update_fields=[
             "informada_em", "informada_por", "recusada_em",
         ])
+        if settings.MENSALIDADE_WHATSAPP_AVISO:
+            valor = cobranca.valor_centavos
+            _avisar_depois_do_commit(lambda: (
+                settings.MENSALIDADE_WHATSAPP_AVISO,
+                mensagens.msg_mensalidade_ja_paguei(
+                    _nome_da_barbearia(barbearia_id), valor,
+                    _quem_avisou(barbearia_id, barbeiro_id),
+                ),
+            ))
         return cobranca
+
+
+def _quem_avisou(barbearia_id, barbeiro_id) -> str:
+    """O nome de quem apertou o "ja paguei". Barbeiro e' RLS, entao le no
+    contexto da barbearia; sem achar, o aviso sai com "o dono" em vez de nao
+    sair."""
+    with com_barbearia_admin(barbearia_id):
+        nome = (
+            Barbeiro.objects.using(ALIAS)
+            .filter(id=barbeiro_id).values_list("nome", flat=True).first()
+        )
+    return nome or "o dono"
 
 
 def _travar_aberta(cobranca_id):
@@ -262,13 +328,17 @@ def confirmar(cobranca_id, *, agora, como=ComoFoiPaga.MANUAL):
         cobranca.save(using=ALIAS, update_fields=[
             "status", "paga_em", "como_foi_paga", "paga_ate_depois",
         ])
+        _avisar_o_dono(
+            assinatura.barbearia_id,
+            lambda nome: mensagens.msg_mensalidade_confirmada(nome, novo),
+        )
         return cobranca
 
 
 def recusar(cobranca_id, *, agora):
     """O dono nao achou o Pix: o aviso cai, a cobranca continua aberta."""
     with transaction.atomic(using=ALIAS):
-        _, cobranca = _travar_aberta(cobranca_id)
+        assinatura, cobranca = _travar_aberta(cobranca_id)
         if cobranca.informada_em is None:
             raise RecusaDaMensalidade("Não há aviso de pagamento para recusar.")
         cobranca.informada_em = None
@@ -277,6 +347,7 @@ def recusar(cobranca_id, *, agora):
         cobranca.save(using=ALIAS, update_fields=[
             "informada_em", "informada_por", "recusada_em",
         ])
+        _avisar_o_dono(assinatura.barbearia_id, mensagens.msg_mensalidade_recusada)
         return cobranca
 
 
