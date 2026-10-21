@@ -60,10 +60,13 @@ class WhatsappSerializer(_Serializer):
 class ConfirmarSerializer(serializers.Serializer):
     """So' garante que os dois campos sao TEXTO: `conferir_codigo(None)`
     quebraria no `.strip()`. Qualquer defeito vira o mesmo 400 do codigo
-    errado, sem dizer qual."""
+    errado, sem dizer qual. A senha vai junto: quem confirma precisa saber a
+    senha da conta pendente, senao quem trocou a senha por cima (criar sobre
+    pendente) a confirmaria com o codigo da vitima."""
 
     whatsapp = serializers.CharField(max_length=40)
     codigo = serializers.CharField(max_length=32)
+    senha = serializers.CharField(max_length=_SENHA_MAX, trim_whitespace=False)
 
 
 class EntrarSerializer(serializers.Serializer):

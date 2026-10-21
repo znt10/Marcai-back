@@ -1,7 +1,7 @@
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from app.api.v1.limite import LimitaLogin
+from app.api.v1.limite import LimitaConta
 from app.api.v1.mixins import ExigeTenant
 from app.api.v1.serializers.conta import (
     CENTRAL_FORA,
@@ -54,11 +54,11 @@ def _logada(conta) -> Response:
 
 # Cada rota de conta herda `ExigeTenant`: o host do admin nao tem
 # estabelecimento, e um pedido de la' seria 500 em `request.barbearia`. As que
-# mandam mensagem ou conferem segredo herdam tambem `LimitaLogin`, que corta a
+# mandam mensagem ou conferem segredo herdam tambem `LimitaConta`, que corta a
 # rajada ANTES do argon2 e do envio.
 
 
-class CriarView(LimitaLogin, ExigeTenant, APIView):
+class CriarView(LimitaConta, ExigeTenant, APIView):
     """POST /api/conta/criar"""
 
     def post(self, request):
@@ -71,7 +71,7 @@ class CriarView(LimitaLogin, ExigeTenant, APIView):
         )
 
 
-class ReenviarView(LimitaLogin, ExigeTenant, APIView):
+class ReenviarView(LimitaConta, ExigeTenant, APIView):
     """POST /api/conta/reenviar"""
 
     def post(self, request):
@@ -81,7 +81,7 @@ class ReenviarView(LimitaLogin, ExigeTenant, APIView):
         return _responder_envio(servico.reenviar(ip_de(request), entrada.validated_data["whatsapp"]))
 
 
-class ConfirmarView(LimitaLogin, ExigeTenant, APIView):
+class ConfirmarView(LimitaConta, ExigeTenant, APIView):
     """POST /api/conta/confirmar — o codigo certo vira conta e sessao."""
 
     def post(self, request):
@@ -89,13 +89,13 @@ class ConfirmarView(LimitaLogin, ExigeTenant, APIView):
         if not entrada.is_valid():
             return Response(ERRO_CODIGO, status=400)
         d = entrada.validated_data
-        conta = servico.confirmar(d["whatsapp"], d["codigo"])
+        conta = servico.confirmar(d["whatsapp"], d["codigo"], d["senha"])
         if conta is None:
             return Response(ERRO_CODIGO, status=400)
         return _logada(conta)
 
 
-class EntrarView(LimitaLogin, ExigeTenant, APIView):
+class EntrarView(LimitaConta, ExigeTenant, APIView):
     """POST /api/conta/entrar"""
 
     def post(self, request):
@@ -136,7 +136,7 @@ class EuView(ExigeTenant, APIView):
         return Response(_corpo_da_conta(conta))
 
 
-class EsqueciView(LimitaLogin, ExigeTenant, APIView):
+class EsqueciView(LimitaConta, ExigeTenant, APIView):
     """POST /api/conta/esqueci — a mesma resposta com e sem conta."""
 
     def post(self, request):
@@ -148,7 +148,7 @@ class EsqueciView(LimitaLogin, ExigeTenant, APIView):
         )
 
 
-class NovaSenhaView(LimitaLogin, ExigeTenant, APIView):
+class NovaSenhaView(LimitaConta, ExigeTenant, APIView):
     """POST /api/conta/nova-senha/<token>"""
 
     def post(self, request, token: str):

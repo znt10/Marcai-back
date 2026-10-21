@@ -79,6 +79,15 @@ def criar(barbearia, ip: str, nome: str, whatsapp: str, senha: str) -> str:
     if recusa:
         return recusa
 
+    try:
+        return _gravar_e_mandar(numero, ip, nome, senha)
+    except BaseException:
+        # A vaga ja foi gasta: erro de banco ou do envio nao pode deixa-la presa.
+        devolver_envio(numero, ip)
+        raise
+
+
+def _gravar_e_mandar(numero: str, ip: str, nome: str, senha: str) -> str:
     hash_da_senha = gerar(senha)
     with transaction.atomic():
         # `get_or_create` ja resolve a corrida de dois `criar` simultaneos (o
@@ -110,23 +119,40 @@ def reenviar(ip: str, whatsapp: str) -> str:
     if recusa:
         return recusa
 
-    conta = ContaCliente.objects.filter(whatsapp=numero, confirmada_em__isnull=True).first()
-    if conta is None:
-        return ENVIADO
-    return _mandar(conta, ip, FinalidadeCodigo.CONFIRMAR, msg_codigo_conta)
+    try:
+        conta = ContaCliente.objects.filter(whatsapp=numero, confirmada_em__isnull=True).first()
+        if conta is None:
+            return ENVIADO
+        return _mandar(conta, ip, FinalidadeCodigo.CONFIRMAR, msg_codigo_conta)
+    except BaseException:
+        devolver_envio(numero, ip)
+        raise
 
 
-def confirmar(whatsapp: str, codigo: str) -> ContaCliente | None:
-    """Confere o codigo e confirma a conta. `token_version` sobe para que nada
-    emitido antes (nao deveria haver, mas a conta e' do numero) valha depois."""
+def confirmar(whatsapp: str, codigo: str, senha: str) -> ContaCliente | None:
+    """Confere senha E codigo e confirma a conta. A senha e' conferida contra a
+    da conta pendente: `criar` sobre pendente troca a senha, e sem esta
+    conferencia quem a trocou faria a vitima confirmar a conta COM A SENHA DO
+    ATACANTE ao digitar o codigo que recebeu. A senha vem ANTES do codigo e uma
+    senha errada conta como codigo errado (gasta uma das 5 tentativas, sem
+    consumir o codigo): so' quem sabe a senha chega a testar codigo, e quem
+    nao sabe nao ganha chute livre na senha. Mesmo 400 para tudo.
+
+    `token_version` sobe para que nada emitido antes valha depois."""
     numero = _numero(whatsapp)
-    if numero is None:
-        return None
-    conta = ContaCliente.objects.filter(whatsapp=numero, confirmada_em__isnull=True).first()
+    conta = (
+        ContaCliente.objects.filter(whatsapp=numero, confirmada_em__isnull=True).first()
+        if numero else None
+    )
     if conta is None:
+        confere(hash_descartavel(), senha)  # mesmo tempo de resposta
         return None
 
     with transaction.atomic():
+        if not confere(conta.senha_hash, senha):
+            # Um valor que nunca bate: so' queima uma tentativa do codigo vivo.
+            conferir_codigo(conta.id, "")
+            return None
         if not conferir_codigo(conta.id, codigo):
             return None
         ContaCliente.objects.filter(pk=conta.pk).update(
@@ -178,13 +204,17 @@ def esqueci(barbearia, ip: str, whatsapp: str) -> str:
     if recusa:
         return recusa
 
-    conta = ContaCliente.objects.filter(whatsapp=numero, confirmada_em__isnull=False).first()
-    if conta is None:
-        return ENVIADO
-    base = f"{link_da_vitrine(barbearia.slug)}/conta/nova-senha/"
-    return _mandar(
-        conta, ip, FinalidadeCodigo.NOVA_SENHA, lambda token: msg_link_nova_senha(base + token),
-    )
+    try:
+        conta = ContaCliente.objects.filter(whatsapp=numero, confirmada_em__isnull=False).first()
+        if conta is None:
+            return ENVIADO
+        base = f"{link_da_vitrine(barbearia.slug)}/conta/nova-senha/"
+        return _mandar(
+            conta, ip, FinalidadeCodigo.NOVA_SENHA, lambda token: msg_link_nova_senha(base + token),
+        )
+    except BaseException:
+        devolver_envio(numero, ip)
+        raise
 
 
 def nova_senha(token: str, senha: str) -> ContaCliente | None:

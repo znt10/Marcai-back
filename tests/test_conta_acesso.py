@@ -57,7 +57,7 @@ def _criar(client, whatsapp=NUMERO, nome="Ana", senha=SENHA):
 def _conta_confirmada(client, envios, whatsapp=NUMERO, senha=SENHA):
     """Cria e confirma pelo caminho de verdade; devolve o cookie emitido."""
     assert _criar(client, whatsapp, senha=senha).status_code == 202
-    r = _post(client, "confirmar", {"whatsapp": whatsapp, "codigo": _codigo_de(envios)})
+    r = _post(client, "confirmar", {"whatsapp": whatsapp, "codigo": _codigo_de(envios), "senha": SENHA})
     assert r.status_code == 200
     return r.cookies[CONTA_SESSAO_COOKIE].value
 
@@ -148,9 +148,9 @@ def test_criar_por_cima_de_conta_pendente_substitui(client, cenario, envios):
     # Um so' codigo vivo: o anterior morreu quando o novo nasceu.
     segundo = _codigo_de(envios)
     if primeiro != segundo:
-        r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": primeiro})
+        r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": primeiro, "senha": "outra-senha-1"})
         assert r.status_code == 400
-    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": segundo})
+    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": segundo, "senha": "outra-senha-1"})
     assert r.status_code == 200
 
 
@@ -232,7 +232,7 @@ def test_reenviar_manda_codigo_novo_para_a_pendente(client, cenario, envios):
     assert envios[1][0] == NUMERO
     codigo = _codigo_de(envios)
     assert codigo.encode() not in r.content
-    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": codigo})
+    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": codigo, "senha": SENHA})
     assert r.status_code == 200
 
 
@@ -269,7 +269,7 @@ def test_reenviar_com_numero_invalido_422(client, cenario, envios):
 
 def test_confirmar_com_codigo_certo_loga(client, cenario, envios):
     _criar(client)
-    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": _codigo_de(envios)})
+    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": _codigo_de(envios), "senha": SENHA})
 
     assert r.status_code == 200
     assert r.json() == {"nome": "Ana", "whatsapp": "(83) 9 8221-7869"}
@@ -285,7 +285,7 @@ def test_confirmar_com_codigo_errado_400_e_nao_loga(client, cenario, envios):
     certo = _codigo_de(envios)
     errado = "000000" if certo != "000000" else "111111"
 
-    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": errado})
+    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": errado, "senha": SENHA})
 
     assert r.status_code == 400
     assert r.json() == {"erro": "Código errado ou vencido."}
@@ -297,12 +297,12 @@ def test_confirmar_com_codigo_errado_400_e_nao_loga(client, cenario, envios):
 @pytest.mark.parametrize("codigo", [None, ["123456"], {"a": 1}, True])
 def test_confirmar_com_tipo_estranho_e_400_nao_500(client, cenario, envios, codigo):
     _criar(client)
-    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": codigo})
+    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": codigo, "senha": SENHA})
     assert r.status_code == 400
 
 
 def test_confirmar_sem_conta_400(client, cenario):
-    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": "123456"})
+    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": "123456", "senha": SENHA})
     assert r.status_code == 400
     assert r.json() == {"erro": "Código errado ou vencido."}
 
@@ -311,7 +311,7 @@ def test_confirmar_aceita_o_numero_em_outra_forma(client, cenario, envios):
     _criar(client)
     r = _post(
         client, "confirmar",
-        {"whatsapp": "(83) 8221-7869", "codigo": _codigo_de(envios)},
+        {"whatsapp": "(83) 8221-7869", "codigo": _codigo_de(envios), "senha": SENHA},
     )
     assert r.status_code == 200
 
@@ -321,13 +321,13 @@ def test_confirmar_cinco_erros_queimam_o_codigo(client, cenario, envios):
     certo = _codigo_de(envios)
     errado = "000000" if certo != "000000" else "111111"
     for _ in range(5):
-        assert _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": errado}).status_code == 400
-    assert _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": certo}).status_code == 400
+        assert _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": errado, "senha": SENHA}).status_code == 400
+    assert _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": certo, "senha": SENHA}).status_code == 400
 
 
 def test_confirmar_conta_ja_confirmada_400(client, cenario, envios):
     _conta_confirmada(client, envios)
-    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": "123456"})
+    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": "123456", "senha": SENHA})
     assert r.status_code == 400
 
 
@@ -617,3 +617,78 @@ def test_o_link_nunca_fica_guardado_em_claro(client, cenario, envios):
     for c in CodigoConta.objects.all():
         assert token not in c.hash
         assert c.hash != token
+
+
+# ----------------------------------------------------------- correcoes da revisao
+
+
+def test_sequestro_de_cadastro_pendente_nao_funciona(client, cenario, envios):
+    _criar(client, nome="Vitima", senha="senha-da-vitima")
+    # O atacante pede por cima, com a senha dele; o codigo novo vai para a vitima.
+    _criar(client, nome="Ataque", senha="senha-do-atacante")
+    codigo = _codigo_de(envios)
+
+    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": codigo, "senha": "senha-da-vitima"})
+
+    assert r.status_code == 400
+    assert r.json() == {"erro": "Código errado ou vencido."}
+    assert CONTA_SESSAO_COOKIE not in r.cookies
+    assert ContaCliente.objects.get(whatsapp=NUMERO).confirmada_em is None
+    # Nenhum dos dois entra: a conta segue pendente.
+    for senha in ("senha-da-vitima", "senha-do-atacante"):
+        assert _post(client, "entrar", {"whatsapp": NUMERO, "senha": senha}).status_code == 401
+        trava_conta.limpar(NUMERO)
+
+
+def test_confirmar_com_a_senha_errada_conta_como_tentativa_e_nao_gasta_o_codigo(client, cenario, envios):
+    _criar(client)
+    codigo = _codigo_de(envios)
+    for _ in range(5):
+        r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": codigo, "senha": "errada-errada"})
+        assert r.status_code == 400
+    # Cinco tentativas gastas: nem o conjunto certo confirma mais.
+    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": codigo, "senha": SENHA})
+    assert r.status_code == 400
+
+
+def test_confirmar_com_a_senha_errada_nao_gasta_o_codigo_uma_vez(client, cenario, envios):
+    _criar(client)
+    codigo = _codigo_de(envios)
+    assert _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": codigo, "senha": "errada-errada"}).status_code == 400
+    assert _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": codigo, "senha": SENHA}).status_code == 200
+
+
+def test_confirmar_sem_senha_400(client, cenario, envios):
+    _criar(client)
+    r = _post(client, "confirmar", {"whatsapp": NUMERO, "codigo": _codigo_de(envios)})
+    assert r.status_code == 400
+    assert r.json() == {"erro": "Código errado ou vencido."}
+
+
+def test_erro_depois_da_reserva_devolve_a_vaga(client, cenario, envios):
+    with patch("app.services.conta.novo_codigo", side_effect=RuntimeError("banco")):
+        with pytest.raises(RuntimeError):
+            client.raise_request_exception = True
+            _criar(client)
+    client.raise_request_exception = True
+    # Se a vaga ficasse presa, tres falhas esgotariam o limite do numero.
+    for _ in range(3):
+        with patch("app.services.conta.novo_codigo", side_effect=RuntimeError("banco")):
+            with pytest.raises(RuntimeError):
+                _criar(client)
+    assert _criar(client).status_code == 202
+
+
+def test_conta_tem_balde_de_limite_proprio(client, cenario):
+    from rest_framework.settings import api_settings
+
+    assert api_settings.DEFAULT_THROTTLE_RATES["conta"] == "10/min"
+    for _ in range(10):
+        _post(client, "entrar", {"whatsapp": "123", "senha": "x"})
+    assert _post(client, "entrar", {"whatsapp": "123", "senha": "x"}).status_code == 429
+    # O login do painel segue livre.
+    r = client.post(
+        "/api/auth/login", {"whatsapp": "11988887777", "senha": "x"},
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+    assert r.status_code == 401

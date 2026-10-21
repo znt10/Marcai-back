@@ -238,7 +238,7 @@ REST_FRAMEWORK = {
     # chamadas, e o unico polling (tela do WhatsApp) e' de segundos, nao de
     # milissegundos. Uma barbearia inteira atras do mesmo wi-fi divide o IP.
     "DEFAULT_THROTTLE_CLASSES": ["app.api.v1.limite.LimitePorIP"],
-    "DEFAULT_THROTTLE_RATES": {"geral": "120/min", "login": "10/min"},
+    "DEFAULT_THROTTLE_RATES": {"geral": "120/min", "login": "10/min", "conta": "10/min"},
     "EXCEPTION_HANDLER": "app.api.v1.limite.tratar_excecao",
     # Quantos proxies ACRESCENTAM ao `X-Forwarded-For` antes do Django. O DRF
     # le o IP do cliente como o N-esimo a partir do FIM da lista. O valor
