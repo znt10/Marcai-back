@@ -4,7 +4,7 @@ from rest_framework.views import APIView
 from app.api.v1.mixins import ExigeSessao
 from app.services import pix_do_barbeiro
 
-CAMPOS_TEXTO = ("pixChave", "pixTitular")
+CAMPOS_TEXTO = ("pixTipo", "pixChave", "pixTitular")
 
 
 class MeuPixView(ExigeSessao, APIView):

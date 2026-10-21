@@ -199,6 +199,14 @@ class Barbearia(models.Model):
         return self.nome
 
 
+class TipoChavePix(models.TextChoices):
+    CPF = "CPF"
+    CNPJ = "CNPJ"
+    CELULAR = "CELULAR"
+    EMAIL = "EMAIL"
+    ALEATORIA = "ALEATORIA"
+
+
 class Barbeiro(models.Model):
     """Quem atende. Tambem e a tabela de tenant que o teste de RLS conta para
     provar que o escopo funciona.
@@ -239,6 +247,11 @@ class Barbeiro(models.Model):
     # outro, essa regra mora na view. A chave fica como foi digitada; a forma
     # normalizada (`pix.normalizar_chave`) e' so' para comparar.
     cobra_no_agendamento = models.BooleanField(default=False)
+    # Que tipo de chave e' `pix_chave` (o barbeiro escolhe, como no app do
+    # banco: 11 digitos servem de CPF e de celular). Vazio = sem chave.
+    pix_tipo = models.CharField(
+        max_length=10, choices=TipoChavePix, blank=True, default="",
+    )
     pix_chave = models.TextField(default="", blank=True)
     pix_titular = models.TextField(default="", blank=True)
     # Nulo ate o convite ser aceito: o admin cria o dono SEM senha, e o

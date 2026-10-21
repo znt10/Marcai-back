@@ -22,6 +22,17 @@ class Migration(migrations.Migration):
         ),
         migrations.AddField(
             model_name="barbeiro",
+            name="pix_tipo",
+            field=models.CharField(
+                blank=True, default="", max_length=10,
+                choices=[
+                    ("CPF", "Cpf"), ("CNPJ", "Cnpj"), ("CELULAR", "Celular"),
+                    ("EMAIL", "Email"), ("ALEATORIA", "Aleatoria"),
+                ],
+            ),
+        ),
+        migrations.AddField(
+            model_name="barbeiro",
             name="pix_chave",
             field=models.TextField(default="", blank=True),
         ),
