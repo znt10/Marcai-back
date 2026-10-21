@@ -65,6 +65,7 @@ def listar_com_contagem() -> list[dict]:
                 "plano": b.plano,
                 "tipo": b.tipo,
                 "paleta": b.paleta,
+                "cidade": b.cidade,
                 "barbeiros": barbeiros,
                 "agendamentos": agendamentos,
             }
@@ -251,6 +252,13 @@ def atualizar_ativo(barbearia_id: str, ativo: bool) -> bool:
         else:
             apagar_instancia(barbearia)
     return True
+
+
+def atualizar_cidade(barbearia_id: str, cidade: str) -> bool:
+    """So' o admin escreve: o runtime nao tem GRANT nesta coluna."""
+    return bool(
+        Barbearia.objects.using("admin").filter(id=barbearia_id).update(cidade=cidade.strip())
+    )
 
 
 def atualizar_plano(barbearia_id: str, plano: str) -> bool:

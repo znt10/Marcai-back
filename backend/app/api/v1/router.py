@@ -49,6 +49,7 @@ from .views.horarios import DiasComVagaView, HorariosView
 from .views.interno import WhatsappEventoView
 from .views.resumo import ResumoView
 from .views.servicos import ServicosView
+from .views.meu_pix import MeuPixView
 from .views.mensalidade_painel import MensalidadeJaPagueiView, MensalidadePainelView
 from .views.servicos_painel import ServicoPainelDetalheView, ServicosPainelView
 from .views.whatsapp_painel import (
@@ -260,6 +261,7 @@ urlpatterns = [
         AdminWhatsappCentralView.as_view(),
         name="admin-whatsapp-central",
     ),
+    path("painel/meu-pix", MeuPixView.as_view(), name="painel-meu-pix"),
     path("painel/whatsapp", WhatsappPainelView.as_view(), name="painel-whatsapp"),
     path(
         "painel/whatsapp/desconectar",

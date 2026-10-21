@@ -5,6 +5,7 @@ from app.api.v1.mixins import ExigeAdmin
 from app.api.v1.serializers.admin_barbearias import AtualizarBarbeariaSerializer
 from app.services.admin_barbearias import (
     atualizar_ativo,
+    atualizar_cidade,
     atualizar_plano,
     criar,
     listar_com_contagem,
@@ -68,7 +69,7 @@ class AdminBarbeariaDetalheView(ExigeAdmin, APIView):
         entrada = AtualizarBarbeariaSerializer(data=request.data)
         if not entrada.is_valid():
             return Response(
-                {"erro": "Informe ativo: true ou false, ou plano."}, status=422
+                {"erro": "Informe ativo: true ou false, plano ou cidade."}, status=422
             )
 
         # Um campo por chamada, na ordem em que vieram — e nao um so' pedido
@@ -80,6 +81,8 @@ class AdminBarbeariaDetalheView(ExigeAdmin, APIView):
         if "plano" in dados and not atualizar_plano(id, dados["plano"]):
             return Response(NAO_ENCONTRADA, status=404)
         if "ativo" in dados and not atualizar_ativo(id, dados["ativo"]):
+            return Response(NAO_ENCONTRADA, status=404)
+        if "cidade" in dados and not atualizar_cidade(id, dados["cidade"]):
             return Response(NAO_ENCONTRADA, status=404)
         return Response({"ok": True})
 

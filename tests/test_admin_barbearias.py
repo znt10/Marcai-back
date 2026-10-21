@@ -607,3 +607,57 @@ def test_reemitir_convite_de_estudio_fala_do_estudio(client, cenario):
         r = client.post(f"/api/admin/barbearias/{b.id}/convite", headers={"host": HOST, **CABECALHO})
     assert r.status_code == 200
     assert f"equipe do estúdio {b.nome}." in mock_envia.call_args.args[2]
+
+
+# --------------------------------------------------------------------- cidade
+
+
+def test_patch_grava_a_cidade_e_a_lista_devolve(client, cenario):
+    _logar_admin(client)
+    b = cenario["brutus"]
+    r = client.patch(
+        f"/api/admin/barbearias/{b.id}", {"cidade": "  João Pessoa "},
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+    assert r.status_code == 200
+
+    from tenant.models import Barbearia
+
+    assert Barbearia.objects.using("owner").get(id=b.id).cidade == "João Pessoa"
+    r = client.get("/api/admin/barbearias", headers={"host": HOST})
+    achada = next(x for x in r.json()["barbearias"] if x["id"] == b.id)
+    assert achada["cidade"] == "João Pessoa"
+
+
+def test_patch_cidade_vazia_limpa(client, cenario):
+    _logar_admin(client)
+    b = cenario["brutus"]
+    for cidade in ("Recife", ""):
+        r = client.patch(
+            f"/api/admin/barbearias/{b.id}", {"cidade": cidade},
+            content_type="application/json", headers={"host": HOST, **CABECALHO},
+        )
+        assert r.status_code == 200
+    from tenant.models import Barbearia
+
+    assert Barbearia.objects.using("owner").get(id=b.id).cidade == ""
+
+
+@pytest.mark.parametrize("cidade", ["x" * 41, 12, None])
+def test_patch_cidade_invalida_da_422(client, cenario, cidade):
+    _logar_admin(client)
+    b = cenario["brutus"]
+    r = client.patch(
+        f"/api/admin/barbearias/{b.id}", {"cidade": cidade},
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+    assert r.status_code == 422
+
+
+def test_patch_cidade_de_id_inexistente_da_404(client):
+    _logar_admin(client)
+    r = client.patch(
+        "/api/admin/barbearias/nao-existe", {"cidade": "Recife"},
+        content_type="application/json", headers={"host": HOST, **CABECALHO},
+    )
+    assert r.status_code == 404

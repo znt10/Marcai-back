@@ -172,6 +172,11 @@ class Barbearia(models.Model):
     # moram em `lista_do_dia.HORAS_DA_LISTA_MIN`. Segunda coluna que o runtime
     # escreve (GRANT por coluna na 0009), ao lado de `horario_resumo`.
     hora_da_lista_min = models.PositiveSmallIntegerField(default=6 * 60 + 30)
+    # A cidade que vai no copia e cola do Pix (BR Code). Quem preenche e' o
+    # admin da plataforma, nao o dono: sem GRANT por coluna para o runtime (ao
+    # contrario de `hora_da_lista_min`). Vazia vale "BRASIL" na hora de montar
+    # o codigo — os bancos nao conferem a cidade de um Pix estatico.
+    cidade = models.TextField(default="", blank=True)
     # Os dois so' o admin da plataforma escreve (GRANT de tabela da 0004): o
     # dono nao troca o ramo nem as cores. Os padroes sao o que toda barbearia
     # ja era antes de existirem.
@@ -226,6 +231,16 @@ class Barbeiro(models.Model):
     papel = models.CharField(
         max_length=20, choices=PapelBarbeiro, default=PapelBarbeiro.BARBEIRO,
     )
+    # ---- O Pix no agendamento ----
+    #
+    # Cada barbeiro escolhe se o cliente paga ao agendar e cadastra a PROPRIA
+    # chave (o vigia roda no celular dele). Quem escreve e' so' ele mesmo, pela
+    # rota `painel/meu-pix`; o banco nao impede o dono de UPDATE na linha de
+    # outro, essa regra mora na view. A chave fica como foi digitada; a forma
+    # normalizada (`pix.normalizar_chave`) e' so' para comparar.
+    cobra_no_agendamento = models.BooleanField(default=False)
+    pix_chave = models.TextField(default="", blank=True)
+    pix_titular = models.TextField(default="", blank=True)
     # Nulo ate o convite ser aceito: o admin cria o dono SEM senha, e o
     # `senha_hash` nulo e o que a rota do login tem que recusar sem revelar que
     # o numero existe.
