@@ -128,6 +128,18 @@ def test_historico_vem_do_mais_novo_ao_mais_antigo(client, cenario):
     assert codigos == ["longe00001", "perto00001"]
 
 
+def test_historico_limita_por_lugar_e_vem_do_mais_novo(client, cenario):
+    from tenant.config import CONTA_HISTORICO_POR_LUGAR
+
+    _logar(client)
+    for i in range(CONTA_HISTORICO_POR_LUGAR + 1):
+        _marcar_como(cenario["brutus"], NUMERO, _em(10 + i), codigo=f"cod{i:07d}")
+    ag = _historico(client).json()["estabelecimentos"][0]["agendamentos"]
+    assert len(ag) == CONTA_HISTORICO_POR_LUGAR
+    assert ag[0]["codigo"] == f"cod{CONTA_HISTORICO_POR_LUGAR:07d}"
+    assert "cod0000000" not in [a["codigo"] for a in ag]
+
+
 def test_historico_acha_cliente_gravado_sem_o_nove(client, cenario):
     _logar(client)  # conta em 83982217869
     _marcar_como(cenario["brutus"], "8382217869", _em(5), codigo="sem9000001")
@@ -290,5 +302,8 @@ def test_bloqueado_logado_continua_recusado_ao_agendar(client, cenario):
             content_type="application/json", headers={"host": HOST, **CABECALHO},
         )
     assert r.status_code == 422
+    assert r.json()["erro"] == (
+        "Não foi possível concluir o agendamento. Chama a barbearia: (11) 9 9999-8888"
+    )
     assert Agendamento.objects.using("owner").count() == antes
     envios.assert_not_called()

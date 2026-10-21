@@ -30,7 +30,7 @@ from app.services.mensagens import (
 )
 from app.services.trava_ip import ip_de
 from app.services.whatsapp import enviar_a_equipe_da, enviar_ao_cliente, numero_existe
-from tenant.models import TipoMensagem
+from tenant.models import Barbearia, TipoMensagem
 from tenant.telefone import formatar, normalizar
 from tenant.identidade import como_uuid
 from tenant.tipos import palavras
@@ -182,7 +182,7 @@ class AgendamentoDetalheView(ExigeTenant, APIView):
         return Response(AgendamentoDetalheSerializer(resultado).data)
 
 
-def depois_de_cancelar(barbearia, resultado: dict, agora) -> None:
+def depois_de_cancelar(barbearia: Barbearia, resultado: dict, agora) -> None:
     """O que vem DEPOIS de um cancelamento que valeu: a mensagem ao cliente e
     o aviso ao barbeiro. Compartilhado pelo cancelamento pelo link e pelo
     logado (`/api/conta/agendamentos/<codigo>/cancelar`). So' age no
@@ -218,6 +218,24 @@ def depois_de_cancelar(barbearia, resultado: dict, agora) -> None:
         )
 
 
+def resposta_do_cancelamento(barbearia: Barbearia, resultado: dict, agora) -> Response:
+    """A resposta do cancelamento, igual pelo link e logado: 404, 422 fora do
+    prazo (com o zap de quem atende) ou 200. O `ja_cancelado` cai no 200 de
+    proposito: quem apertou o botao duas vezes queria o mesmo desfecho, e ele
+    ja vale."""
+    if resultado["tipo"] == "nao_encontrado":
+        return Response(NAO_ENCONTRADO, status=404)
+    if resultado["tipo"] == "fora_do_prazo":
+        contato = formatar(barbearia.whatsapp_contato)
+        o_lugar = palavras(barbearia.tipo)["o_lugar"]
+        return Response(
+            {"erro": f"Passou do prazo de 1h. Chama {o_lugar} no zap: {contato}"},
+            status=422,
+        )
+    depois_de_cancelar(barbearia, resultado, agora)
+    return Response({"ok": True})
+
+
 class AgendamentoCancelarPublicoView(ExigeTenant, APIView):
     """POST /api/agendamentos/<codigo>/cancelar — pelo CODIGO, sem sessao."""
 
@@ -225,16 +243,4 @@ class AgendamentoCancelarPublicoView(ExigeTenant, APIView):
         agora = datetime.now(timezone.utc)
         resultado = cancelar_publico(self.barbearia_id, codigo, agora)
 
-        if resultado["tipo"] == "nao_encontrado":
-            return Response(NAO_ENCONTRADO, status=404)
-        if resultado["tipo"] == "fora_do_prazo":
-            contato = formatar(request.barbearia.whatsapp_contato)
-            o_lugar = palavras(request.barbearia.tipo)["o_lugar"]
-            return Response(
-                {"erro": f"Passou do prazo de 1h. Chama {o_lugar} no zap: {contato}"},
-                status=422,
-            )
-        depois_de_cancelar(request.barbearia, resultado, agora)
-        # "ja_cancelado" cai aqui tambem, de proposito: quem apertou o botao
-        # duas vezes queria o mesmo desfecho, e ele ja vale — 200 idempotente.
-        return Response({"ok": True})
+        return resposta_do_cancelamento(request.barbearia, resultado, agora)

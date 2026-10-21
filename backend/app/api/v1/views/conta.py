@@ -21,7 +21,7 @@ from app.api.v1.serializers.conta import (
     NovaSenhaSerializer,
     WhatsappSerializer,
 )
-from app.api.v1.views.agendamentos import NAO_ENCONTRADO, depois_de_cancelar
+from app.api.v1.views.agendamentos import NAO_ENCONTRADO, resposta_do_cancelamento
 from app.services import conta as servico
 from app.services.agendamentos import cancelar_publico
 from app.services.conta_historico import barbearia_ativa_da_conta, historico
@@ -29,7 +29,6 @@ from app.services import conta_sessao
 from app.services.trava_ip import ip_de
 from tenant.config import CONTA_SESSAO_COOKIE
 from tenant.telefone import formas_gravadas, formatar
-from tenant.tipos import palavras
 
 # Os desfechos de quem MANDA mensagem (criar, reenviar, esqueci) e o que cada
 # um vira na resposta.
@@ -201,14 +200,4 @@ class CancelarLogadoView(ExigeTenant, APIView):
         resultado = cancelar_publico(
             str(barbearia.id), codigo, agora, whatsapps=formas_gravadas(conta.whatsapp),
         )
-        if resultado["tipo"] == "nao_encontrado":
-            return Response(NAO_ENCONTRADO, status=404)
-        if resultado["tipo"] == "fora_do_prazo":
-            contato = formatar(barbearia.whatsapp_contato)
-            o_lugar = palavras(barbearia.tipo)["o_lugar"]
-            return Response(
-                {"erro": f"Passou do prazo de 1h. Chama {o_lugar} no zap: {contato}"},
-                status=422,
-            )
-        depois_de_cancelar(barbearia, resultado, agora)
-        return Response({"ok": True})
+        return resposta_do_cancelamento(barbearia, resultado, agora)
