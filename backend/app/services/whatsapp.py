@@ -120,6 +120,26 @@ def enviar_ao_cliente(
     return False
 
 
+def enviar_pelo_central(whatsapp_digitos: str, mensagem: str) -> bool:
+    """Manda pelo numero CENTRAL a quem nao esta ligado a barbearia nenhuma:
+    o codigo e o link da conta do cliente (spec 2026-10-20). Devolve se saiu.
+
+    Sem `EVOLUTION_API_URL` (desenvolvimento) so' loga e devolve True: nao ha
+    servidor a que culpar, e o log do Django e' o jeito de ler o codigo na
+    maquina de quem desenvolve. O `_enviar_aceita` loga o mesmo e devolveria
+    None, que aqui seria lido como falha — por isso a checagem vem antes.
+
+    Diferente de `enviar_ao_cliente`, nao registra `MensagemNaoEnviada`: isso
+    e' do painel de uma barbearia, e aqui nao ha barbearia. Quem chama ve o
+    False e diz ao cliente que nao deu pra mandar.
+    """
+    cfg = _config()
+    if not cfg["url"]:
+        logger.info("[whatsapp] sem EVOLUTION_API_URL: %s %s", whatsapp_digitos, mensagem)
+        return True
+    return _enviar_aceita(cfg["instancia"], whatsapp_digitos, mensagem) is not None
+
+
 def _registrar_nao_enviada(barbearia, tipo: str, cliente_nome: str) -> None:
     """NUNCA levanta, pelo mesmo motivo que o envio nao levanta: esta funcao
     roda depois do commit de um agendamento que ja aconteceu, e um erro aqui

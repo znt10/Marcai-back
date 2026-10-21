@@ -22,6 +22,18 @@ from .views.barbeiro_servicos import BarbeiroServicosView
 from .views.barbeiros import BarbeirosView
 from .views.bloqueios import BloqueioDetalheView, BloqueiosView
 from .views.conflitos import ConflitosView
+from .views.conta import (
+    CancelarLogadoView,
+    ConfirmarView,
+    CriarView,
+    EntrarView,
+    EsqueciView,
+    EuView as ContaEuView,
+    HistoricoView,
+    NovaSenhaView,
+    ReenviarView,
+    SairView,
+)
 from .views.clientes_bloqueados import (
     BloquearClienteView,
     ClientesBloqueadosView,
@@ -121,6 +133,23 @@ urlpatterns = [
     # barra. `path:` engoliria barras e faria `/auth/convite/a/b` casar, o que
     # so serviria para transformar um erro de digitacao em uma busca a mais.
     path("auth/convite/<str:token>", ConviteView.as_view(), name="auth-convite"),
+    # A conta opcional do cliente (spec 2026-10-20), global: vale em todo
+    # estabelecimento. Rotas publicas (a credencial e' o cookie `sessao_conta`,
+    # que nao e' o do painel). `nova-senha/<str:token>` pela mesma razao do
+    # convite: o token e' base64url, nunca tem barra.
+    path("conta/criar", CriarView.as_view(), name="conta-criar"),
+    path("conta/reenviar", ReenviarView.as_view(), name="conta-reenviar"),
+    path("conta/confirmar", ConfirmarView.as_view(), name="conta-confirmar"),
+    path("conta/entrar", EntrarView.as_view(), name="conta-entrar"),
+    path("conta/sair", SairView.as_view(), name="conta-sair"),
+    path("conta/eu", ContaEuView.as_view(), name="conta-eu"),
+    path("conta/historico", HistoricoView.as_view(), name="conta-historico"),
+    path(
+        "conta/agendamentos/<str:codigo>/cancelar",
+        CancelarLogadoView.as_view(), name="conta-cancelar",
+    ),
+    path("conta/esqueci", EsqueciView.as_view(), name="conta-esqueci"),
+    path("conta/nova-senha/<str:token>", NovaSenhaView.as_view(), name="conta-nova-senha"),
     # Fatia 4, bloco 1 — catalogo e vinculos. `CrivoPainelMiddleware` ja
     # protege tudo sob `/api/painel/*` por POSICAO; estas views herdam
     # `ExigeSessao` so para ganhar `self.sessao`/`self.papel` sem consulta

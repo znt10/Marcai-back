@@ -94,6 +94,7 @@ def limpar_banco(request):
                 "tenant_barbeiroservico, tenant_servico, tenant_barbeiro, "
                 "tenant_whatsappinstancia, tenant_mensagemnaoenviada, "
                 "tenant_listadodiaenviada, tenant_conversawhatsapp, "
+                "tenant_codigoconta, tenant_contacliente, "
                 "tenant_barbearia RESTART IDENTITY CASCADE"
             )
 
