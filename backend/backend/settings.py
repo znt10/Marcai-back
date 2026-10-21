@@ -307,3 +307,18 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 USE_TZ = True
 TIME_ZONE = "America/Sao_Paulo"
+
+# O texto que IRIA pelo WhatsApp, no log, quando nao ha Evolution: e' assim
+# que o ambiente de teste (docker-compose.preview.yml) mostra o codigo da conta
+# e os links. Sem isto o `logger.info` de `services/whatsapp.py` morria calado,
+# porque so' os loggers do proprio Django vem configurados de fabrica.
+#
+# So' sem `EVOLUTION_API_URL`: com ela (producao, dev com Evolution) nada muda
+# e o log continua sem numero de telefone de ninguem.
+if not os.environ.get("EVOLUTION_API_URL"):
+    LOGGING = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "handlers": {"console": {"class": "logging.StreamHandler"}},
+        "loggers": {"app.services.whatsapp": {"handlers": ["console"], "level": "INFO"}},
+    }
