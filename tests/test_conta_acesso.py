@@ -692,3 +692,45 @@ def test_conta_tem_balde_de_limite_proprio(client, cenario):
         content_type="application/json", headers={"host": HOST, **CABECALHO},
     )
     assert r.status_code == 401
+
+
+@pytest.mark.parametrize("rota", ["reenviar", "esqueci"])
+def test_pedido_sem_conta_nao_gasta_o_teto(client, cenario, envios, monkeypatch, rota):
+    monkeypatch.setattr(conta_limites, "CONTA_ENVIOS_POR_DIA", 2)
+    # Cinco numeros sem conta: se cada um prendesse uma vaga do teto, o terceiro
+    # ja seria 503 e o criar real abaixo tambem.
+    for i in range(5):
+        r = _post(client, rota, {"whatsapp": f"8398221790{i}"})
+        assert r.status_code == 202
+    assert _criar(client).status_code == 202
+
+
+def test_reenviar_sem_conta_nao_gasta_o_teto(client, cenario, envios, monkeypatch):
+    test_pedido_sem_conta_nao_gasta_o_teto(client, cenario, envios, monkeypatch, "reenviar")
+
+
+def test_esqueci_sem_conta_nao_gasta_o_teto(client, cenario, envios, monkeypatch):
+    test_pedido_sem_conta_nao_gasta_o_teto(client, cenario, envios, monkeypatch, "esqueci")
+
+
+def test_sem_conta_continua_gastando_numero_e_ip(client, cenario, envios):
+    for _ in range(3):
+        assert _post(client, "esqueci", {"whatsapp": "83982217909"}).status_code == 202
+    assert _post(client, "esqueci", {"whatsapp": "83982217909"}).status_code == 429
+
+
+@pytest.mark.parametrize("rota", ["reenviar", "esqueci"])
+def test_erro_depois_da_reserva_devolve_a_vaga_em_reenviar_e_esqueci(client, cenario, envios, rota):
+    # Conta pendente (reenviar) ou confirmada (esqueci) para chegar ao _mandar.
+    if rota == "esqueci":
+        _conta_confirmada(client, envios)
+        client.cookies.clear()
+    else:
+        assert _criar(client).status_code == 202
+    client.raise_request_exception = True
+    for _ in range(4):
+        with patch("app.services.conta.novo_codigo", side_effect=RuntimeError("banco")):
+            with pytest.raises(RuntimeError):
+                _post(client, rota, {"whatsapp": NUMERO})
+    # Se as vagas ficassem presas, as quatro falhas teriam estourado o limite.
+    assert _post(client, rota, {"whatsapp": NUMERO}).status_code == 202

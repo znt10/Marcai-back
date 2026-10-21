@@ -67,3 +67,15 @@ def test_runtime_continua_sem_ver_cliente_fora_do_tenant(cenario):
         cur.fetchall()
     # A funcao nao abriu o RLS: a tabela segue invisivel fora do tenant.
     assert Cliente.objects.count() == 0
+
+
+def test_funcao_nao_e_executavel_por_public():
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT has_function_privilege('public', 'barbearias_do_whatsapp(text[])', 'EXECUTE')"
+        )
+        assert cur.fetchone()[0] is False
+        cur.execute(
+            "SELECT has_function_privilege('brutus_app', 'barbearias_do_whatsapp(text[])', 'EXECUTE')"
+        )
+        assert cur.fetchone()[0] is True

@@ -4,7 +4,7 @@ from django.utils import timezone
 
 from app.services import trava_conta
 from app.services.conta_codigos import conferir_codigo, consumir_link, novo_codigo
-from app.services.conta_limites import devolver_envio, reservar_envio
+from app.services.conta_limites import devolver_envio, devolver_teto, reservar_envio
 from app.services.convite import link_da_vitrine
 from app.services.mensagens import msg_codigo_conta, msg_link_nova_senha
 from app.services.senha import confere, gerar, hash_descartavel
@@ -122,6 +122,9 @@ def reenviar(ip: str, whatsapp: str) -> str:
     try:
         conta = ContaCliente.objects.filter(whatsapp=numero, confirmada_em__isnull=True).first()
         if conta is None:
+            # Nada saiu: o numero e o IP seguem gastos (anti-enumeracao), mas o
+            # teto geral do central nao.
+            devolver_teto()
             return ENVIADO
         return _mandar(conta, ip, FinalidadeCodigo.CONFIRMAR, msg_codigo_conta)
     except BaseException:
@@ -207,6 +210,9 @@ def esqueci(barbearia, ip: str, whatsapp: str) -> str:
     try:
         conta = ContaCliente.objects.filter(whatsapp=numero, confirmada_em__isnull=False).first()
         if conta is None:
+            # Nada saiu: o numero e o IP seguem gastos (anti-enumeracao), mas o
+            # teto geral do central nao.
+            devolver_teto()
             return ENVIADO
         base = f"{link_da_vitrine(barbearia.slug)}/conta/nova-senha/"
         return _mandar(

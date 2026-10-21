@@ -88,3 +88,11 @@ def devolver_envio(whatsapp: str, ip: str) -> None:
     """Devolve a vaga das quatro janelas: o envio reservado nao saiu."""
     for chave in _chaves(whatsapp, ip).values():
         _subtrair(chave)
+
+
+def devolver_teto() -> None:
+    """Devolve SO' a vaga do teto geral do dia. Para o pedido que nao mandou
+    nada porque nao ha conta: o numero e o IP continuam gastos (a resposta e os
+    limites por numero/IP ficam iguais com e sem conta), mas um IP nao pode
+    queimar o teto da plataforma inteira com envios que nao existiram."""
+    _subtrair(_chaves("", "")["teto"])
