@@ -24,5 +24,5 @@ class AgendaPainelView(ExigeSessao, APIView):
         filtro = filtro_do_barbeiro(self.sessao)
         barbeiro_id = filtro.get("barbeiro_id") or request.query_params.get("barbeiroId") or None
 
-        itens = agenda_do_dia(self.barbearia_id, dia, barbeiro_id)
+        itens = agenda_do_dia(self.barbearia_id, dia, barbeiro_id, datetime.now(timezone.utc))
         return Response({"dia": dia, "itens": itens})

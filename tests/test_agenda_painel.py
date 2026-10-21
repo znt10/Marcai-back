@@ -5,7 +5,7 @@ import pytest
 
 from app.services.sessao import COOKIE_SESSAO, emitir
 
-pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
+pytestmark = pytest.mark.django_db(databases=["default", "owner", "admin"], transaction=True)
 
 
 def _barbeiro(barbearia_id, nome="Zeca", papel="BARBEIRO"):

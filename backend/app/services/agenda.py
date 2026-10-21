@@ -1,5 +1,5 @@
 import calendar
-from datetime import datetime
+from datetime import datetime, timezone
 
 from django.db.models import Q
 
@@ -20,6 +20,7 @@ from tenant.models import (
     Barbeiro,
     BarbeiroServico,
     Bloqueio,
+    Cobranca,
     HorarioTrabalho,
 )
 from tenant.rls import com_barbearia
@@ -183,23 +184,79 @@ def dias_com_vaga(
 # ---------------------------------------------------------------- painel
 
 
-def agenda_do_dia(barbearia_id: str, dia: str, barbeiro_id: str | None) -> list[dict]:
-    """GET /painel/agenda — os agendamentos CONFIRMADOS do dia, opcionalmente
-    filtrados por barbeiro."""
+def _entram_no_painel(agora: datetime) -> Q:
+    """O que a agenda e o quadro mostram: confirmado, aguardando o Pix e o
+    expirado que ainda nao comecou. Esse ultimo e' onde o "recebi" atrasado
+    mora (o barbeiro so confirma o que enxerga); depois da hora o horario ja
+    se foi e nao ha o que confirmar."""
+    return (
+        Q(status__in=["CONFIRMADO", "AGUARDANDO_PAGAMENTO"])
+        | Q(status="EXPIRADO", inicio__gt=agora)
+    )
+
+
+def _blocos_pix(agendamentos: list[tuple]) -> dict:
+    """{agendamento_id: bloco} para quem tem Pix a mostrar; os demais ficam de
+    fora e o chamador usa `None`. `agendamentos` sao pares (id, status).
+
+    UMA consulta por dia, nunca uma por item. Em `Cobranca` pelo alias `admin`
+    (a tabela esta fora da RLS, como no resto do codigo que a le). O bloco nao
+    leva chave nem copia e cola: o painel so precisa saber o estado e o valor
+    para mostrar o selo e o "recebi"."""
+    status = dict(agendamentos)
+    if not status:
+        return {}
+    cobrancas = {
+        c["agendamento_id"]: c
+        for c in Cobranca.objects.using("admin")
+        .filter(agendamento_id__in=list(status))
+        .values("agendamento_id", "status", "valor_centavos", "expira_em")
+    }
+    blocos = {}
+    for ag_id, st in status.items():
+        c = cobrancas.get(ag_id)
+        if st == "AGUARDANDO_PAGAMENTO":
+            estado = "aguardando"
+        elif st == "EXPIRADO":
+            estado = "expirado"
+        elif c and c["status"] == "PAGA":
+            estado = "pago"
+        else:
+            continue
+        blocos[ag_id] = {
+            "estado": estado,
+            # Aguardando sem cobranca (processo morto entre o commit e a
+            # abertura) ainda aparece, so' sem valor: a varredura o resolve.
+            "valorCentavos": c["valor_centavos"] if c else None,
+            "expiraEm": formatar_instante_iso(c["expira_em"]) if c and c["expira_em"] else None,
+        }
+    return blocos
+
+
+def agenda_do_dia(
+    barbearia_id: str, dia: str, barbeiro_id: str | None, agora: datetime | None = None,
+) -> list[dict]:
+    """GET /painel/agenda — os agendamentos do dia, opcionalmente filtrados por
+    barbeiro: os CONFIRMADOS, mais os que esperam Pix e os expirados que ainda
+    nao comecaram (cada um com o bloco `pix`; `None` quando nao ha cobranca)."""
+    agora = agora or datetime.now(timezone.utc)
     abre = local_para_utc(dia, 0)
     fecha = local_para_utc(somar_dias(dia, 1), 0)
 
     with com_barbearia(barbearia_id):
-        qs = Agendamento.objects.filter(status="CONFIRMADO", inicio__gte=abre, inicio__lt=fecha)
+        qs = Agendamento.objects.filter(
+            _entram_no_painel(agora), inicio__gte=abre, inicio__lt=fecha,
+        )
         if barbeiro_id:
             qs = qs.filter(barbeiro_id=barbeiro_id)
         linhas = list(
             qs.order_by("inicio").values(
                 "id", "inicio", "fim", "servico_nome", "barbeiro_id",
-                "barbeiro__nome", "cliente__nome", "cliente__whatsapp",
+                "barbeiro__nome", "cliente__nome", "cliente__whatsapp", "status",
             )
         )
 
+    blocos = _blocos_pix([(a["id"], a["status"]) for a in linhas])
     return [
         {
             "id": a["id"],
@@ -210,6 +267,7 @@ def agenda_do_dia(barbearia_id: str, dia: str, barbeiro_id: str | None) -> list[
             "barbeiroNome": a["barbeiro__nome"],
             "clienteNome": a["cliente__nome"],
             "clienteWhatsapp": a["cliente__whatsapp"],
+            "pix": blocos.get(a["id"]),
         }
         for a in linhas
     ]
@@ -255,7 +313,7 @@ def quadro_do_dia(barbearia_id: str, dia: str, barbeiro_id: str | None, agora: d
         # a meia-noite pertence aos dois dias.
         agendamentos = list(
             Agendamento.objects.filter(
-                barbeiro_id__in=ids, status="CONFIRMADO", inicio__lt=fecha, fim__gt=abre,
+                _entram_no_painel(agora), barbeiro_id__in=ids, inicio__lt=fecha, fim__gt=abre,
             )
             .select_related("cliente")
             .order_by("inicio")
@@ -266,9 +324,13 @@ def quadro_do_dia(barbearia_id: str, dia: str, barbeiro_id: str | None, agora: d
             ).values("barbeiro_id", "duracao_min", "servico__nome", "servico__ordem")
         )
 
+    blocos = _blocos_pix([(a.id, a.status) for a in agendamentos])
     colunas = []
     for b in barbeiros:
-        meus_agendamentos = [a for a in agendamentos if a.barbeiro_id == b["id"]]
+        meus_listados = [a for a in agendamentos if a.barbeiro_id == b["id"]]
+        # Os vazios e a ocupacao contam so quem SEGURA o horario: o aguardando
+        # prende a vaga (o marcar recusaria com 409), o expirado a largou.
+        meus_agendamentos = [a for a in meus_listados if a.status in STATUS_QUE_SEGURAM_HORARIO]
         meus_bloqueios = [x for x in bloqueios if x.barbeiro_id == b["id"]]
         jornada = next((h for h in expedientes if h.barbeiro_id == b["id"]), None)
         bloqueados_do_dia = bloqueios_do_dia(meus_bloqueios, dia, dia_semana)
@@ -279,8 +341,9 @@ def quadro_do_dia(barbearia_id: str, dia: str, barbeiro_id: str | None, agora: d
                 "inicio": formatar_instante_iso(a.inicio), "fim": formatar_instante_iso(a.fim),
                 "servicoNome": a.servico_nome,
                 "clienteNome": a.cliente.nome, "clienteWhatsapp": a.cliente.whatsapp,
+                "pix": blocos.get(a.id),
             }
-            for a in meus_agendamentos
+            for a in meus_listados
         ]
         for x in meus_bloqueios:
             # O semanal chega traduzido em INSTANTE: a tela nao ve
