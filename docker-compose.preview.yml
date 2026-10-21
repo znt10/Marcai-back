@@ -2,7 +2,7 @@
 # Coolify: `*.preview.usemarcai.online`. Serve para abrir uma branch no celular
 # antes do merge. O passo a passo está em `docs/ambiente-preview.md`.
 #
-# É o `docker-compose.prod.yml` com quatro diferenças, e cada uma existe para
+# É o `docker-compose.prod.yml` com cinco diferenças, e cada uma existe para
 # o teste não encostar na produção:
 #
 #   - As etiquetas do Traefik têm nomes PRÓPRIOS (`marcai-preview-*`). Com os
@@ -14,6 +14,11 @@
 #   - Sem Evolution. Sem `EVOLUTION_API_URL`, nenhuma mensagem sai: o texto
 #     (código da conta, confirmação, lembrete) vai para o log do `api`. O chip
 #     central é um só, e ele fica com a produção.
+#   - Serviços com nomes próprios (`preview-db`, `preview-api`,
+#     `preview-redis`). O Coolify põe os dois recursos numa rede em comum
+#     com o proxy, e lá `db` e `api` respondiam pelo contêiner da PRODUÇÃO:
+#     no primeiro deploy o `api` daqui tentou entrar no banco de lá e levou
+#     "password authentication failed".
 #   - Banco, Redis e volumes próprios. O Coolify prefixa os volumes com o id
 #     do recurso, então o `pgdata` daqui não é o da produção.
 #
@@ -25,15 +30,15 @@ x-django: &django
   restart: unless-stopped
   environment:
     PGDATABASE: brutus
-    PGHOST: db
+    PGHOST: preview-db
     PGPORT: "5432"
     PGPASSWORD_OWNER: ${PGPASSWORD_OWNER:?}
     PGPASSWORD_APP: ${PGPASSWORD_APP:?}
     PGPASSWORD_ADMIN: ${PGPASSWORD_ADMIN:?}
     DJANGO_DEBUG: "0"
     DOMINIO_BASE: ${DOMINIO_BASE:?}
-    REDIS_URL: redis://redis:6379/1
-    CACHE_REDIS_URL: redis://redis:6379/2
+    REDIS_URL: redis://preview-redis:6379/1
+    CACHE_REDIS_URL: redis://preview-redis:6379/2
     DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?}
     SESSAO_JWT_SECRET: ${SESSAO_JWT_SECRET:?}
     ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:?}
@@ -45,7 +50,7 @@ x-django: &django
     URL_BASE: https://${DOMINIO_BASE}
 
 services:
-  db:
+  preview-db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -67,18 +72,18 @@ services:
       timeout: 3s
       retries: 10
 
-  redis:
+  preview-redis:
     image: redis:7-alpine
     restart: unless-stopped
     volumes:
       - redis:/data
 
-  api:
+  preview-api:
     <<: *django
     # Dois workers, e não três: o teste divide a máquina com a produção.
     command: ["gunicorn", "backend.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2"]
     depends_on:
-      db: { condition: service_healthy }
+      preview-db: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 2)"]
       interval: 5s
@@ -93,14 +98,14 @@ services:
     entrypoint: ["/usr/bin/env"]
     command: ["celery", "-A", "backend", "worker", "-l", "info", "-Q", "celery"]
     depends_on:
-      api: { condition: service_healthy }
+      preview-api: { condition: service_healthy }
 
   beat:
     <<: *django
     entrypoint: ["/usr/bin/env"]
     command: ["celery", "-A", "backend", "beat", "-l", "info", "--schedule=/tmp/celerybeat-schedule"]
     depends_on:
-      api: { condition: service_healthy }
+      preview-api: { condition: service_healthy }
 
   front:
     build:
@@ -111,15 +116,15 @@ services:
         NEXT_PUBLIC_API_URL: "443"
         NEXT_PUBLIC_URL_BASE: https://${DOMINIO_BASE}
         NEXT_PUBLIC_TENANT_PADRAO: ""
-        API_INTERNA_URL: http://api:8000
+        API_INTERNA_URL: http://preview-api:8000
     restart: unless-stopped
     environment:
       ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:?}
       SESSAO_JWT_SECRET: ${SESSAO_JWT_SECRET:?}
       PROXY_SEGREDO: ${PROXY_SEGREDO:?}
-      API_INTERNA_URL: http://api:8000
+      API_INTERNA_URL: http://preview-api:8000
     depends_on:
-      api: { condition: service_healthy }
+      preview-api: { condition: service_healthy }
     # Mesmo arranjo da produção (os motivos estão no `docker-compose.prod.yml`):
     # domínio escrito à mão, porque o Coolify não troca variável dentro de
     # etiqueta, e `\z` no lugar de `$`. O "Domains" do Coolify recebe
