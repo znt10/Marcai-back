@@ -76,6 +76,12 @@ e faça o deploy de novo.
 4. O que sairia pelo WhatsApp (código da conta, link de senha nova,
    confirmação, convite) aparece no log do `api`. No Coolify, abra o serviço
    `api`, depois **Logs**, e procure por `[whatsapp] sem EVOLUTION_API_URL`.
+5. Para receber de verdade no WhatsApp, ponha na Env do `marcai-preview`
+   `EVOLUTION_API_URL=http://evolution:8080` e a mesma `EVOLUTION_API_KEY` da
+   produção, e faça o Deploy. As mensagens saem pelo **chip central da
+   produção**. Teste só com o seu número: as respostas a essas mensagens
+   chegam na produção, não aqui. Para voltar ao log, apague a
+   `EVOLUTION_API_URL`.
 
 ## Cuidados
 
