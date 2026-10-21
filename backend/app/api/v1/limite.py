@@ -46,15 +46,6 @@ class LimitaLogin:
     throttle_scope = "login"
 
 
-class LimitaConta(LimitaLogin):
-    """O mesmo teto de `LimitaLogin`, mas na taxa `conta`: balde PROPRIO. Com o
-    `login` compartilhado, o cliente que cria/confirma/entra na conta gastaria
-    a vaga do login do painel e do admin atras do mesmo IP (balcao, NAT), e
-    quem martela as rotas da conta travaria o barbeiro."""
-
-    throttle_scope = "conta"
-
-
 def tratar_excecao(exc, context):
     """O `EXCEPTION_HANDLER` da API. So' muda o 429: o DRF responderia
     `{"detail": "Request was throttled..."}`, em ingles e numa chave que o

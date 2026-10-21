@@ -186,32 +186,3 @@ def test_com_zap_pergunta_pelo_central_mesmo_sem_instancia_da_barbearia(cenario)
     with patch.object(whatsapp.requests, "post", return_value=resposta) as post:
         assert whatsapp.numero_existe(b, "11977778888", "1.1.1.1") == "existe"
     assert _instancia_usada(post) == "central-do-marcai"
-
-
-# ---- enviar_pelo_central (codigo da conta do cliente) ---------------------
-
-
-def test_pelo_central_sem_url_so_loga_e_conta_como_enviado(monkeypatch, caplog):
-    monkeypatch.delenv("EVOLUTION_API_URL", raising=False)
-    with caplog.at_level("INFO"), patch.object(whatsapp.requests, "post") as post:
-        assert whatsapp.enviar_pelo_central("83999990000", "Seu código: *123456*") is True
-    post.assert_not_called()
-    # No dev o log e' o unico lugar onde o codigo aparece.
-    assert "123456" in caplog.text
-
-
-def test_pelo_central_com_url_manda_pela_instancia_central(monkeypatch):
-    monkeypatch.setenv("EVOLUTION_API_URL", "http://evolution:8080")
-    monkeypatch.setenv("EVOLUTION_INSTANCE", "Marcai")
-    with patch.object(whatsapp.requests, "post", return_value=_ok()) as post:
-        assert whatsapp.enviar_pelo_central("83999990000", "oi") is True
-    assert post.call_args.args[0].endswith("/message/sendText/Marcai")
-    assert post.call_args.kwargs["json"]["number"] == "5583999990000"
-
-
-def test_pelo_central_recusado_devolve_false(monkeypatch):
-    monkeypatch.setenv("EVOLUTION_API_URL", "http://evolution:8080")
-    with patch.object(
-        whatsapp.requests, "post", return_value=Mock(ok=False, status_code=400, text="x")
-    ):
-        assert whatsapp.enviar_pelo_central("83999990000", "oi") is False
