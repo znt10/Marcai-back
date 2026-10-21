@@ -255,9 +255,15 @@ def test_resumo_e_lista_do_dia_nao_contam_aguardando_nem_expirado(cenario):
     )
     assert r["totais"]["cortes"] == 0
 
-    # Hoje, logo depois do instante da lista (barbearia com hora padrao).
-    _ag(b.id, dono, agora + timedelta(minutes=5), "AGUARDANDO_PAGAMENTO")
-    _ag(b.id, dono, agora + timedelta(minutes=50), "EXPIRADO")
+    # 06:30 de Sao Paulo (09:30 UTC), meio da manha de um dia fixo: o relogio
+    # real faria o teste passar vazio (fora da meia hora da lista nada sai).
+    lista = datetime(2026, 3, 10, 9, 30, tzinfo=timezone.utc)
+    _ag(b.id, dono, lista.replace(hour=12), "AGUARDANDO_PAGAMENTO", nome="Aguardando")
+    _ag(b.id, dono, lista.replace(hour=13), "EXPIRADO", nome="Expirado")
+    _ag(b.id, dono, lista.replace(hour=14), "CONFIRMADO", nome="Controle")
     with patch.object(lista_do_dia, "enviar_a_equipe_aceita", return_value=None) as envio:
-        lista_do_dia.enviar(agora)
-    assert envio.call_count == 0
+        assert lista_do_dia.enviar(lista) == 1
+    assert envio.call_count == 1
+    texto = envio.call_args.args[1]
+    assert "Controle" in texto
+    assert "Aguardando" not in texto and "Expirado" not in texto
