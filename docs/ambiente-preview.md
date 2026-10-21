@@ -82,6 +82,13 @@ e faça o deploy de novo.
    produção**. Teste só com o seu número: as respostas a essas mensagens
    chegam na produção, não aqui. Para voltar ao log, apague a
    `EVOLUTION_API_URL`.
+6. **Nunca conecte ou desconecte o número central pelo admin do preview**
+   enquanto a instância for a da produção (`Marcai`): o chip da produção cai
+   junto. Para um número só do teste, ponha `EVOLUTION_INSTANCE=MarcaiPreview`
+   na Env, faça o Deploy e leia o QR em `admin.preview` com o outro chip. O
+   admin cria a instância na primeira visita. As instâncias por barbearia levam
+   o id da barbearia no nome, então as do teste nunca coincidem com as da
+   produção.
 
 ## Cuidados
 
