@@ -244,8 +244,8 @@ class Barbeiro(models.Model):
     # Cada barbeiro escolhe se o cliente paga ao agendar e cadastra a PROPRIA
     # chave (o vigia roda no celular dele). Quem escreve e' so' ele mesmo, pela
     # rota `painel/meu-pix`; o banco nao impede o dono de UPDATE na linha de
-    # outro, essa regra mora na view. A chave fica como foi digitada; a forma
-    # normalizada (`pix.normalizar_chave`) e' so' para comparar.
+    # outro, essa regra mora na view. A chave e' gravada na forma padrao do
+    # DICT (`pix_do_barbeiro.forma_padrao`), conforme o tipo.
     cobra_no_agendamento = models.BooleanField(default=False)
     # Que tipo de chave e' `pix_chave` (o barbeiro escolhe, como no app do
     # banco: 11 digitos servem de CPF e de celular). Vazio = sem chave.

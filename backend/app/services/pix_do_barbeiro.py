@@ -131,11 +131,14 @@ def mudar(barbearia_id, barbeiro_id, dados: dict) -> tuple[int, dict]:
         chave = dados["pixChave"].strip() if "pixChave" in dados else b.pix_chave
         titular = dados["pixTitular"].strip() if "pixTitular" in dados else b.pix_titular
         liga = dados.get("cobraNoAgendamento", b.cobra_no_agendamento)
+        if tipo and tipo not in TIPOS:
+            return 400, {"erro": "Escolha o tipo da chave Pix."}
 
         # Chave nova (ou tipo novo) sempre passa pela forma padrao, ligado ou
-        # nao: rascunho torto guardado so' estouraria na hora de ligar. A que
-        # ja esta gravada ja' esta na forma padrao.
-        if chave and ("pixChave" in dados or "pixTipo" in dados):
+        # nao: rascunho torto guardado so' estouraria na hora de ligar. Ligado,
+        # a gravada passa de novo (a forma padrao e' idempotente): uma linha
+        # editada fora daqui, pelo admin do Django, nao liga sem conferencia.
+        if chave and ("pixChave" in dados or "pixTipo" in dados or liga):
             chave, erro = forma_padrao(tipo, chave)
             if erro:
                 return 400, {"erro": erro}

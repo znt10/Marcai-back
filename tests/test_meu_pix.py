@@ -225,3 +225,23 @@ def test_chave_e_gravada_na_forma_padrao(client, cenario):
     # chave sem tipo nao entra nem como rascunho
     r = _put(client, host, {"pixTipo": "", "pixChave": "52998224725"})
     assert r.status_code == 400
+
+
+@pytest.mark.parametrize("tipo", ["BANANA", "ALEATORIA_X"])
+def test_tipo_fora_da_lista_da_400_mesmo_sem_chave(client, cenario, tipo):
+    b = cenario["brutus"]
+    barb = _barbeiro(b.id)
+    host = _logar(client, barb, b)
+    r = _put(client, host, {"pixTipo": tipo})
+    assert r.status_code == 400
+    assert _do_banco(barb).pix_tipo == ""
+
+
+def test_ligar_confere_de_novo_a_chave_gravada(client, cenario):
+    # Linha com chave e sem tipo (editada fora do meu-pix): ligar nao passa.
+    b = cenario["brutus"]
+    barb = _barbeiro(b.id, pix_chave="(83) 99999-1234", pix_titular="Fulano")
+    _servico(b.id, barb)
+    host = _logar(client, barb, b)
+    assert _put(client, host, {"cobraNoAgendamento": True}).status_code == 400
+    assert _do_banco(barb).cobra_no_agendamento is False
