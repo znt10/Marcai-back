@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from django.conf import settings
 from django.core import signing
 
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -15,6 +15,8 @@ from app.api.v1.serializers.agendamentos import (
 )
 from app.services import lista_do_dia
 from app.services.agendamentos import (
+    AGUARDANDO,
+    SITE,
     ErroCliente,
     cancelar_publico,
     detalhe_publico,
@@ -24,9 +26,11 @@ from app.services.agendamentos import (
 from app.services.clientes_bloqueados import esta_bloqueado, id_do_bloqueado
 from app.services.mensagens import (
     msg_barbeiro_cancelado,
+    msg_barbeiro_esperando_pix,
     msg_barbeiro_novo,
     msg_cancelamento,
     msg_confirmacao,
+    msg_pague_o_pix,
 )
 from app.services.trava_ip import ip_de
 from app.services.whatsapp import enviar_a_equipe_da, enviar_ao_cliente, numero_existe
@@ -113,7 +117,7 @@ class AgendamentosView(ExigeTenant, APIView):
                 barbearia_id=self.barbearia_id, barbeiro_id=d["barbeiroId"],
                 servico_id=d["servicoId"], inicio=d["inicio"],
                 nome=d["nome"], whatsapp=whatsapp, agora=agora,
-                aparelho=aparelho or novo_aparelho,
+                aparelho=aparelho or novo_aparelho, origem=SITE,
             )
         except ErroCliente as e:
             return Response({"erro": e.mensagem}, status=e.status)
@@ -126,18 +130,64 @@ class AgendamentosView(ExigeTenant, APIView):
 
         # Fire-and-forget, DEPOIS do commit: falha de WhatsApp nao desfaz nada.
         link = f"{request.headers.get('origin', '')}/agendamento/{criado['codigo']}"
+        if criado["status"] == AGUARDANDO:
+            transaction.on_commit(lambda: self._avisar_que_espera_o_pix(
+                request.barbearia, criado, d["nome"], whatsapp, link,
+            ))
+        else:
+            transaction.on_commit(lambda: self._avisar_confirmado(
+                request.barbearia, criado, d["nome"], whatsapp, link, agora,
+            ))
+        resposta = Response({"codigo": criado["codigo"]}, status=201)
+        if novo_aparelho:
+            resposta.set_cookie(
+                COOKIE_APARELHO, novo_aparelho, max_age=APARELHO_MAX_AGE, path="/",
+                httponly=True, samesite="Lax", secure=not settings.DEBUG,
+            )
+        return resposta
+
+    def _avisar_que_espera_o_pix(self, barbearia, criado, nome, whatsapp, link):
+        """No lugar da confirmacao: o Pix para o cliente e o aviso curto para o
+        barbeiro. Nao refaz a lista do dia nem manda "Novo horario": o horario
+        so' conta depois de pago. O aviso curto vai sempre porque ainda nao ha
+        vigia que confirme sozinho, e sem ele o Pix venceria enquanto o barbeiro
+        corta."""
+        cobranca = criado["cobranca"]
         enviar_ao_cliente(
-            request.barbearia,
+            barbearia,
             whatsapp,
-            msg_confirmacao(
-                cliente_nome=d["nome"], barbeiro_nome=criado["barbeiro_nome"],
+            msg_pague_o_pix(
+                cliente_nome=nome, barbearia_nome=barbearia.nome,
                 servico_nome=criado["servico_nome"], inicio=criado["inicio"],
-                endereco=request.barbearia.endereco, link=link,
-                barbearia_nome=request.barbearia.nome,
-                contato=request.barbearia.whatsapp_contato,
+                valor_centavos=cobranca["valor_centavos"],
+                copia_e_cola=cobranca["copia_e_cola"],
+                prazo_min=settings.PIX_AGENDAMENTO_PRAZO_MIN, link=link,
             ),
             tipo=TipoMensagem.CONFIRMACAO,
-            cliente_nome=d["nome"],
+            cliente_nome=nome,
+        )
+        enviar_a_equipe_da(
+            self.barbearia_id,
+            criado["barbeiro_whatsapp"],
+            msg_barbeiro_esperando_pix(
+                cliente_nome=nome, inicio=criado["inicio"],
+                valor_centavos=cobranca["valor_centavos"],
+            ),
+        )
+
+    def _avisar_confirmado(self, barbearia, criado, nome, whatsapp, link, agora):
+        enviar_ao_cliente(
+            barbearia,
+            whatsapp,
+            msg_confirmacao(
+                cliente_nome=nome, barbeiro_nome=criado["barbeiro_nome"],
+                servico_nome=criado["servico_nome"], inicio=criado["inicio"],
+                endereco=barbearia.endereco, link=link,
+                barbearia_nome=barbearia.nome,
+                contato=barbearia.whatsapp_contato,
+            ),
+            tipo=TipoMensagem.CONFIRMACAO,
+            cliente_nome=nome,
         )
         # E o barbeiro, so' o que e' de HOJE: depois que a lista das 06:30
         # saiu, ele recebe a lista inteira refeita, com o horario novo
@@ -154,17 +204,10 @@ class AgendamentosView(ExigeTenant, APIView):
                 self.barbearia_id,
                 criado["barbeiro_whatsapp"],
                 msg_barbeiro_novo(
-                    cliente_nome=d["nome"], servico_nome=criado["servico_nome"],
+                    cliente_nome=nome, servico_nome=criado["servico_nome"],
                     inicio=criado["inicio"], agora=datetime.now(timezone.utc),
                 ),
             )
-        resposta = Response({"codigo": criado["codigo"]}, status=201)
-        if novo_aparelho:
-            resposta.set_cookie(
-                COOKIE_APARELHO, novo_aparelho, max_age=APARELHO_MAX_AGE, path="/",
-                httponly=True, samesite="Lax", secure=not settings.DEBUG,
-            )
-        return resposta
 
 
 class AgendamentoDetalheView(ExigeTenant, APIView):
@@ -209,24 +252,30 @@ class AgendamentoCancelarPublicoView(ExigeTenant, APIView):
                 tipo=TipoMensagem.CANCELAMENTO,
                 cliente_nome=resultado["cliente_nome"],
             )
-            # Mesma regra de marcar: hoje, depois das 06:30, a lista refeita
-            # sem o horario que caiu; outro dia, nada. So' no `tipo == "ok"` —
-            # o `ja_cancelado` cai fora deste bloco de proposito, senao dois
-            # toques no botao refariam a lista duas vezes.
-            mudanca = lista_do_dia.avisar_mudanca(
-                self.barbearia_id, resultado["barbeiro_id"], agora,
-                cancelados=[(resultado["id"], resultado["inicio"])],
-            )
-            if mudanca == lista_do_dia.FILA_FORA:
-                enviar_a_equipe_da(
-                    self.barbearia_id,
-                    resultado["barbeiro_whatsapp"],
-                    msg_barbeiro_cancelado(
-                        cliente_nome=resultado["cliente_nome"],
-                        servico_nome=resultado["servico_nome"],
-                        inicio=resultado["inicio"], agora=datetime.now(timezone.utc),
-                    ),
-                )
+            # Quem esperava o Pix nunca entrou na lista do barbeiro: nada a
+            # refazer nem a avisar. O cliente recebeu o mesmo retorno acima.
+            if not resultado["aguardando"]:
+                self._avisar_a_equipe(request, resultado, agora)
         # "ja_cancelado" cai aqui tambem, de proposito: quem apertou o botao
         # duas vezes queria o mesmo desfecho, e ele ja vale — 200 idempotente.
         return Response({"ok": True})
+
+    def _avisar_a_equipe(self, request, resultado, agora):
+        # Mesma regra de marcar: hoje, depois das 06:30, a lista refeita
+        # sem o horario que caiu; outro dia, nada. So' no `tipo == "ok"` —
+        # o `ja_cancelado` cai fora deste bloco de proposito, senao dois
+        # toques no botao refariam a lista duas vezes.
+        mudanca = lista_do_dia.avisar_mudanca(
+            self.barbearia_id, resultado["barbeiro_id"], agora,
+            cancelados=[(resultado["id"], resultado["inicio"])],
+        )
+        if mudanca == lista_do_dia.FILA_FORA:
+            enviar_a_equipe_da(
+                self.barbearia_id,
+                resultado["barbeiro_whatsapp"],
+                msg_barbeiro_cancelado(
+                    cliente_nome=resultado["cliente_nome"],
+                    servico_nome=resultado["servico_nome"],
+                    inicio=resultado["inicio"], agora=datetime.now(timezone.utc),
+                ),
+            )

@@ -48,7 +48,7 @@ from tenant.telefone import formas_gravadas, formatar, nacional_canonico
 
 from . import conversa as c
 from .agenda import dias_com_horarios
-from .agendamentos import ErroCliente, cancelar_publico, eh_sobreposicao, marcar
+from .agendamentos import BOT, ErroCliente, cancelar_publico, eh_sobreposicao, marcar
 from .convite import link_de_agendar, link_do_agendamento
 from .mensagens import (
     msg_barbeiro_cancelado,
@@ -441,7 +441,7 @@ def _marcar(ctx: _Contexto, r: dict) -> _Saida:
         criado = marcar(
             barbearia_id=ctx.bid, barbeiro_id=r["barbeiro_escolhido"],
             servico_id=r["servico_id"], inicio=datetime.fromisoformat(r["inicio"]),
-            nome=nome, whatsapp=whatsapp, agora=ctx.agora,
+            nome=nome, whatsapp=whatsapp, agora=ctx.agora, origem=BOT,
         )
     except ErroCliente as e:
         return _ir(ctx, c.HORA, volta, prefixo=e.mensagem)

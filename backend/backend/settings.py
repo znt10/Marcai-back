@@ -282,6 +282,11 @@ PIX_CHAVE = os.environ.get("PIX_CHAVE", "")
 PIX_NOME_RECEBEDOR = os.environ.get("PIX_NOME_RECEBEDOR", "")
 PIX_CIDADE = os.environ.get("PIX_CIDADE", "")
 
+# Quanto o cliente tem para pagar o Pix de um agendamento marcado pelo site;
+# vencido, o horario volta a ficar livre. Variavel de ambiente para dar para
+# testar com prazo curto.
+PIX_AGENDAMENTO_PRAZO_MIN = int(os.environ.get("PIX_AGENDAMENTO_PRAZO_MIN", "15"))
+
 # Quem recebe o "ja paguei" das barbearias (digitos com DDD). Vazio = ninguem
 # e' avisado; o aviso continua aparecendo na tela Plataforma.
 MENSALIDADE_WHATSAPP_AVISO = os.environ.get("MENSALIDADE_WHATSAPP_AVISO", "")

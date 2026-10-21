@@ -16,6 +16,17 @@ class CriarAgendamentoSerializer(serializers.Serializer):
     whatsapp = serializers.CharField()
 
 
+class PixDoAgendamentoSerializer(serializers.Serializer):
+    copiaECola = serializers.CharField(source="copia_e_cola")
+    qrSvg = serializers.CharField(source="qr_svg")
+    valorCentavos = serializers.IntegerField(source="valor_centavos")
+
+
+class BarbeiroDoAgendamentoSerializer(serializers.Serializer):
+    nome = serializers.CharField()
+    whatsapp = serializers.CharField()
+
+
 class AgendamentoDetalheSerializer(serializers.Serializer):
     """GET /api/agendamentos/<codigo>. `endereco`/`whatsappBarbearia` chegam
     ja' misturados no dict que a view monta (vem de `request.barbearia`, nao
@@ -36,3 +47,9 @@ class AgendamentoDetalheSerializer(serializers.Serializer):
     podeCancelar = serializers.BooleanField(source="pode_cancelar")
     endereco = serializers.CharField()
     whatsappBarbearia = serializers.CharField(source="whatsapp_barbearia")
+    # So' no AGUARDANDO_PAGAMENTO com a cobranca aberta; senao null.
+    pix = PixDoAgendamentoSerializer(allow_null=True)
+    expiraEm = InstanteISO(source="expira_em", allow_null=True)
+    # O "fale com" da tela. O numero do barbeiro so' sai aqui, onde o codigo
+    # do agendamento (segredo do cliente) ja' foi exigido.
+    barbeiro = BarbeiroDoAgendamentoSerializer()

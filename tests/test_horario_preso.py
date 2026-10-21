@@ -108,7 +108,7 @@ def test_marcar_em_cima_de_aguardando_recusa_com_409(pronto):
         marcar(
             barbearia_id=pronto["barbearia"], barbeiro_id=str(pronto["barbeiro"].id),
             servico_id=str(pronto["servico"].id), inicio=_inicio(10 * 60),
-            nome="Maria", whatsapp="83933330003", agora=datetime.now(fuso.utc),
+            nome="Maria", whatsapp="83933330003", agora=datetime.now(fuso.utc), origem="PAINEL",
         )
     assert (e.value.status, e.value.mensagem) == (409, "Esse horário não está mais disponível.")
 
@@ -228,7 +228,7 @@ def test_deadlock_no_insert_vira_409_igual_a_sobreposicao(pronto):
             marcar(
                 barbearia_id=pronto["barbearia"], barbeiro_id=str(pronto["barbeiro"].id),
                 servico_id=str(pronto["servico"].id), inicio=_inicio(10 * 60),
-                nome="Maria", whatsapp="83933330003", agora=datetime.now(fuso.utc),
+                nome="Maria", whatsapp="83933330003", agora=datetime.now(fuso.utc), origem="PAINEL",
             )
     assert (e.value.status, e.value.mensagem) == (409, "Esse horário não está mais disponível.")
 
@@ -241,7 +241,7 @@ def test_outro_erro_de_banco_continua_estourando(pronto):
             marcar(
                 barbearia_id=pronto["barbearia"], barbeiro_id=str(pronto["barbeiro"].id),
                 servico_id=str(pronto["servico"].id), inicio=_inicio(10 * 60),
-                nome="Maria", whatsapp="83933330003", agora=datetime.now(fuso.utc),
+                nome="Maria", whatsapp="83933330003", agora=datetime.now(fuso.utc), origem="PAINEL",
             )
 
 

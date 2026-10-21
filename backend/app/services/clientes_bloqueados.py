@@ -14,6 +14,9 @@ from django.utils import timezone
 from tenant.models import Agendamento, Cliente
 from tenant.rls import com_barbearia
 
+from . import pix_agendamento
+from .agendamentos import AGUARDANDO, STATUS_CANCELAVEIS
+
 
 def esta_bloqueado(
     barbearia_id, whatsapp: str, aparelho: str | None, marcado_por=None,
@@ -60,7 +63,7 @@ def _cliente_do_agendamento(agendamento_id, filtro_barbeiro_id):
 
 def _futuros(cliente_id, agora: datetime):
     return Agendamento.objects.filter(
-        cliente_id=cliente_id, status="CONFIRMADO", inicio__gt=agora,
+        cliente_id=cliente_id, status__in=STATUS_CANCELAVEIS, inicio__gt=agora,
     )
 
 
@@ -94,9 +97,12 @@ def bloquear(barbearia_id, agendamento_id, filtro_barbeiro_id, por_id, agora: da
         Cliente.objects.filter(id=c.id).update(
             bloqueado_em=timezone.now(), bloqueado_por_id=por_id,
         )
-        cancelados = list(_futuros(c.id, agora).values_list("barbeiro_id", "id", "inicio"))
+        futuros = list(_futuros(c.id, agora).values_list("barbeiro_id", "id", "inicio", "status"))
         _futuros(c.id, agora).update(status="CANCELADO_BARBEIRO", cancelado_em=timezone.now())
-    return cancelados
+    # Quem esperava o Pix perde a cobranca junto, e nunca entrou na lista do
+    # dia: so' os confirmados voltam para a rota refazer a lista.
+    pix_agendamento.cancelar_abertas(i for _, i, _, st in futuros if st == AGUARDANDO)
+    return [(b, i, ini) for b, i, ini, st in futuros if st != AGUARDANDO]
 
 
 def listar(barbearia_id) -> list[dict]:

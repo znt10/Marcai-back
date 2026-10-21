@@ -1,17 +1,36 @@
+import logging
 import secrets
 import uuid
 from datetime import datetime, timedelta
 
+from django.conf import settings
 from django.db.utils import OperationalError
 from django.utils import timezone
 
 from tenant.config import PRAZO_CANCELAMENTO_MIN
 from tenant.datas import como_utc, utc_para_local
-from tenant.models import Agendamento, BarbeiroServico, Cliente
+from tenant.models import Agendamento, Barbearia, BarbeiroServico, Cliente, Cobranca
 from tenant.rls import com_barbearia
 
+from . import pix_agendamento
 from .agenda import slots_do_dia
 from .lembrete import lembrete_ao_criar
+from .mensalidade import operacoes as mensalidade
+from .mensalidade import pix
+from .mensalidade.centavos import SemCentavoLivre
+from .mensalidade.situacao import Situacao
+
+logger = logging.getLogger(__name__)
+
+# De onde veio o pedido. So' o SITE cobra Pix; o painel (o barbeiro marcando
+# no balcao) e o bot nascem confirmados. Explicita em quem chama, sem padrao:
+# esquecer de dizer viraria cobranca (ou falta dela) em silencio.
+SITE = "SITE"
+PAINEL = "PAINEL"
+BOT = "BOT"
+ORIGENS = (SITE, PAINEL, BOT)
+
+AGUARDANDO = "AGUARDANDO_PAGAMENTO"
 
 # Alfabeto sem 0/O e 1/l/I — o codigo e' lido em voz alta e digitado a mao.
 _ALFABETO_CODIGO = "23456789abcdefghjkmnpqrstuvwxyz"
@@ -83,7 +102,7 @@ def eh_deadlock(exc: BaseException) -> bool:
 
 def marcar(
     *, barbearia_id: str, barbeiro_id: str, servico_id: str, inicio: datetime,
-    nome: str, whatsapp: str, agora: datetime, aparelho: str | None = None,
+    nome: str, whatsapp: str, agora: datetime, origem: str, aparelho: str | None = None,
 ) -> dict:
     """POST /painel/agendamentos — e tambem o motor de `POST /agendamentos`
     (fluxo publico, bloco C da travessia): as duas rotas chamam esta MESMA
@@ -96,11 +115,21 @@ def marcar(
     Levanta `ErroCliente` para os desfechos que a VIEW traduz em status —
     igual ao route.ts, que joga uma excecao dentro da transacao para poder
     decidir o codigo HTTP so depois do `try`.
+
+    Pelo SITE, de um barbeiro que cobra, o agendamento nasce
+    `AGUARDANDO_PAGAMENTO` e a cobranca Pix abre DEPOIS do commit dele (a FK da
+    cobranca e' conferida no commit dela, por outra conexao). Se a cobranca nao
+    abrir por qualquer motivo, o agendamento vira CONFIRMADO sem cobranca
+    ("pagar no local"): o cliente ja' tem o horario, e preso sem Pix ninguem
+    conseguiria pagar nem o barbeiro apertar "recebi".
     """
+    if origem not in ORIGENS:
+        raise ValueError(f"origem desconhecida: {origem!r}")
     try:
-        return _marcar_na_transacao(
+        criado = _marcar_na_transacao(
             barbearia_id=barbearia_id, barbeiro_id=barbeiro_id, servico_id=servico_id,
             inicio=inicio, nome=nome, whatsapp=whatsapp, agora=agora, aparelho=aparelho,
+            origem=origem,
         )
     except OperationalError as e:
         # Fora da transacao (ja desfeita) e dentro de `marcar()`, e nao nas
@@ -109,11 +138,45 @@ def marcar(
         if eh_deadlock(e):
             raise ErroCliente(409, "Esse horário não está mais disponível.") from e
         raise
+    cobranca = criado.pop("a_cobrar")
+    if cobranca is not None:
+        _abrir_cobranca_ou_confirmar(criado, cobranca, barbearia_id, agora)
+    return criado
+
+
+def _abrir_cobranca_ou_confirmar(criado: dict, a_cobrar: dict, barbearia_id, agora: datetime) -> None:
+    """Fora da transacao do agendamento, que ja' comitou. Preenche
+    `criado["cobranca"]` ou, se nao deu, devolve o agendamento ao fluxo normal."""
+    try:
+        cobranca = pix_agendamento.abrir(
+            barbearia_id=barbearia_id, agendamento_id=criado["id"], agora=agora, **a_cobrar,
+        )
+    except SemCentavoLivre:
+        logger.warning(
+            "[pix] chave sem centavo livre; agendamento %s segue sem cobranca", criado["id"],
+        )
+    except Exception:
+        logger.exception(
+            "[pix] cobranca nao abriu; agendamento %s segue sem cobranca", criado["id"],
+        )
+    else:
+        criado["cobranca"] = {
+            "valor_centavos": cobranca.valor_centavos,
+            "copia_e_cola": cobranca.copia_e_cola,
+            "expira_em": cobranca.expira_em,
+        }
+        return
+    # Dentro da janela do lembrete, a confirmacao que sai agora ja' e' o lembrete.
+    with com_barbearia(barbearia_id):
+        Agendamento.objects.filter(id=criado["id"], status=AGUARDANDO).update(
+            status="CONFIRMADO", lembrete_enviado_em=lembrete_ao_criar(criado["inicio"], agora),
+        )
+    criado["status"] = "CONFIRMADO"
 
 
 def _marcar_na_transacao(
     *, barbearia_id: str, barbeiro_id: str, servico_id: str, inicio: datetime,
-    nome: str, whatsapp: str, agora: datetime, aparelho: str | None,
+    nome: str, whatsapp: str, agora: datetime, aparelho: str | None, origem: str,
 ) -> dict:
     with com_barbearia(barbearia_id):
         vinculo = (
@@ -147,6 +210,8 @@ def _marcar_na_transacao(
 
         cliente_id = _upsert_cliente(barbearia_id, whatsapp, nome)
 
+        a_cobrar = _a_cobrar(vinculo, origem, barbearia_id, agora)
+
         novo_id = str(uuid.uuid4())
         codigo = _gerar_codigo()
         Agendamento.objects.create(
@@ -156,10 +221,11 @@ def _marcar_na_transacao(
             # Snapshot do preco praticado agora — reprecar depois nao pode
             # reescrever quanto ESTE agendamento custou.
             preco_centavos=preco_centavos,
-            status="CONFIRMADO",
+            status=AGUARDANDO if a_cobrar else "CONFIRMADO",
             # Dentro da janela do lembrete, a confirmacao que sai a seguir JA
-            # e' o lembrete: nasce avisado, o cron nunca o ve.
-            lembrete_enviado_em=lembrete_ao_criar(inicio, agora),
+            # e' o lembrete: nasce avisado, o cron nunca o ve. Quem espera o
+            # Pix ainda nao tem confirmacao; isto se decide quando confirmar.
+            lembrete_enviado_em=None if a_cobrar else lembrete_ao_criar(inicio, agora),
             aparelho=aparelho,
         )
 
@@ -173,21 +239,62 @@ def _marcar_na_transacao(
         "barbeiro_whatsapp": vinculo.barbeiro.whatsapp,
         "servico_nome": vinculo.servico.nome,
         "inicio": inicio,
+        "preco_centavos": preco_centavos,
+        "status": AGUARDANDO if a_cobrar else "CONFIRMADO",
+        # Preenchido por `marcar()` depois do commit, se a cobranca abrir.
+        "cobranca": None,
+        "a_cobrar": a_cobrar,
     }
+
+
+def _a_cobrar(vinculo, origem: str, barbearia_id, agora: datetime) -> dict | None:
+    """Os dados da cobranca se este pedido deve cobrar Pix, ou None. Cobra so'
+    o SITE, de um barbeiro que ligou a cobranca e tem chave, para um servico
+    com preco, numa barbearia cuja mensalidade nao esta BLOQUEADA (com o
+    painel travado ninguem apertaria "recebi", e o dinheiro ficaria preso).
+    Falta qualquer um: nasce confirmado, como "pagar no local"."""
+    barbeiro = vinculo.barbeiro
+    chave = pix.normalizar_chave(barbeiro.pix_chave)
+    if (
+        origem != SITE
+        or not barbeiro.cobra_no_agendamento
+        or not chave
+        or not barbeiro.pix_tipo
+        or not barbeiro.pix_titular
+        or not vinculo.preco_centavos
+    ):
+        return None
+    # Mesma leitura da trava do painel, pela mesma conexao.
+    if mensalidade.leitura(barbearia_id, agora=agora, using="default").situacao == Situacao.BLOQUEADA:
+        return None
+    cidade = Barbearia.objects.filter(id=barbearia_id).values_list("cidade", flat=True).first()
+    return {
+        "chave": chave,
+        "titular": barbeiro.pix_titular,
+        "cidade": cidade or "BRASIL",
+        "base_centavos": vinculo.preco_centavos,
+    }
+
+
+# Os dois que seguram horario: cancelar vale para ambos.
+STATUS_CANCELAVEIS = ("CONFIRMADO", AGUARDANDO)
 
 
 def cancelar(barbearia_id: str, agendamento_id: str, filtro_barbeiro_id: str | None) -> dict | None:
     """POST /painel/agendamentos/<id>/cancelar. Sem conferir
     `PRAZO_CANCELAMENTO_MIN`: aquela e' regra contra o CLIENTE sumir em cima
     da hora, e o barbeiro que quebrou o braco precisa desmarcar a tarde
-    inteira agora."""
+    inteira agora.
+
+    Cancela tambem o que aguarda o Pix (e a cobranca dele). `aguardando` no
+    retorno diz a quem chama que esse horario nunca entrou na lista do dia."""
     with com_barbearia(barbearia_id):
         a = (
             Agendamento.objects.filter(id=agendamento_id)
             .select_related("cliente", "barbeiro")
             .first()
         )
-        if a is None or a.status != "CONFIRMADO":
+        if a is None or a.status not in STATUS_CANCELAVEIS:
             return None
 
         # Reconferencia DEPOIS de carregar: um barbeiro que forje o id do
@@ -198,11 +305,15 @@ def cancelar(barbearia_id: str, agendamento_id: str, filtro_barbeiro_id: str | N
         Agendamento.objects.filter(id=agendamento_id).update(
             status="CANCELADO_BARBEIRO", cancelado_em=timezone.now(),
         )
-        return {
+        dados = {
             "id": str(a.id), "barbeiro_id": str(a.barbeiro_id),
             "cliente_nome": a.cliente.nome, "cliente_whatsapp": a.cliente.whatsapp,
             "barbeiro_nome": a.barbeiro.nome, "servico_nome": a.servico_nome, "inicio": a.inicio,
+            "aguardando": a.status == AGUARDANDO,
         }
+    if dados["aguardando"]:
+        pix_agendamento.cancelar_abertas([a.id])
+    return dados
 
 
 def detalhe_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict | None:
@@ -224,6 +335,13 @@ def detalhe_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict | N
             return None
 
         minutos_ate = (como_utc(a.inicio) - agora).total_seconds() / 60
+        cobranca = None
+        if a.status == AGUARDANDO:
+            cobranca = (
+                Cobranca.objects.filter(
+                    agendamento_id=a.id, barbearia_id=barbearia_id, status="ABERTA",
+                ).first()
+            )
         return {
             "codigo": a.codigo,
             # O nome do cliente sai; o WhatsApp dele, nunca (§9.1).
@@ -235,7 +353,18 @@ def detalhe_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict | N
             "inicio": a.inicio,
             "fim": a.fim,
             "status": a.status,
-            "pode_cancelar": a.status == "CONFIRMADO" and minutos_ate > PRAZO_CANCELAMENTO_MIN,
+            "pode_cancelar": a.status in STATUS_CANCELAVEIS and minutos_ate > PRAZO_CANCELAMENTO_MIN,
+            # O Pix so' aparece enquanto a cobranca esta aberta; vencida ou
+            # cancelada, a tela cai no estado que o `status` disser.
+            "pix": None if cobranca is None else {
+                "copia_e_cola": cobranca.copia_e_cola,
+                "qr_svg": pix.qr_svg(cobranca.copia_e_cola),
+                "valor_centavos": cobranca.valor_centavos,
+            },
+            "expira_em": None if cobranca is None else cobranca.expira_em,
+            # Para o "fale com" da tela. O numero do barbeiro so' sai por aqui,
+            # que exige o codigo do agendamento — segredo do proprio cliente.
+            "barbeiro": {"nome": a.barbeiro.nome, "whatsapp": a.barbeiro.whatsapp},
         }
 
 
@@ -258,7 +387,7 @@ def cancelar_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict:
         )
         if a is None:
             return {"tipo": "nao_encontrado"}
-        if a.status != "CONFIRMADO":
+        if a.status not in STATUS_CANCELAVEIS:
             return {"tipo": "ja_cancelado"}
 
         # Reconferido no servidor mesmo com podeCancelar:false na tela —
@@ -270,8 +399,9 @@ def cancelar_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict:
         Agendamento.objects.filter(id=a.id).update(
             status="CANCELADO_CLIENTE", cancelado_em=timezone.now(),
         )
-        return {
+        resultado = {
             "tipo": "ok",
+            "aguardando": a.status == AGUARDANDO,
             "id": str(a.id),
             "barbeiro_id": str(a.barbeiro_id),
             "cliente_nome": a.cliente.nome,
@@ -283,3 +413,6 @@ def cancelar_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict:
             "servico_nome": a.servico_nome,
             "inicio": a.inicio,
         }
+    if resultado["aguardando"]:
+        pix_agendamento.cancelar_abertas([a.id])
+    return resultado

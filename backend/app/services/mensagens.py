@@ -75,6 +75,25 @@ def msg_confirmacao(
     return f"*{barbearia_nome}*\n{texto}\nDúvida? Chama: {formatar(contato)}"
 
 
+def msg_pague_o_pix(
+    *, cliente_nome: str, barbearia_nome: str, servico_nome: str, inicio,
+    valor_centavos: int, copia_e_cola: str, prazo_min: int, link: str,
+) -> str:
+    """Vai no lugar da confirmacao quando o horario so' fecha com o Pix. O
+    copia e cola vai SOZINHO na ultima linha antes do link: e' o que a pessoa
+    toca e segura para copiar. O centavo a mais e' dito pelo valor exato, sem
+    explicar: o app do banco mostra o mesmo numero."""
+    primeiro_nome = cliente_nome.split(" ")[0]
+    return (
+        f"*{barbearia_nome}*\n"
+        f"{primeiro_nome}, falta pagar para fechar: {_capitalizar(servico_nome)} "
+        f"{formatar_dia_com_semana(inicio)} às {formatar_hora_falada(inicio)}.\n\n"
+        f"Pix de {_reais(valor_centavos)} em até {prazo_min} minutos. "
+        f"Copia e cola:\n{copia_e_cola}\n\n"
+        f"Acompanhar ou cancelar: {link}"
+    )
+
+
 def msg_cancelamento_pela_barbearia(
     *, cliente_nome: str, barbeiro_nome: str, servico_nome: str,
     inicio, endereco: str,
@@ -183,6 +202,15 @@ def msg_barbeiro_novo(*, cliente_nome: str, servico_nome: str, inicio, agora) ->
 def msg_barbeiro_cancelado(*, cliente_nome: str, servico_nome: str, inicio, agora) -> str:
     return "Cancelou\n" + _linha_do_horario(
         cliente_nome=cliente_nome, servico_nome=servico_nome, inicio=inicio, agora=agora,
+    )
+
+
+def msg_barbeiro_esperando_pix(*, cliente_nome: str, inicio, valor_centavos: int) -> str:
+    """O aviso curto de quem marcou e ainda nao pagou. Sem "hoje"/"amanha":
+    a mensagem ensina o que fazer depois, entao leva o dia por extenso."""
+    return (
+        f"{cliente_nome} marcou {formatar_dia_com_semana(inicio)} {formatar_hora(inicio)}, "
+        f"esperando Pix de {_reais(valor_centavos)} — aperte 'recebi' no painel quando cair."
     )
 
 
