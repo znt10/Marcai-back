@@ -11,9 +11,12 @@
 #   - A regra casa só `<algo>.preview.usemarcai.online`. A da produção
 #     (`^[a-z0-9-]+\.usemarcai\.online\z`) não casa esses endereços, porque o
 #     `[a-z0-9-]+` não aceita ponto: os dois conjuntos não se cruzam.
-#   - Sem Evolution. Sem `EVOLUTION_API_URL`, nenhuma mensagem sai: o texto
-#     (código da conta, confirmação, lembrete) vai para o log do `api`. O chip
-#     central é um só, e ele fica com a produção.
+#   - Sem Evolution própria. Com `EVOLUTION_API_URL` vazia (o padrão), nenhuma
+#     mensagem sai: o texto (código da conta, confirmação, lembrete) vai para o
+#     log do `api`. Para receber de verdade no celular, a Env do recurso pode
+#     apontar para a Evolution da PRODUÇÃO (`http://evolution:8080`, que a
+#     rede em comum do Coolify alcança) com a `EVOLUTION_API_KEY` de lá. O chip
+#     é o mesmo: as mensagens saem pelo número central da produção.
 #   - Serviços com nomes próprios (`preview-db`, `preview-api`,
 #     `preview-redis`). O Coolify põe os dois recursos numa rede em comum
 #     com o proxy, e lá `db` e `api` respondiam pelo contêiner da PRODUÇÃO:
@@ -45,8 +48,10 @@ x-django: &django
     ADMIN_USUARIO: ${ADMIN_USUARIO:-}
     ADMIN_SENHA_HASH_B64: ${ADMIN_SENHA_HASH_B64:-}
     PROXY_SEGREDO: ${PROXY_SEGREDO:?}
-    # Vazia de propósito: é o que faz o envio só registrar no log.
-    EVOLUTION_API_URL: ""
+    # Vazia por padrão: é o que faz o envio só registrar no log.
+    EVOLUTION_API_URL: ${EVOLUTION_API_URL:-}
+    EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
+    EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-Marcai}
     URL_BASE: https://${DOMINIO_BASE}
 
 services:
