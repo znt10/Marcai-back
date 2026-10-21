@@ -285,7 +285,17 @@ PIX_CIDADE = os.environ.get("PIX_CIDADE", "")
 # Quanto o cliente tem para pagar o Pix de um agendamento marcado pelo site;
 # vencido, o horario volta a ficar livre. Variavel de ambiente para dar para
 # testar com prazo curto.
-PIX_AGENDAMENTO_PRAZO_MIN = int(os.environ.get("PIX_AGENDAMENTO_PRAZO_MIN", "15"))
+def _prazo_do_pix(bruto: str) -> int:
+    """Vazio, nao-numero, 0 ou negativo cai no padrao: um prazo que ja nasce
+    vencido expiraria todo agendamento na hora."""
+    try:
+        valor = int(bruto)
+    except ValueError:
+        return 15
+    return valor if valor > 0 else 15
+
+
+PIX_AGENDAMENTO_PRAZO_MIN = _prazo_do_pix(os.environ.get("PIX_AGENDAMENTO_PRAZO_MIN", "15"))
 
 # Quem recebe o "ja paguei" das barbearias (digitos com DDD). Vazio = ninguem
 # e' avisado; o aviso continua aparecendo na tela Plataforma.

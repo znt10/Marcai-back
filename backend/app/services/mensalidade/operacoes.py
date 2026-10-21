@@ -13,7 +13,7 @@ import uuid
 from decimal import Decimal
 
 from django.conf import settings
-from django.db import IntegrityError, transaction
+from django.db import transaction
 
 from app.services import mensagens
 from app.services.whatsapp import enviar_a_equipe
@@ -44,7 +44,6 @@ from .situacao import (
 logger = logging.getLogger(__name__)
 
 ALIAS = "admin"
-TENTATIVAS_DE_CENTAVO = 3
 SEM_MENSALIDADE = "Esta barbearia não tem mensalidade a pagar."
 
 
@@ -171,47 +170,39 @@ def leitura(barbearia_id, *, agora, considerar_aviso=True, using=ALIAS) -> Leitu
 
 
 def _ocupados(chave_pix):
-    """Os valores ja em uso por cobrancas abertas da chave, de QUALQUER
-    barbearia: o vigia so distingue um Pix do outro pelo valor."""
-    return set(
-        Cobranca.objects.using(ALIAS)
-        .filter(chave_pix=chave_pix, status=StatusCobranca.ABERTA)
-        .values_list("valor_centavos", flat=True)
-    )
+    return centavos.ocupados(chave_pix, using=ALIAS)
 
 
 def _abrir_cobranca(assinatura):
     chave = pix.normalizar_chave(settings.PIX_CHAVE)
-    for tentativa in range(TENTATIVAS_DE_CENTAVO):
-        try:
-            valor = centavos.escolher(assinatura.valor_centavos, _ocupados(chave))
-        except SemCentavoLivre:
-            break
+
+    def criar(valor):
         cobranca_id = uuid.uuid4()
-        try:
-            # Savepoint: o indice unico pode recusar (outra barbearia pegou o
-            # mesmo centavo agora), e isso nao pode matar a transacao de fora.
-            with transaction.atomic(using=ALIAS):
-                return Cobranca.objects.using(ALIAS).create(
-                    id=cobranca_id,
-                    barbearia_id=assinatura.barbearia_id,
-                    motivo=MotivoCobranca.MENSALIDADE,
-                    chave_pix=chave,
-                    valor_base_centavos=assinatura.valor_centavos,
-                    valor_centavos=valor,
-                    copia_e_cola=pix.copia_e_cola(
-                        chave=chave,
-                        nome=settings.PIX_NOME_RECEBEDOR,
-                        cidade=settings.PIX_CIDADE,
-                        valor=Decimal(valor) / 100,
-                        identificador=pix.identificador(cobranca_id),
-                    ),
-                )
-        except IntegrityError:
-            continue
-    raise RecusaDaMensalidade(
-        "Não foi possível gerar o Pix agora. Tente de novo em alguns minutos."
-    )
+        return Cobranca.objects.using(ALIAS).create(
+            id=cobranca_id,
+            barbearia_id=assinatura.barbearia_id,
+            motivo=MotivoCobranca.MENSALIDADE,
+            chave_pix=chave,
+            valor_base_centavos=assinatura.valor_centavos,
+            valor_centavos=valor,
+            copia_e_cola=pix.copia_e_cola(
+                chave=chave,
+                nome=settings.PIX_NOME_RECEBEDOR,
+                cidade=settings.PIX_CIDADE,
+                valor=Decimal(valor) / 100,
+                identificador=pix.identificador(cobranca_id),
+            ),
+        )
+
+    try:
+        return centavos.criar_com_centavo_livre(
+            chave, assinatura.valor_centavos, criar,
+            ocupados_de=lambda c: _ocupados(c), using=ALIAS,
+        )
+    except SemCentavoLivre:
+        raise RecusaDaMensalidade(
+            "Não foi possível gerar o Pix agora. Tente de novo em alguns minutos."
+        ) from None
 
 
 # So' dentro da janela de pagamento ha Pix na tela: em dia, nao se abre

@@ -57,7 +57,7 @@ def _inicio(minutos):
     return local_para_utc(_dia(), minutos)
 
 
-def _barbeiro(b, nome="Zeca", *, cobra=True, chave=CHAVE, tipo="EMAIL", preco=3500):
+def _barbeiro(b, nome="Zeca", *, cobra=True, chave=CHAVE, tipo="EMAIL", preco=3500, titular="Zeca da Silva"):
     from tenant.datas import dia_semana_de
     from tenant.models import Barbeiro, BarbeiroServico, HorarioTrabalho, Servico
 
@@ -68,7 +68,7 @@ def _barbeiro(b, nome="Zeca", *, cobra=True, chave=CHAVE, tipo="EMAIL", preco=35
     barbeiro = Barbeiro.objects.using("owner").create(
         barbearia_id=b.id, nome=nome, whatsapp=f"1198{uuid.uuid4().int % 10**7:07d}",
         ativo=True, cobra_no_agendamento=cobra, pix_chave=chave, pix_tipo=tipo,
-        pix_titular="Zeca da Silva",
+        pix_titular=titular,
     )
     BarbeiroServico.objects.using("owner").create(
         barbearia_id=b.id, barbeiro=barbeiro, servico=servico, duracao_min=30,
@@ -234,7 +234,8 @@ def test_confirmado_segue_igual_ao_de_hoje(client, cenario, envios):
     {"cobra": False},
     {"chave": "", "tipo": ""},
     {"preco": None},
-], ids=["desligado", "sem_chave", "sem_preco"])
+    {"titular": ""},
+], ids=["desligado", "sem_chave", "sem_preco", "sem_titular"])
 def test_sem_como_cobrar_nasce_confirmado(client, cenario, envios, ajuste):
     b = cenario["brutus"]
     barbeiro, servico = _barbeiro(b, **ajuste)
@@ -243,6 +244,19 @@ def test_sem_como_cobrar_nasce_confirmado(client, cenario, envios, ajuste):
     assert _agendamento(r.json()["codigo"]).status == "CONFIRMADO"
     assert _cobrancas() == []
     assert "Fechou" in envios.cliente()[0][1]
+
+
+def test_preco_zero_nao_cobra(cenario):
+    """O banco ja' recusa preco 0 (check), mas a regra de cobrar nao depende
+    disso: preco 0 nao vira Pix de 1 centavo."""
+    from types import SimpleNamespace
+
+    from app.services.agendamentos import _a_cobrar
+
+    b = cenario["brutus"]
+    barbeiro, _ = _barbeiro(b)
+    vinculo = SimpleNamespace(barbeiro=barbeiro, preco_centavos=0)
+    assert _a_cobrar(vinculo, "SITE", b.id, datetime.now(fuso.utc)) is None
 
 
 @pytest.mark.parametrize("origem", ["PAINEL", "BOT"])
@@ -367,6 +381,68 @@ def test_se_a_abertura_falha_o_agendamento_vira_confirmado_sem_cobranca(client, 
     assert any(x.levelno == logging.ERROR for x in caplog.records)
     # E o cliente recebe a confirmacao normal, nao um Pix que nao existe.
     assert "Fechou" in envios.cliente()[0][1]
+    # E a lista do dia e' avisada: o horario agora conta como confirmado.
+    envios.lista.assert_called_once()
+    assert str(envios.lista.call_args.kwargs["novos"][0][0]) == str(_agendamento(r.json()["codigo"]).id)
+
+
+# ---- a disputa pelo centavo
+
+def test_perdida_a_disputa_do_centavo_tenta_de_novo(cenario):
+    """Outra cobranca pega o 3501 entre a leitura e o INSERT: o indice unico
+    recusa, e a nova tentativa le de novo e fica com 3502."""
+    from app.services import pix_agendamento
+    from tenant.models import Cobranca
+
+    b = cenario["brutus"]
+    barbeiro, servico = _barbeiro(b)
+    criado = _chamar_marcar(b, barbeiro, servico, 10 * 60, "PAINEL")  # so' um agendamento qualquer
+    real = pix_agendamento._ocupados
+    chamadas = []
+
+    def cega_na_primeira(chave):
+        chamadas.append(1)
+        if len(chamadas) == 1:
+            Cobranca.objects.using("admin").create(
+                barbearia_id=b.id, motivo="AGENDAMENTO", chave_pix=CHAVE,
+                valor_base_centavos=3500, valor_centavos=3501, copia_e_cola="x",
+            )
+            return set()
+        return real(chave)
+
+    with patch.object(pix_agendamento, "_ocupados", cega_na_primeira):
+        c = pix_agendamento.abrir(
+            barbearia_id=b.id, agendamento_id=criado["id"], chave=CHAVE, titular="Zeca",
+            cidade="", base_centavos=3500, agora=datetime.now(fuso.utc),
+        )
+    assert c.valor_centavos == 3502 and len(chamadas) == 2
+
+
+def test_outro_erro_de_integridade_nao_vira_falta_de_centavo(cenario):
+    """Agendamento que nao existe: a FK adiada recusa no commit da cobranca.
+    Isso sobe como o que e', e nao como `SemCentavoLivre`."""
+    from django.db import IntegrityError
+
+    from app.services import pix_agendamento
+    from app.services.mensalidade.centavos import SemCentavoLivre
+
+    b = cenario["brutus"]
+    with pytest.raises(IntegrityError) as e:
+        pix_agendamento.abrir(
+            barbearia_id=b.id, agendamento_id=uuid.uuid4(), chave=CHAVE, titular="Zeca",
+            cidade="", base_centavos=3500, agora=datetime.now(fuso.utc),
+        )
+    assert not isinstance(e.value, SemCentavoLivre)
+    assert "cobranca_aberta_por_chave_e_valor" not in str(e.value)
+
+
+@pytest.mark.parametrize("bruto,esperado", [
+    ("15", 15), ("3", 3), ("", 15), ("0", 15), ("-5", 15), ("abc", 15),
+])
+def test_prazo_do_pix_invalido_cai_no_padrao(bruto, esperado):
+    from backend.settings import _prazo_do_pix
+
+    assert _prazo_do_pix(bruto) == esperado
 
 
 # ---- a consulta pelo codigo
@@ -438,7 +514,7 @@ def test_cliente_cancela_o_aguardando_e_a_cobranca_cai(client, cenario, envios):
     assert _agendamento(codigo).status == "CANCELADO_CLIENTE"
     assert [c.status for c in _cobrancas()] == ["CANCELADA"]
     # O cliente recebe o mesmo retorno de hoje; o barbeiro nada (nunca entrou na lista).
-    assert "Cancelamos" in envios.cliente()[-1][1] or "cancel" in envios.cliente()[-1][1].lower()
+    assert "cancelado" in envios.cliente()[-1][1]
     assert len(envios.equipe()) == avisos_ao_barbeiro
     envios.lista.assert_not_called()
 
