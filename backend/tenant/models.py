@@ -535,6 +535,13 @@ class Agendamento(models.Model):
             # O unico indice que a FK nao da de graca: as consultas da agenda
             # sempre entram por barbeiro E janela de tempo juntos.
             models.Index(fields=["barbeiro", "inicio"], name="agendamento_barbeiro_dia"),
+            # A varredura do Pix procura, a cada minuto e em todo tenant, quem
+            # espera pagamento: sem este parcial seria o historico inteiro.
+            models.Index(
+                fields=["criado_em"],
+                condition=models.Q(status="AGUARDANDO_PAGAMENTO"),
+                name="agendamento_aguardando",
+            ),
         ]
 
 
@@ -778,6 +785,16 @@ class Cobranca(models.Model):
                 fields=("chave_pix", "valor_centavos"),
                 condition=models.Q(status="ABERTA"),
                 name="cobranca_aberta_por_chave_e_valor",
+            ),
+        ]
+        indexes = [
+            # O reparo da varredura parte do que NAO esta resolvido (aberta ou
+            # expirada) e ligado a um agendamento; pagas e canceladas, que sao
+            # a maioria, ficam fora do indice.
+            models.Index(
+                fields=["agendamento"],
+                condition=models.Q(status__in=["ABERTA", "EXPIRADA"], agendamento__isnull=False),
+                name="cobranca_agendamento_pendente",
             ),
         ]
 

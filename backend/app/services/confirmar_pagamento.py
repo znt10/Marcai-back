@@ -94,6 +94,13 @@ def confirmar_pagamento(
                 )
                 tipo = "confirmado"
             else:
+                # O cliente pode ter pago e cancelado enquanto aguardava: se o
+                # Pix caiu, quem manda devolver e' este aviso (nada mais avisa).
+                if valor_pago:
+                    raise ErroCliente(409, (
+                        "Esse horário foi cancelado. Se o Pix caiu, devolva o Pix de "
+                        f"{_reais(valor_pago)} pelo app do banco."
+                    ))
                 raise ErroCliente(409, "Esse horário foi cancelado.")
             dados = {
                 "id": a.id, "codigo": a.codigo, "barbeiro_id": str(a.barbeiro_id),

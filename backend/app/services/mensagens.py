@@ -108,6 +108,16 @@ def msg_pix_expirado(
     )
 
 
+def msg_horario_liberado_sem_pix(*, barbearia_nome: str, inicio) -> str:
+    """O horario ficou preso sem que o Pix chegasse a abrir (falha nossa): o
+    cliente nunca viu cobranca, entao nada de "seu Pix"."""
+    return (
+        f"*{barbearia_nome}*\n"
+        f"Não conseguimos gerar o Pix do seu horário de {formatar_dia_com_semana(inicio)} "
+        f"às {formatar_hora_falada(inicio)} e ele foi liberado. Marque de novo pelo site."
+    )
+
+
 def msg_cancelamento_pela_barbearia(
     *, cliente_nome: str, barbeiro_nome: str, servico_nome: str,
     inicio, endereco: str,

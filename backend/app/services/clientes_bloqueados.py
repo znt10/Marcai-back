@@ -97,19 +97,31 @@ def bloquear(barbearia_id, agendamento_id, filtro_barbeiro_id, por_id, agora: da
         Cliente.objects.filter(id=c.id).update(
             bloqueado_em=timezone.now(), bloqueado_por_id=por_id,
         )
-        futuros = list(_futuros(c.id, agora).values_list("barbeiro_id", "id", "inicio", "status"))
+        # Trancados em ordem fixa (a mesma de qualquer outro que tranque
+        # varios) e com o status relido sob a trava.
+        futuros = list(
+            _futuros(c.id, agora).select_for_update(of=("self",)).order_by("id")
+            .values_list("barbeiro_id", "id", "inicio", "status")
+        )
         pagos = [
             {
                 "cliente_nome": c.nome, "inicio": inicio, "valor_centavos": valor,
                 "barbeiro_whatsapp": Barbeiro.objects.get(id=barbeiro_id).whatsapp,
+                "agendamento_id": i,
             }
             for barbeiro_id, i, inicio, st in futuros
-            if st == "CONFIRMADO" and (valor := pix_agendamento.valor_pago(i))
+            if (valor := pix_agendamento.valor_pago(i, st))
         ]
-        _futuros(c.id, agora).update(status="CANCELADO_BARBEIRO", cancelado_em=timezone.now())
+        Agendamento.objects.filter(id__in=[f[1] for f in futuros]).update(
+            status="CANCELADO_BARBEIRO", cancelado_em=timezone.now(),
+        )
     # Quem esperava o Pix perde a cobranca junto, e nunca entrou na lista do
-    # dia: so' os confirmados voltam para a rota refazer a lista.
-    pix_agendamento.cancelar_abertas(i for _, i, _, st in futuros if st == AGUARDANDO)
+    # dia: so' os confirmados voltam para a rota refazer a lista. Quem estava
+    # pago tem a cobranca confirmada e o barbeiro avisado de devolver.
+    pix_agendamento.fechar_cobrancas_do_cancelamento(
+        [i for _, i, _, st in futuros if st == AGUARDANDO],
+        [p["agendamento_id"] for p in pagos], timezone.now(),
+    )
     pix_agendamento.avisar_cancelamento_pago(barbearia_id, pagos, pelo_cliente=False)
     return [(b, i, ini) for b, i, ini, st in futuros if st != AGUARDANDO]
 

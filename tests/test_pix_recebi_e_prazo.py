@@ -481,8 +481,8 @@ def test_corrida_o_recebi_ganha_a_trava_e_a_varredura_encontra_confirmado(client
 
 
 def test_a_coerencia_vale_em_toda_ordem(client, cenario, envios, avisos):
-    """Confirmado <=> cobranca paga, depois de cada combinacao de recebi e
-    varredura (duas rodadas, e o recebi repetido)."""
+    """Depois de cada combinacao de recebi e varredura (duas rodadas, o recebi
+    repetido), o desfecho e' CONFIRMADO com a cobranca PAGA."""
     for ordem in (("v", "r"), ("r", "v"), ("v", "r", "v", "r")):
         from tenant.models import Agendamento, Cobranca
 
@@ -495,8 +495,9 @@ def test_a_coerencia_vale_em_toda_ordem(client, cenario, envios, avisos):
         _sessao(client, barbeiro, b)
         for passo in ordem:
             _varrer() if passo == "v" else _recebi(client, a)
-        confirmado = _agendamento(a.codigo).status == "CONFIRMADO"
-        assert confirmado == (_status_cobranca() == ["PAGA"]), ordem
+        # A vaga esta livre em todas as ordens: o desfecho e' sempre o mesmo.
+        assert _agendamento(a.codigo).status == "CONFIRMADO", ordem
+        assert _status_cobranca() == ["PAGA"], ordem
 
 
 # ---- a varredura
@@ -555,24 +556,27 @@ def test_o_horario_expirado_volta_a_ficar_livre_e_o_centavo_tambem(client, cenar
 
 
 def test_varredura_nao_para_nas_barbearias_com_problema(client, cenario, envios, avisos, caplog):
-    b = cenario["brutus"]
+    """A outra barbearia estoura; a do agendamento vencido e' varrida mesmo
+    assim, e o defeito fica no log."""
+    from app.services import pix_agendamento
+
+    b, defeituosa = cenario["brutus"], cenario["dontony"]
     barbeiro, servico = _barbeiro(b)
     a = _aguardando(client, b, barbeiro, servico)
     _vencer()
-    from app.services import pix_agendamento
-
     real = pix_agendamento._varrer_barbearia
-    chamadas = []
 
-    def quebra_a_primeira(bid, *args):
-        chamadas.append(bid)
-        if len(chamadas) == 1:
+    def quebra_so_a_defeituosa(bid, *args):
+        if str(bid) == str(defeituosa.id):
             raise RuntimeError("barbearia com defeito")
         return real(bid, *args)
 
-    with patch.object(pix_agendamento, "_varrer_barbearia", quebra_a_primeira):
-        _varrer()
-    assert len(chamadas) >= 2  # as outras barbearias foram varridas
+    with patch.object(pix_agendamento, "_varrer_barbearia", quebra_so_a_defeituosa):
+        contagem = _varrer()
+
+    assert contagem["expirados"] == 1
+    assert _agendamento(a.codigo).status == "EXPIRADO"
+    assert any("varredura da barbearia" in r.getMessage() for r in caplog.records)
 
 
 def test_a_orfao_agendamento_sem_cobranca_mais_velho_que_o_prazo_expira(client, cenario, envios, avisos):
@@ -594,6 +598,7 @@ def test_a_orfao_agendamento_sem_cobranca_mais_velho_que_o_prazo_expira(client, 
     assert _agendamento(novo.codigo).status == "AGUARDANDO_PAGAMENTO"  # ainda dentro do prazo
     [(numero, texto)] = avisos.expirados()
     assert numero == "11977778888" and "foi liberado" in texto
+    assert "Não conseguimos gerar o Pix" in texto and "confirmar seu Pix" not in texto
     assert sum(_varrer().values()) == 0  # e nao avisa de novo
 
 
@@ -831,3 +836,216 @@ def test_cancelar_aguardando_continua_sem_aviso_de_devolucao(client, cenario, en
     a = _aguardando(client, b, barbeiro, servico)
     client.post(f"/api/agendamentos/{a.codigo}/cancelar", headers={"host": HOST, **CABECALHO})
     assert avisos.devolucoes() == []
+
+
+# ---- o recebi 409 de cancelado manda devolver
+
+def test_recebi_de_cancelado_com_cobranca_manda_devolver(client, cenario, envios, avisos):
+    b = cenario["brutus"]
+    barbeiro, servico = _barbeiro(b)
+    a = _aguardando(client, b, barbeiro, servico)
+    client.post(f"/api/agendamentos/{a.codigo}/cancelar", headers={"host": HOST, **CABECALHO})
+    _sessao(client, barbeiro, b)
+    r = _recebi(client, a)
+    assert r.status_code == 409
+    assert r.json()["erro"] == (
+        "Esse horário foi cancelado. Se o Pix caiu, devolva o Pix de R$ 35,01 pelo app do banco."
+    )
+
+
+# ---- recebi x cancelamento (a sonda da revisao)
+
+def _confirmado_com_cobranca_atrasada(client, b, barbeiro, servico, minutos=10 * 60):
+    """O "recebi" ja' comitou o agendamento, mas a escrita da cobranca (outra
+    conexao) ainda nao chegou: CONFIRMADO com cobranca ABERTA."""
+    from app.services.confirmar_pagamento import confirmar_pagamento
+
+    a = _aguardando(client, b, barbeiro, servico, minutos)
+    with patch("app.services.confirmar_pagamento._marcar_cobranca_paga"):
+        confirmar_pagamento(a.id, barbearia_id=b.id, agora=_agora())
+    assert _agendamento(a.codigo).status == "CONFIRMADO" and _status_cobranca()[-1] == "ABERTA"
+    return a
+
+
+def _recebi_numa_thread_enquanto_cancela(b, a, *, onde):
+    """Roda `onde` (um servico de cancelamento) e, dentro dele, DEPOIS de ele
+    ter trancado a linha, dispara o "recebi" numa thread: a thread tem de ficar
+    esperando a trava (viva depois de 1,5 s), nunca passar no meio."""
+    import threading
+
+    from django.db import connections
+
+    from app.services import pix_agendamento
+    from app.services.agendamentos import ErroCliente
+    from app.services.confirmar_pagamento import confirmar_pagamento
+
+    resultado = {}
+
+    def recebi():
+        try:
+            confirmar_pagamento(a.id, barbearia_id=b.id, agora=_agora())
+            resultado["erro"] = None
+        except ErroCliente as e:
+            resultado["erro"] = e
+        finally:
+            connections.close_all()
+
+    thread = threading.Thread(target=recebi)
+    real = pix_agendamento.valor_pago
+    feito = []
+
+    def valor_pago_com_recebi_no_meio(*args):
+        if not feito:
+            feito.append(1)
+            thread.start()
+            thread.join(1.5)
+            resultado["bloqueada"] = thread.is_alive()
+        return real(*args)
+
+    with patch.object(pix_agendamento, "valor_pago", valor_pago_com_recebi_no_meio):
+        saida = onde()
+    thread.join(10)
+    assert not thread.is_alive()
+    return saida, resultado
+
+
+def _confere_que_o_cancelamento_ganhou(a, resultado, avisos):
+    assert resultado["bloqueada"] is True  # esperou a trava, nao passou no meio
+    assert resultado["erro"].status == 409
+    assert "devolva o Pix de R$ 35,01" in resultado["erro"].mensagem
+    assert _agendamento(a.codigo).status.startswith("CANCELADO")
+    assert _status_cobranca() == ["CANCELADA"]
+    assert avisos.confirmacoes() == []
+    assert avisos.devolucoes() == []
+
+
+def test_cancelar_publico_x_recebi_no_meio_o_cancelamento_ganha(client, cenario, envios, avisos):
+    b = cenario["brutus"]
+    barbeiro, servico = _barbeiro(b)
+    a = _aguardando(client, b, barbeiro, servico)
+    r, resultado = _recebi_numa_thread_enquanto_cancela(
+        b, a, onde=lambda: client.post(
+            f"/api/agendamentos/{a.codigo}/cancelar", headers={"host": HOST, **CABECALHO},
+        ),
+    )
+    assert r.status_code == 200
+    _confere_que_o_cancelamento_ganhou(a, resultado, avisos)
+    assert _agendamento(a.codigo).status == "CANCELADO_CLIENTE"
+
+
+def test_cancelar_do_painel_x_recebi_no_meio_o_cancelamento_ganha(client, cenario, envios, avisos):
+    b = cenario["brutus"]
+    barbeiro, servico = _barbeiro(b)
+    a = _aguardando(client, b, barbeiro, servico)
+    _sessao(client, barbeiro, b)
+    with patch("app.api.v1.views.agendamentos_painel.enviar_ao_cliente"):
+        r, resultado = _recebi_numa_thread_enquanto_cancela(
+            b, a, onde=lambda: client.post(
+                f"/api/painel/agendamentos/{a.id}/cancelar", headers={"host": HOST, **CABECALHO},
+            ),
+        )
+    assert r.status_code == 200 and r.json() == {"ok": True, "pagoCentavos": None}
+    _confere_que_o_cancelamento_ganhou(a, resultado, avisos)
+
+
+def test_bloquear_x_recebi_no_meio_o_bloqueio_ganha(client, cenario, envios, avisos):
+    b = cenario["brutus"]
+    barbeiro, servico = _barbeiro(b)
+    a = _aguardando(client, b, barbeiro, servico)
+    _sessao(client, barbeiro, b)
+    r, resultado = _recebi_numa_thread_enquanto_cancela(
+        b, a, onde=lambda: client.post(
+            f"/api/painel/agendamentos/{a.id}/bloquear-cliente", headers={"host": HOST, **CABECALHO},
+        ),
+    )
+    assert r.status_code == 200
+    _confere_que_o_cancelamento_ganhou(a, resultado, avisos)
+
+
+def _confere_pago_e_cancelado(a, avisos):
+    assert _agendamento(a.codigo).status.startswith("CANCELADO")
+    assert _status_cobranca() == ["PAGA"]  # o dinheiro entrou: nunca CANCELADA
+    [(numero, texto)] = avisos.devolucoes()
+    assert "R$ 35,01" in texto and "devolva o Pix" in texto
+
+
+def test_cancelar_publico_apos_recebi_com_cobranca_atrasada_manda_devolver(client, cenario, envios, avisos):
+    b = cenario["brutus"]
+    barbeiro, servico = _barbeiro(b)
+    a = _confirmado_com_cobranca_atrasada(client, b, barbeiro, servico)
+    avisos.lista.reset_mock()
+    r = client.post(f"/api/agendamentos/{a.codigo}/cancelar", headers={"host": HOST, **CABECALHO})
+    assert r.status_code == 200
+    _confere_pago_e_cancelado(a, avisos)
+    avisos.lista.assert_called_once()  # a lista do dia tambem sai, como em todo confirmado
+    assert sum(_varrer().values()) == 0  # e nada a reparar depois
+
+
+def test_cancelar_do_painel_apos_recebi_com_cobranca_atrasada_traz_o_valor(client, cenario, envios, avisos):
+    b = cenario["brutus"]
+    barbeiro, servico = _barbeiro(b)
+    a = _confirmado_com_cobranca_atrasada(client, b, barbeiro, servico)
+    _sessao(client, barbeiro, b)
+    with patch("app.api.v1.views.agendamentos_painel.enviar_ao_cliente"):
+        r = client.post(
+            f"/api/painel/agendamentos/{a.id}/cancelar", headers={"host": HOST, **CABECALHO},
+        )
+    assert r.json() == {"ok": True, "pagoCentavos": 3501}
+    _confere_pago_e_cancelado(a, avisos)
+
+
+def test_bloquear_apos_recebi_com_cobranca_atrasada_manda_devolver(client, cenario, envios, avisos):
+    b = cenario["brutus"]
+    barbeiro, servico = _barbeiro(b)
+    a = _confirmado_com_cobranca_atrasada(client, b, barbeiro, servico)
+    _sessao(client, barbeiro, b)
+    r = client.post(
+        f"/api/painel/agendamentos/{a.id}/bloquear-cliente", headers={"host": HOST, **CABECALHO},
+    )
+    assert r.status_code == 200
+    _confere_pago_e_cancelado(a, avisos)
+
+
+# ---- o reparo se guia pelo agendamento, de qualquer idade
+
+def test_reparo_de_confirmado_com_cobranca_expirada_ha_dias(client, cenario, envios, avisos):
+    from tenant.models import Cobranca
+
+    b = cenario["brutus"]
+    barbeiro, servico = _barbeiro(b)
+    a = _aguardando(client, b, barbeiro, servico)
+    _vencer()
+    _varrer()
+    _sessao(client, barbeiro, b)
+    with patch("app.services.confirmar_pagamento._marcar_cobranca_paga"):
+        assert _recebi(client, a).status_code == 200
+    Cobranca.objects.using("owner").update(expira_em=_agora() - timedelta(days=5))
+    assert _status_cobranca() == ["EXPIRADA"]
+
+    _varrer()
+
+    assert _status_cobranca() == ["PAGA"]
+
+
+# ---- uma rodada de cada vez
+
+def test_rodada_anterior_ainda_rodando_pula_a_tarefa(cenario):
+    from django.db import connections
+
+    from app import tasks
+    from app.services.pix_agendamento import TRAVA_DA_VARREDURA
+
+    with connections["owner"].cursor() as cur:
+        cur.execute("SELECT pg_advisory_lock(%s)", [TRAVA_DA_VARREDURA])
+        try:
+            with patch("app.tasks.expirar_vencidos") as varre:
+                assert tasks.expirar_pix_vencidos() == {"pulada": True}
+            varre.assert_not_called()
+        finally:
+            cur.execute("SELECT pg_advisory_unlock(%s)", [TRAVA_DA_VARREDURA])
+    with patch("app.tasks.expirar_vencidos", return_value={"expirados": 0}) as varre:
+        assert tasks.expirar_pix_vencidos() == {"expirados": 0}
+    varre.assert_called_once()
+    # E a trava foi devolvida: a proxima rodada passa de novo.
+    with patch("app.tasks.expirar_vencidos", return_value={}):
+        assert tasks.expirar_pix_vencidos() == {}

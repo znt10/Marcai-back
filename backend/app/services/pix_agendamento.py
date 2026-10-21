@@ -13,8 +13,10 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
-from django.db import transaction
-from django.db.models import Q
+from contextlib import contextmanager
+
+from django.db import connections, transaction
+from django.db.models import Exists, OuterRef
 
 from app.services import mensagens
 from app.services.mensalidade import centavos, pix
@@ -73,15 +75,40 @@ def abrir(*, barbearia_id, agendamento_id, chave, titular, cidade, base_centavos
     )
 
 
-def valor_pago(agendamento_id) -> int | None:
-    """O que o cliente pagou (centavos, com o centavo a mais) se a cobranca
-    deste agendamento esta PAGA; None se nao ha Pix pago. Le pela conexao de
-    quem chama: `Cobranca` e' legivel pelo `brutus_app`."""
+def valor_pago(agendamento_id, status_do_agendamento: str) -> int | None:
+    """Quanto o cliente pagou, se o horario que esta sendo cancelado estava
+    pago (centavos, com o centavo a mais); None se nao. Chamado SOB A TRAVA do
+    agendamento, com o status ja' relido.
+
+    Pago e' (a) cobranca PAGA, ou (b) agendamento CONFIRMADO com cobranca
+    ligada que nao foi cancelada: so' o "recebi" confirma um agendamento que
+    tinha cobranca, e a escrita dela (outra conexao) pode ainda nao ter chegado.
+    Le pela conexao de quem chama: `Cobranca` e' legivel pelo `brutus_app`."""
+    if status_do_agendamento != StatusAgendamento.CONFIRMADO:
+        return None
     return (
-        Cobranca.objects.filter(agendamento_id=agendamento_id, status=StatusCobranca.PAGA)
+        Cobranca.objects.filter(agendamento_id=agendamento_id)
+        .exclude(status=StatusCobranca.CANCELADA)
         .values_list("valor_centavos", flat=True)
         .first()
     )
+
+
+def fechar_cobrancas_do_cancelamento(aguardando_ids, pagos_ids, agora) -> None:
+    """Depois do commit do cancelamento: quem esperava o Pix perde a cobranca
+    (CANCELADA) e quem ja' estava pago a tem confirmada (PAGA, nunca
+    CANCELADA: o dinheiro entrou e o centavo nao pode voltar a ficar livre)."""
+    cancelar_abertas(aguardando_ids)
+    ids = list(pagos_ids)
+    if not ids:
+        return
+    try:
+        Cobranca.objects.using(ALIAS).filter(
+            agendamento_id__in=ids,
+            status__in=[StatusCobranca.ABERTA, StatusCobranca.EXPIRADA],
+        ).update(status=StatusCobranca.PAGA, paga_em=agora, como_foi_paga=ComoFoiPaga.MANUAL)
+    except Exception:
+        logger.exception("[pix] cobranca de agendamento pago e cancelado nao foi fechada: %s", ids)
 
 
 def avisar_cancelamento_pago(barbearia_id, cancelamentos, *, pelo_cliente: bool) -> None:
@@ -144,9 +171,8 @@ def cancelar_abertas(agendamento_ids) -> None:
 # milissegundos, mas um agendamento sem cobranca so' e' dado como orfao depois
 # do prazo mais este minuto.
 FOLGA_DO_ORFAO = timedelta(minutes=1)
-# "Recebi" interrompido entre os dois commits deixa a cobranca EXPIRADA com o
-# agendamento CONFIRMADO; essa janela de volta e' tudo que a varredura olha.
-JANELA_DA_COBRANCA_EXPIRADA = timedelta(hours=24)
+# Chave da trava consultiva do Postgres que impede duas rodadas do beat ao mesmo tempo.
+TRAVA_DA_VARREDURA = 7_251_001
 
 
 def expirar_vencidos(agora, *, barbearia_id=None, barbeiro_id=None) -> dict:
@@ -164,8 +190,7 @@ def expirar_vencidos(agora, *, barbearia_id=None, barbeiro_id=None) -> dict:
     )
     if barbearia_id is not None:
         abertas = abertas.filter(barbearia_id=barbearia_id)
-    recentes = agora - JANELA_DA_COBRANCA_EXPIRADA
-    for c in abertas.filter(_aberta_ou_expirada_recente(recentes)):
+    for c in abertas.filter(status=StatusCobranca.ABERTA):
         por_barbearia[c.barbearia_id].append(c)
 
     if barbearia_id is not None:
@@ -183,10 +208,24 @@ def expirar_vencidos(agora, *, barbearia_id=None, barbeiro_id=None) -> dict:
     return contagem
 
 
-def _aberta_ou_expirada_recente(recentes):
-    return Q(status=StatusCobranca.ABERTA) | Q(
-        status=StatusCobranca.EXPIRADA, expira_em__gte=recentes,
-    )
+@contextmanager
+def rodada_unica():
+    """Trava consultiva do Postgres (`pg_try_advisory_lock`) para o beat: se a
+    rodada anterior ainda esta rodando (passou de 60 s), esta pula em vez de se
+    empilhar. Preferi isto a `expires` no beat porque `expires` so' descarta
+    mensagem velha na fila, nao impede duas rodadas simultaneas; e a trava
+    consultiva morre sozinha com a conexao se o processo cair. Sessao do alias
+    `admin`, que a varredura nao usa em transacao longa. Entrega `True` se
+    pegou a trava."""
+    cur = connections[ALIAS].cursor()
+    cur.execute("SELECT pg_try_advisory_lock(%s)", [TRAVA_DA_VARREDURA])
+    pegou = cur.fetchone()[0]
+    try:
+        yield pegou
+    finally:
+        if pegou:
+            cur.execute("SELECT pg_advisory_unlock(%s)", [TRAVA_DA_VARREDURA])
+        cur.close()
 
 
 def _varrer_barbearia(bid, cobrancas, agora, barbeiro_id, contagem) -> None:
@@ -198,16 +237,21 @@ def _varrer_barbearia(bid, cobrancas, agora, barbeiro_id, contagem) -> None:
             "cliente", "barbeiro",
         )
         ids = [c.agendamento_id for c in cobrancas]
-        por_id = {a.id: a for a in trancados.filter(id__in=ids)} if ids else {}
+        # So' os do barbeiro do pedido (no SQL: nao trancar o colega a toa) e
+        # em ordem fixa, para duas varreduras nunca se esperarem em cruz.
+        alvo = trancados.filter(id__in=ids)
+        if barbeiro_id is not None:
+            alvo = alvo.filter(barbeiro_id=barbeiro_id)
+        por_id = {a.id: a for a in alvo.order_by("id")} if ids else {}
         for c in cobrancas:
             a = por_id.get(c.agendamento_id)
-            if a is None or (barbeiro_id is not None and str(a.barbeiro_id) != str(barbeiro_id)):
+            if a is None:
                 continue
             if a.status == ag.AGUARDANDO_PAGAMENTO:
                 if c.status == StatusCobranca.ABERTA and c.expira_em is not None and c.expira_em <= agora:
                     Agendamento.objects.filter(id=a.id).update(status=ag.EXPIRADO)
                     novo_estado[c.id] = StatusCobranca.EXPIRADA
-                    avisos.append(a)
+                    avisos.append((a, False))
                     contagem["expirados"] += 1
             elif a.status == ag.CONFIRMADO:
                 # So' o "recebi" confirma um agendamento que tinha cobranca.
@@ -236,8 +280,27 @@ def _varrer_barbearia(bid, cobrancas, agora, barbeiro_id, contagem) -> None:
             )
             for a in orfaos:
                 Agendamento.objects.filter(id=a.id).update(status=ag.EXPIRADO)
-                avisos.append(a)
+                avisos.append((a, True))
                 contagem["orfaos"] += 1
+
+            # Reparo guiado pelo AGENDAMENTO, de qualquer idade: CONFIRMADO com
+            # cobranca ligada que nao esta paga so' acontece se o "recebi" (ou
+            # um cancelamento de pago) parou entre os dois commits.
+            pendente = Cobranca.objects.filter(
+                agendamento_id=OuterRef("pk"),
+                status__in=[StatusCobranca.ABERTA, StatusCobranca.EXPIRADA],
+            )
+            para_reparar = list(
+                Agendamento.objects.select_for_update(of=("self",))
+                .filter(status=ag.CONFIRMADO).filter(Exists(pendente))
+                .order_by("id").values_list("id", flat=True)
+            )
+            if para_reparar:
+                for cid in Cobranca.objects.filter(
+                    agendamento_id__in=para_reparar,
+                    status__in=[StatusCobranca.ABERTA, StatusCobranca.EXPIRADA],
+                ).values_list("id", flat=True):
+                    novo_estado[cid] = StatusCobranca.PAGA
 
     _gravar_cobrancas(novo_estado, agora, contagem)
     _avisar_expirados(bid, avisos)
@@ -270,11 +333,18 @@ def _avisar_expirados(bid, agendamentos) -> None:
     if not agendamentos:
         return
     barbearia = Barbearia.objects.get(id=bid)
-    for a in agendamentos:
-        texto = mensagens.msg_pix_expirado(
-            barbearia_nome=barbearia.nome, barbeiro_nome=a.barbeiro.nome,
-            barbeiro_whatsapp=a.barbeiro.whatsapp, inicio=a.inicio,
-        )
+    for a, orfao in agendamentos:
+        if orfao:
+            # Nunca houve Pix na tela: dizer "nao conseguimos confirmar seu Pix"
+            # a quem nunca recebeu um seria estranho.
+            texto = mensagens.msg_horario_liberado_sem_pix(
+                barbearia_nome=barbearia.nome, inicio=a.inicio,
+            )
+        else:
+            texto = mensagens.msg_pix_expirado(
+                barbearia_nome=barbearia.nome, barbeiro_nome=a.barbeiro.nome,
+                barbeiro_whatsapp=a.barbeiro.whatsapp, inicio=a.inicio,
+            )
         transaction.on_commit(
             lambda a=a, texto=texto: _enviar_expirado(barbearia, a, texto)
         )

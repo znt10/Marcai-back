@@ -5,7 +5,7 @@ from celery import shared_task
 
 from app.services.bot import processar as processar_mensagem_do_bot
 from app.services.lembrete import enviar_pendentes
-from app.services.pix_agendamento import expirar_vencidos
+from app.services.pix_agendamento import expirar_vencidos, rodada_unica
 from app.services.mensalidade.avisos import enviar_do_dia as enviar_avisos_da_mensalidade
 from app.services.lista_do_dia import enviar as enviar_lista_do_dia
 from app.services.lista_do_dia import refazer as refazer_lista_do_dia
@@ -42,7 +42,12 @@ def expirar_pix_vencidos() -> dict:
     cliente; e acerta o que ficou torto entre agendamento e cobranca (ver
     `pix_agendamento.expirar_vencidos`). Idempotente: duas rodadas seguidas
     nao avisam duas vezes."""
-    return expirar_vencidos(datetime.now(timezone.utc))
+    with rodada_unica() as pegou:
+        if not pegou:
+            # A rodada anterior ainda esta rodando; a proxima (em 60 s) pega.
+            logger.warning("[pix] varredura anterior ainda rodando; esta foi pulada")
+            return {"pulada": True}
+        return expirar_vencidos(datetime.now(timezone.utc))
 
 
 @shared_task
