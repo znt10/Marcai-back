@@ -94,21 +94,22 @@ def valor_pago(agendamento_id, status_do_agendamento: str) -> int | None:
     )
 
 
-def fechar_cobrancas_do_cancelamento(aguardando_ids, pagos_ids, agora) -> None:
-    """Depois do commit do cancelamento: quem esperava o Pix perde a cobranca
-    (CANCELADA) e quem ja' estava pago a tem confirmada (PAGA, nunca
-    CANCELADA: o dinheiro entrou e o centavo nao pode voltar a ficar livre)."""
-    cancelar_abertas(aguardando_ids)
-    ids = list(pagos_ids)
+def marcar_pagas(agendamento_ids, agora) -> None:
+    """Cancelamento de um horario PAGO: a cobranca vira PAGA (nunca CANCELADA:
+    o dinheiro entrou e o registro tem de dizer isso). Chamado DENTRO da janela
+    em que o cancelamento segura a trava do agendamento, mas ANTES do commit
+    dele: a escrita vai pelo alias `admin`, com commit proprio. "CONFIRMADO com
+    cobranca" ja' implica que o "recebi" aconteceu, entao PAGA e' verdade antes
+    e depois; se o cancelamento falhar em seguida sobra CONFIRMADO + PAGA, que e'
+    coerente, e a varredura nunca encontra CANCELADO com cobranca aberta vinda
+    de um horario pago. Se a escrita falhar, o erro sobe e o cancelamento nao
+    acontece (nada de aviso de devolucao sem registro)."""
+    ids = list(agendamento_ids)
     if not ids:
         return
-    try:
-        Cobranca.objects.using(ALIAS).filter(
-            agendamento_id__in=ids,
-            status__in=[StatusCobranca.ABERTA, StatusCobranca.EXPIRADA],
-        ).update(status=StatusCobranca.PAGA, paga_em=agora, como_foi_paga=ComoFoiPaga.MANUAL)
-    except Exception:
-        logger.exception("[pix] cobranca de agendamento pago e cancelado nao foi fechada: %s", ids)
+    Cobranca.objects.using(ALIAS).filter(
+        agendamento_id__in=ids, status__in=[StatusCobranca.ABERTA, StatusCobranca.EXPIRADA],
+    ).update(status=StatusCobranca.PAGA, paga_em=agora, como_foi_paga=ComoFoiPaga.MANUAL)
 
 
 def avisar_cancelamento_pago(barbearia_id, cancelamentos, *, pelo_cliente: bool) -> None:
@@ -158,8 +159,11 @@ def cancelar_abertas(agendamento_ids) -> None:
 #   1. QUEM DECIDE O ESTADO E' O AGENDAMENTO, sob `SELECT ... FOR UPDATE` na
 #      linha dele. "Recebi" e varredura brigam por essa trava: quem chega
 #      primeiro decide, o outro le o resultado e age em cima dele.
-#   2. A COBRANCA SEGUE, depois do commit, com UPDATE condicional (`WHERE
-#      status = ...`): nunca sobrescreve um estado que outro ja' decidiu.
+#   2. A COBRANCA SEGUE, com UPDATE condicional (`WHERE status = ...`): nunca
+#      sobrescreve um estado que outro ja' decidiu. Depois do commit do
+#      agendamento no "recebi" e na varredura; ANTES do commit dele no
+#      cancelamento de um horario pago (`marcar_pagas`, ainda sob a trava),
+#      para nunca existir CANCELADO com cobranca aberta vinda de um pago.
 #   3. Se algo parar entre os dois commits, a proxima varredura reconcilia:
 #      CONFIRMADO com cobranca aberta/expirada -> PAGA; EXPIRADO -> EXPIRADA;
 #      CANCELADO -> CANCELADA.
@@ -238,7 +242,9 @@ def _varrer_barbearia(bid, cobrancas, agora, barbeiro_id, contagem) -> None:
         )
         ids = [c.agendamento_id for c in cobrancas]
         # So' os do barbeiro do pedido (no SQL: nao trancar o colega a toa) e
-        # em ordem fixa, para duas varreduras nunca se esperarem em cruz.
+        # em ordem de id. As levas dos orfaos e do reparo, mais abaixo, tambem
+        # trancam em ordem de id, mas cada leva e' uma ordem propria: nao ha
+        # ordem global entre as tres.
         alvo = trancados.filter(id__in=ids)
         if barbeiro_id is not None:
             alvo = alvo.filter(barbeiro_id=barbeiro_id)
@@ -277,6 +283,7 @@ def _varrer_barbearia(bid, cobrancas, agora, barbeiro_id, contagem) -> None:
                 .select_related("cliente", "barbeiro")
                 .filter(status=ag.AGUARDANDO_PAGAMENTO, criado_em__lte=limite)
                 .exclude(id__in=com_aberta)
+                .order_by("id")
             )
             for a in orfaos:
                 Agendamento.objects.filter(id=a.id).update(status=ag.EXPIRADO)

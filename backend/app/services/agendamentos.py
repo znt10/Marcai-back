@@ -335,10 +335,10 @@ def cancelar(barbearia_id: str, agendamento_id: str, filtro_barbeiro_id: str | N
             "aguardando": a.status == AGUARDANDO,
             "pago_centavos": pix_agendamento.valor_pago(a.id, a.status),
         }
-    pix_agendamento.fechar_cobrancas_do_cancelamento(
-        [a.id] if dados["aguardando"] else [], [a.id] if dados["pago_centavos"] else [],
-        timezone.now(),
-    )
+        if dados["pago_centavos"]:
+            pix_agendamento.marcar_pagas([a.id], timezone.now())
+    if dados["aguardando"]:
+        pix_agendamento.cancelar_abertas([a.id])
     if dados["pago_centavos"]:
         pix_agendamento.avisar_cancelamento_pago(barbearia_id, [{
             "cliente_nome": dados["cliente_nome"], "barbeiro_whatsapp": a.barbeiro.whatsapp,
@@ -446,10 +446,10 @@ def cancelar_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict:
             "inicio": a.inicio,
             "pago_centavos": pix_agendamento.valor_pago(a.id, a.status),
         }
-    pix_agendamento.fechar_cobrancas_do_cancelamento(
-        [a.id] if resultado["aguardando"] else [],
-        [a.id] if resultado["pago_centavos"] else [], timezone.now(),
-    )
+        if resultado["pago_centavos"]:
+            pix_agendamento.marcar_pagas([a.id], timezone.now())
+    if resultado["aguardando"]:
+        pix_agendamento.cancelar_abertas([a.id])
     if resultado["pago_centavos"]:
         pix_agendamento.avisar_cancelamento_pago(barbearia_id, [{
             "cliente_nome": resultado["cliente_nome"], "barbeiro_whatsapp": a.barbeiro.whatsapp,

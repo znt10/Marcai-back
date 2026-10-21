@@ -1046,6 +1046,99 @@ def test_rodada_anterior_ainda_rodando_pula_a_tarefa(cenario):
     with patch("app.tasks.expirar_vencidos", return_value={"expirados": 0}) as varre:
         assert tasks.expirar_pix_vencidos() == {"expirados": 0}
     varre.assert_called_once()
-    # E a trava foi devolvida: a proxima rodada passa de novo.
-    with patch("app.tasks.expirar_vencidos", return_value={}):
-        assert tasks.expirar_pix_vencidos() == {}
+    # E a trava foi devolvida DE VERDADE: a trava consultiva e' reentrante na
+    # mesma sessao, entao quem prova e' OUTRA conexao (a `owner`) conseguir pega-la.
+    with connections["owner"].cursor() as cur:
+        cur.execute("SELECT pg_try_advisory_lock(%s)", [TRAVA_DA_VARREDURA])
+        assert cur.fetchone()[0] is True
+        cur.execute("SELECT pg_advisory_unlock(%s)", [TRAVA_DA_VARREDURA])
+
+
+def test_a_trava_tambem_e_devolvida_quando_a_varredura_estoura(cenario):
+    from django.db import connections
+
+    from app import tasks
+    from app.services.pix_agendamento import TRAVA_DA_VARREDURA
+
+    with patch("app.tasks.expirar_vencidos", side_effect=RuntimeError("x")):
+        with pytest.raises(RuntimeError):
+            tasks.expirar_pix_vencidos()
+    with connections["owner"].cursor() as cur:
+        cur.execute("SELECT pg_try_advisory_lock(%s)", [TRAVA_DA_VARREDURA])
+        assert cur.fetchone()[0] is True
+        cur.execute("SELECT pg_advisory_unlock(%s)", [TRAVA_DA_VARREDURA])
+
+
+# ---- cancelar um pago: a cobranca fica PAGA antes do commit do cancelamento
+
+def test_varredura_entre_a_cobranca_paga_e_o_commit_do_cancelamento(client, cenario, envios, avisos):
+    from app.services import pix_agendamento
+
+    b = cenario["brutus"]
+    barbeiro, servico = _barbeiro(b)
+    a = _confirmado_com_cobranca_atrasada(client, b, barbeiro, servico)
+    real = pix_agendamento.marcar_pagas
+    vistos = []
+
+    def marcar_e_varrer(ids, agora):
+        real(ids, agora)
+        vistos.append(_status_cobranca())  # a cobranca ja' esta PAGA aqui...
+        _varrer()  # ...e a varredura, no meio, nao a toca (agendamento ainda CONFIRMADO)
+        vistos.append(_agendamento(a.codigo).status)
+
+    with patch.object(pix_agendamento, "marcar_pagas", marcar_e_varrer):
+        r = client.post(f"/api/agendamentos/{a.codigo}/cancelar", headers={"host": HOST, **CABECALHO})
+
+    assert r.status_code == 200
+    assert vistos == [["PAGA"], "CONFIRMADO"]
+    _confere_pago_e_cancelado(a, avisos)
+    assert sum(_varrer().values()) == 0
+
+
+def test_cancelamento_que_falha_depois_da_cobranca_deixa_confirmado_e_paga(client, cenario, envios, avisos):
+    from app.services import pix_agendamento
+
+    b = cenario["brutus"]
+    barbeiro, servico = _barbeiro(b)
+    a = _confirmado_com_cobranca_atrasada(client, b, barbeiro, servico)
+    real = pix_agendamento.marcar_pagas
+
+    def marcar_e_estourar(ids, agora):
+        real(ids, agora)
+        raise RuntimeError("caiu antes do commit do cancelamento")
+
+    with patch.object(pix_agendamento, "marcar_pagas", marcar_e_estourar):
+        with pytest.raises(RuntimeError):
+            client.post(f"/api/agendamentos/{a.codigo}/cancelar", headers={"host": HOST, **CABECALHO})
+
+    assert _agendamento(a.codigo).status == "CONFIRMADO"
+    assert _status_cobranca() == ["PAGA"]
+    assert avisos.devolucoes() == []
+    assert sum(_varrer().values()) == 0
+
+
+def test_bloquear_e_cancelar_do_painel_tambem_fecham_a_cobranca_antes(client, cenario, envios, avisos):
+    """A mesma garantia nos outros dois caminhos: quando o cancelamento falha
+    depois da escrita da cobranca, sobra CONFIRMADO + PAGA."""
+    from app.services import pix_agendamento
+
+    b = cenario["brutus"]
+    barbeiro, servico = _barbeiro(b)
+    a = _confirmado_com_cobranca_atrasada(client, b, barbeiro, servico)
+    _sessao(client, barbeiro, b)
+    real = pix_agendamento.marcar_pagas
+
+    def marcar_e_estourar(ids, agora):
+        real(ids, agora)
+        raise RuntimeError("x")
+
+    for rota in ("cancelar", "bloquear-cliente"):
+        with patch.object(pix_agendamento, "marcar_pagas", marcar_e_estourar), patch(
+            "app.api.v1.views.agendamentos_painel.enviar_ao_cliente"
+        ):
+            with pytest.raises(RuntimeError):
+                client.post(
+                    f"/api/painel/agendamentos/{a.id}/{rota}", headers={"host": HOST, **CABECALHO},
+                )
+        assert _agendamento(a.codigo).status == "CONFIRMADO", rota
+        assert _status_cobranca() == ["PAGA"], rota
