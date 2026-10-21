@@ -2,6 +2,7 @@ import secrets
 import uuid
 from datetime import datetime, timedelta
 
+from django.db.utils import OperationalError
 from django.utils import timezone
 
 from tenant.config import PRAZO_CANCELAMENTO_MIN
@@ -63,6 +64,23 @@ def _upsert_cliente(barbearia_id: str, whatsapp: str, nome: str) -> str:
     return novo_id
 
 
+def eh_deadlock(exc: BaseException) -> bool:
+    """40P01 = deadlock_detected. Dois INSERTs que cruzam o mesmo intervalo
+    do mesmo barbeiro, na restricao de EXCLUSAO, podem se esperar um ao outro:
+    cada um ja gravou a sua linha no indice e, ao conferir conflito, acha a do
+    outro ainda nao confirmada e espera por ela. O Postgres derruba um dos
+    dois com 40P01 em vez de 23P01. Para o cliente e' o mesmo desfecho — o
+    horario foi do outro —, entao tem a mesma resposta."""
+    atual: BaseException | None = exc
+    for _ in range(5):
+        if atual is None:
+            return False
+        if getattr(atual, "sqlstate", None) == "40P01":
+            return True
+        atual = getattr(atual, "__cause__", None)
+    return False
+
+
 def marcar(
     *, barbearia_id: str, barbeiro_id: str, servico_id: str, inicio: datetime,
     nome: str, whatsapp: str, agora: datetime, aparelho: str | None = None,
@@ -79,6 +97,24 @@ def marcar(
     igual ao route.ts, que joga uma excecao dentro da transacao para poder
     decidir o codigo HTTP so depois do `try`.
     """
+    try:
+        return _marcar_na_transacao(
+            barbearia_id=barbearia_id, barbeiro_id=barbeiro_id, servico_id=servico_id,
+            inicio=inicio, nome=nome, whatsapp=whatsapp, agora=agora, aparelho=aparelho,
+        )
+    except OperationalError as e:
+        # Fora da transacao (ja desfeita) e dentro de `marcar()`, e nao nas
+        # tres views: o site, o painel e o bot respondem "horario perdido" do
+        # mesmo jeito que respondem `ErroCliente` 409.
+        if eh_deadlock(e):
+            raise ErroCliente(409, "Esse horário não está mais disponível.") from e
+        raise
+
+
+def _marcar_na_transacao(
+    *, barbearia_id: str, barbeiro_id: str, servico_id: str, inicio: datetime,
+    nome: str, whatsapp: str, agora: datetime, aparelho: str | None,
+) -> dict:
     with com_barbearia(barbearia_id):
         vinculo = (
             BarbeiroServico.objects.filter(barbeiro_id=barbeiro_id, servico_id=servico_id)

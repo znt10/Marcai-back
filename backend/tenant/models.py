@@ -33,8 +33,24 @@ class MotivoBloqueio(models.TextChoices):
 
 class StatusAgendamento(models.TextChoices):
     CONFIRMADO = "CONFIRMADO"
+    # Marcou pelo site e o Pix ainda nao caiu: segura o horario (por isso
+    # entra na grade e no EXCLUDE), mas nao conta como corte marcado em
+    # lista, lembrete, resumo.
+    AGUARDANDO_PAGAMENTO = "AGUARDANDO_PAGAMENTO"
+    # O prazo do Pix venceu: o horario foi liberado. Um "recebi" tardio ainda
+    # pode ressuscita-lo, se a vaga seguir livre.
+    EXPIRADO = "EXPIRADO"
     CANCELADO_CLIENTE = "CANCELADO_CLIENTE"
     CANCELADO_BARBEIRO = "CANCELADO_BARBEIRO"
+
+
+# Os status que ocupam o horario. E' a MESMA lista da restricao
+# `agendamento_sem_sobreposicao` (0015) — mexer numa sem a outra faz a tela
+# oferecer um horario que o banco recusa, ou o contrario.
+STATUS_QUE_SEGURAM_HORARIO = (
+    StatusAgendamento.CONFIRMADO,
+    StatusAgendamento.AGUARDANDO_PAGAMENTO,
+)
 
 
 class PlanoBarbearia(models.TextChoices):
@@ -471,8 +487,8 @@ class Agendamento(models.Model):
     schema): renomear um servico depois nao pode reescrever o historico do que
     foi vendido. `preco_centavos` e `duracao_min` sao snapshot pela mesma razao.
 
-    So `CONFIRMADO` ocupa. Um cancelado que continuasse ocupando deixaria o
-    horario morto na agenda ate o fim do dia — o pior tipo de defeito aqui,
+    So `CONFIRMADO` e `AGUARDANDO_PAGAMENTO` ocupam. Um cancelado (ou expirado)
+    que continuasse ocupando deixaria o horario morto na agenda ate o fim do dia — o pior tipo de defeito aqui,
     porque a barbearia perde dinheiro e nada aparece na tela.
     """
 
@@ -731,6 +747,16 @@ class Cobranca(models.Model):
     criada_em = models.DateTimeField(default=timezone.now)
     expira_em = models.DateTimeField(null=True, blank=True)
     informada_em = models.DateTimeField(null=True, blank=True)
+    # O agendamento que este Pix paga (motivo AGENDAMENTO). Pelo mesmo motivo de
+    # `informada_por` (abaixo), quem zera a coluna quando o agendamento e'
+    # apagado e' o BANCO (0015, ON DELETE SET NULL, feito a mao): `Agendamento`
+    # esta DENTRO do RLS e `Cobranca` fora, e um `SET_NULL`/`CASCADE` do Django
+    # faria o coletor dar UPDATE/DELETE em `tenant_cobranca` como `brutus_app`,
+    # que nao tem esse direito.
+    agendamento = models.OneToOneField(
+        Agendamento, on_delete=models.DO_NOTHING, null=True, blank=True,
+        related_name="cobranca", db_constraint=False,
+    )
     # O barbeiro apagado nao leva a cobranca junto: quem zera a coluna e' o
     # BANCO (FK feita a mao na 0013, ON DELETE SET NULL; por isso
     # `db_constraint=False`, ou o Django criaria outra, sem a acao). `SET_NULL` do Django faria o

@@ -14,7 +14,14 @@ from tenant.datas import (
     local_para_utc,
     somar_dias,
 )
-from tenant.models import Agendamento, Barbeiro, BarbeiroServico, Bloqueio, HorarioTrabalho
+from tenant.models import (
+    STATUS_QUE_SEGURAM_HORARIO,
+    Agendamento,
+    Barbeiro,
+    BarbeiroServico,
+    Bloqueio,
+    HorarioTrabalho,
+)
 from tenant.rls import com_barbearia
 
 from .quadro import ocupacao_pct
@@ -48,11 +55,14 @@ def slots_do_dia(barbeiro_id: str, servico_id: str, dia: str, agora: datetime) -
     ids = [v["barbeiro_id"] for v in vinculos]
     expedientes = list(HorarioTrabalho.objects.filter(barbeiro_id__in=ids))
     bloqueios = list(Bloqueio.objects.filter(barbeiro_id__in=ids))
-    # So CONFIRMADO ocupa. Um cancelado que continuasse ocupando deixaria o
-    # horario morto ate o fim do dia — a barbearia perde dinheiro e nada
-    # aparece na tela.
+    # So CONFIRMADO e AGUARDANDO_PAGAMENTO ocupam (a mesma lista do EXCLUDE no
+    # banco). O aguardando segura a vaga enquanto o Pix nao cai; um cancelado
+    # ou expirado que continuasse ocupando deixaria o horario morto ate o fim
+    # do dia — a barbearia perde dinheiro e nada aparece na tela.
     agendamentos = list(
-        Agendamento.objects.filter(barbeiro_id__in=ids, status="CONFIRMADO").only(
+        Agendamento.objects.filter(
+            barbeiro_id__in=ids, status__in=STATUS_QUE_SEGURAM_HORARIO,
+        ).only(
             "barbeiro", "inicio", "fim"
         )
     )

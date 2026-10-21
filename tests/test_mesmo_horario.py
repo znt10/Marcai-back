@@ -1,7 +1,8 @@
 """Duas pessoas marcando o MESMO horario do MESMO barbeiro ao mesmo tempo.
 
-Quem garante e' o banco: `agendamento_sem_sobreposicao` (0003) recusa o
-segundo INSERT que cruza o intervalo de outro CONFIRMADO do mesmo barbeiro,
+Quem garante e' o banco: `agendamento_sem_sobreposicao` (0003, refeita na
+0015) recusa o segundo INSERT que cruza o intervalo de outro CONFIRMADO (ou
+AGUARDANDO_PAGAMENTO) do mesmo barbeiro,
 mesmo com os dois pedidos passando juntos pela checagem de vaga. O segundo
 recebe 409 com a frase que o site mostra, e so' o primeiro e' confirmado.
 
@@ -91,7 +92,15 @@ def test_mesmo_barbeiro_mesmo_horario_so_o_primeiro_fica(cenario, rodada):
 
     assert sorted([r1.status_code, r2.status_code]) == [201, 409]
     perdeu = r1 if r1.status_code == 409 else r2
-    assert perdeu.json()["erro"] == "Esse horário acabou de ser pego. Escolhe outro?"
+    # Quem perde a corrida cai em um de dois lugares do banco, conforme o
+    # entrelacamento dos INSERTs: a violacao do EXCLUDE ("acabou de ser
+    # pego") ou, quando os dois se esperam, o deadlock que o Postgres desfaz
+    # derrubando um (`marcar()` o traduz em 409, com a frase da checagem de
+    # vaga). Os dois sao o mesmo desfecho para o cliente; nunca um 500.
+    assert perdeu.json()["erro"] in (
+        "Esse horário acabou de ser pego. Escolhe outro?",
+        "Esse horário não está mais disponível.",
+    )
     assert Agendamento.objects.using("owner").filter(
         barbeiro_id=zeca.id, inicio=inicio, status="CONFIRMADO",
     ).count() == 1
