@@ -76,6 +76,19 @@ e faça o deploy de novo.
 4. O que sairia pelo WhatsApp (código da conta, link de senha nova,
    confirmação, convite) aparece no log do `api`. No Coolify, abra o serviço
    `api`, depois **Logs**, e procure por `[whatsapp] sem EVOLUTION_API_URL`.
+5. Para receber de verdade no WhatsApp, ponha na Env do `marcai-preview`
+   `EVOLUTION_API_URL=http://evolution:8080` e a mesma `EVOLUTION_API_KEY` da
+   produção, e faça o Deploy. As mensagens saem pelo **chip central da
+   produção**. Teste só com o seu número: as respostas a essas mensagens
+   chegam na produção, não aqui. Para voltar ao log, apague a
+   `EVOLUTION_API_URL`.
+6. **Nunca conecte ou desconecte o número central pelo admin do preview**
+   enquanto a instância for a da produção (`Marcai`): o chip da produção cai
+   junto. Para um número só do teste, ponha `EVOLUTION_INSTANCE=MarcaiPreview`
+   na Env, faça o Deploy e leia o QR em `admin.preview` com o outro chip. O
+   admin cria a instância na primeira visita. As instâncias por barbearia levam
+   o id da barbearia no nome, então as do teste nunca coincidem com as da
+   produção.
 
 ## Cuidados
 
