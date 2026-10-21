@@ -182,6 +182,42 @@ class AgendamentoDetalheView(ExigeTenant, APIView):
         return Response(AgendamentoDetalheSerializer(resultado).data)
 
 
+def depois_de_cancelar(barbearia, resultado: dict, agora) -> None:
+    """O que vem DEPOIS de um cancelamento que valeu: a mensagem ao cliente e
+    o aviso ao barbeiro. Compartilhado pelo cancelamento pelo link e pelo
+    logado (`/api/conta/agendamentos/<codigo>/cancelar`). So' age no
+    `tipo == "ok"` — o `ja_cancelado` cai fora de proposito, senao dois toques
+    no botao mandariam a mensagem e refariam a lista duas vezes."""
+    if resultado["tipo"] != "ok":
+        return
+    enviar_ao_cliente(
+        barbearia,
+        resultado["cliente_whatsapp"],
+        msg_cancelamento(
+            barbeiro_nome=resultado["barbeiro_nome"], inicio=resultado["inicio"],
+            barbearia_nome=barbearia.nome,
+        ),
+        tipo=TipoMensagem.CANCELAMENTO,
+        cliente_nome=resultado["cliente_nome"],
+    )
+    # Mesma regra de marcar: hoje, depois das 06:30, a lista refeita sem o
+    # horario que caiu; outro dia, nada.
+    mudanca = lista_do_dia.avisar_mudanca(
+        str(barbearia.id), resultado["barbeiro_id"], agora,
+        cancelados=[(resultado["id"], resultado["inicio"])],
+    )
+    if mudanca == lista_do_dia.FILA_FORA:
+        enviar_a_equipe_da(
+            str(barbearia.id),
+            resultado["barbeiro_whatsapp"],
+            msg_barbeiro_cancelado(
+                cliente_nome=resultado["cliente_nome"],
+                servico_nome=resultado["servico_nome"],
+                inicio=resultado["inicio"], agora=datetime.now(timezone.utc),
+            ),
+        )
+
+
 class AgendamentoCancelarPublicoView(ExigeTenant, APIView):
     """POST /api/agendamentos/<codigo>/cancelar — pelo CODIGO, sem sessao."""
 
@@ -198,35 +234,7 @@ class AgendamentoCancelarPublicoView(ExigeTenant, APIView):
                 {"erro": f"Passou do prazo de 1h. Chama {o_lugar} no zap: {contato}"},
                 status=422,
             )
-        if resultado["tipo"] == "ok":
-            enviar_ao_cliente(
-                request.barbearia,
-                resultado["cliente_whatsapp"],
-                msg_cancelamento(
-                    barbeiro_nome=resultado["barbeiro_nome"], inicio=resultado["inicio"],
-                    barbearia_nome=request.barbearia.nome,
-                ),
-                tipo=TipoMensagem.CANCELAMENTO,
-                cliente_nome=resultado["cliente_nome"],
-            )
-            # Mesma regra de marcar: hoje, depois das 06:30, a lista refeita
-            # sem o horario que caiu; outro dia, nada. So' no `tipo == "ok"` —
-            # o `ja_cancelado` cai fora deste bloco de proposito, senao dois
-            # toques no botao refariam a lista duas vezes.
-            mudanca = lista_do_dia.avisar_mudanca(
-                self.barbearia_id, resultado["barbeiro_id"], agora,
-                cancelados=[(resultado["id"], resultado["inicio"])],
-            )
-            if mudanca == lista_do_dia.FILA_FORA:
-                enviar_a_equipe_da(
-                    self.barbearia_id,
-                    resultado["barbeiro_whatsapp"],
-                    msg_barbeiro_cancelado(
-                        cliente_nome=resultado["cliente_nome"],
-                        servico_nome=resultado["servico_nome"],
-                        inicio=resultado["inicio"], agora=datetime.now(timezone.utc),
-                    ),
-                )
+        depois_de_cancelar(request.barbearia, resultado, agora)
         # "ja_cancelado" cai aqui tambem, de proposito: quem apertou o botao
         # duas vezes queria o mesmo desfecho, e ele ja vale — 200 idempotente.
         return Response({"ok": True})

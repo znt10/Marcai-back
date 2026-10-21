@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -19,11 +21,15 @@ from app.api.v1.serializers.conta import (
     NovaSenhaSerializer,
     WhatsappSerializer,
 )
+from app.api.v1.views.agendamentos import NAO_ENCONTRADO, depois_de_cancelar
 from app.services import conta as servico
+from app.services.agendamentos import cancelar_publico
+from app.services.conta_historico import barbearia_ativa_da_conta, historico
 from app.services import conta_sessao
 from app.services.trava_ip import ip_de
 from tenant.config import CONTA_SESSAO_COOKIE
-from tenant.telefone import formatar
+from tenant.telefone import formas_gravadas, formatar
+from tenant.tipos import palavras
 
 # Os desfechos de quem MANDA mensagem (criar, reenviar, esqueci) e o que cada
 # um vira na resposta.
@@ -162,3 +168,47 @@ class NovaSenhaView(LimitaConta, ExigeTenant, APIView):
             # 404 e nao 403: um link invalido nao revela se existe link algum.
             return Response(ERRO_LINK, status=404)
         return _logada(conta)
+
+
+class HistoricoView(ExigeTenant, APIView):
+    """GET /api/conta/historico — os agendamentos da conta, um bloco por
+    estabelecimento, o do host atual primeiro."""
+
+    def get(self, request):
+        conta = conta_sessao.conta_da_requisicao(request)
+        if conta is None:
+            return Response({"erro": "nao autorizado"}, status=401)
+        agora = datetime.now(timezone.utc)
+        return Response({"estabelecimentos": historico(conta, self.barbearia_id, agora)})
+
+
+class CancelarLogadoView(ExigeTenant, APIView):
+    """POST /api/conta/agendamentos/<codigo>/cancelar, corpo `{barbeariaId}`:
+    cancela em QUALQUER estabelecimento da conta,
+    nao so' no do host. As mesmas respostas da rota pelo link. Tudo que nao e'
+    da conta (lugar, codigo, numero do cliente) e' 404."""
+
+    def post(self, request, codigo):
+        conta = conta_sessao.conta_da_requisicao(request)
+        if conta is None:
+            return Response({"erro": "nao autorizado"}, status=401)
+        corpo = request.data if isinstance(request.data, dict) else {}
+        barbearia = barbearia_ativa_da_conta(conta, corpo.get("barbeariaId"))
+        if barbearia is None:
+            return Response(NAO_ENCONTRADO, status=404)
+
+        agora = datetime.now(timezone.utc)
+        resultado = cancelar_publico(
+            str(barbearia.id), codigo, agora, whatsapps=formas_gravadas(conta.whatsapp),
+        )
+        if resultado["tipo"] == "nao_encontrado":
+            return Response(NAO_ENCONTRADO, status=404)
+        if resultado["tipo"] == "fora_do_prazo":
+            contato = formatar(barbearia.whatsapp_contato)
+            o_lugar = palavras(barbearia.tipo)["o_lugar"]
+            return Response(
+                {"erro": f"Passou do prazo de 1h. Chama {o_lugar} no zap: {contato}"},
+                status=422,
+            )
+        depois_de_cancelar(barbearia, resultado, agora)
+        return Response({"ok": True})

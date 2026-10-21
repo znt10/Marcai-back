@@ -23,11 +23,13 @@ from .views.barbeiros import BarbeirosView
 from .views.bloqueios import BloqueioDetalheView, BloqueiosView
 from .views.conflitos import ConflitosView
 from .views.conta import (
+    CancelarLogadoView,
     ConfirmarView,
     CriarView,
     EntrarView,
     EsqueciView,
     EuView as ContaEuView,
+    HistoricoView,
     NovaSenhaView,
     ReenviarView,
     SairView,
@@ -141,6 +143,11 @@ urlpatterns = [
     path("conta/entrar", EntrarView.as_view(), name="conta-entrar"),
     path("conta/sair", SairView.as_view(), name="conta-sair"),
     path("conta/eu", ContaEuView.as_view(), name="conta-eu"),
+    path("conta/historico", HistoricoView.as_view(), name="conta-historico"),
+    path(
+        "conta/agendamentos/<str:codigo>/cancelar",
+        CancelarLogadoView.as_view(), name="conta-cancelar",
+    ),
     path("conta/esqueci", EsqueciView.as_view(), name="conta-esqueci"),
     path("conta/nova-senha/<str:token>", NovaSenhaView.as_view(), name="conta-nova-senha"),
     # Fatia 4, bloco 1 — catalogo e vinculos. `CrivoPainelMiddleware` ja
