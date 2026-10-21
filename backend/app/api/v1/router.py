@@ -21,7 +21,11 @@ from .views.agendamentos import (
     AgendamentoDetalheView,
     AgendamentosView,
 )
-from .views.agendamentos_painel import AgendamentoCancelarView, AgendamentosPainelView
+from .views.agendamentos_painel import (
+    AgendamentoCancelarView,
+    AgendamentoRecebiView,
+    AgendamentosPainelView,
+)
 from .views.autenticacao import ConviteView, EuView, LoginView, LogoutView
 from .views.barbearia import BarbeariaView
 from .views.barbearia_painel import BarbeariaPainelView
@@ -192,6 +196,12 @@ urlpatterns = [
         "painel/agendamentos/<id:id>/cancelar",
         AgendamentoCancelarView.as_view(),
         name="painel-agendamentos-cancelar",
+    ),
+    # O "recebi" do Pix: na lista livre da trava da mensalidade.
+    path(
+        "painel/agendamentos/<id:id>/recebi",
+        AgendamentoRecebiView.as_view(),
+        name="painel-agendamentos-recebi",
     ),
     # Bloquear cliente (spec 2026-10-13): pela agenda, a partir de um horario,
     # como o cancelar. Listar e desbloquear sao so' do dono.

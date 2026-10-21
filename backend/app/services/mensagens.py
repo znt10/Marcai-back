@@ -94,6 +94,20 @@ def msg_pague_o_pix(
     )
 
 
+def msg_pix_expirado(
+    *, barbearia_nome: str, barbeiro_nome: str, barbeiro_whatsapp: str, inicio,
+) -> str:
+    """O prazo do Pix venceu e o horario foi liberado. NUNCA "nao recebemos":
+    na confirmacao manual o cliente pode ter pago e o barbeiro nao ter visto
+    ainda. O numero do barbeiro vem sem o 55."""
+    return (
+        f"*{barbearia_nome}*\n"
+        f"Não conseguimos confirmar seu Pix a tempo e o horário de "
+        f"{formatar_dia_com_semana(inicio)} às {formatar_hora_falada(inicio)} foi liberado. "
+        f"Se você já pagou, fale com {barbeiro_nome}: wa.me/55{barbeiro_whatsapp}"
+    )
+
+
 def msg_cancelamento_pela_barbearia(
     *, cliente_nome: str, barbeiro_nome: str, servico_nome: str,
     inicio, endereco: str,
@@ -212,6 +226,15 @@ def msg_barbeiro_esperando_pix(*, cliente_nome: str, inicio, valor_centavos: int
         f"{cliente_nome} marcou {formatar_dia_com_semana(inicio)} {formatar_hora(inicio)}, "
         f"esperando Pix de {_reais(valor_centavos)} — aperte 'recebi' no painel quando cair."
     )
+
+
+def msg_barbeiro_cancelou_pago(*, cliente_nome: str, inicio, valor_centavos: int, pelo_cliente: bool = True) -> str:
+    """O horario cancelado ja' estava pago: o Marcai nao devolve dinheiro, so'
+    avisa quem recebeu o Pix de que ele precisa devolver. Quando foi a propria
+    equipe que cancelou (painel, bloqueio), "fulano cancelou" seria mentira."""
+    quando = f"{formatar_dia_com_semana(inicio)} {formatar_hora(inicio)}"
+    quem = f"{cliente_nome} cancelou {quando}." if pelo_cliente else f"{cliente_nome}: o horário de {quando} foi cancelado."
+    return f"{quem} Esse horário estava pago ({_reais(valor_centavos)}) — devolva o Pix pelo app do banco."
 
 
 def msg_lista_do_dia(*, barbeiro_nome: str, agendamentos: list[dict], agora) -> str:

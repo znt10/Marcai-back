@@ -125,6 +125,7 @@ def marcar(
     """
     if origem not in ORIGENS:
         raise ValueError(f"origem desconhecida: {origem!r}")
+    _liberar_vencidos_do_barbeiro(barbearia_id, barbeiro_id, agora)
     try:
         criado = _marcar_na_transacao(
             barbearia_id=barbearia_id, barbeiro_id=barbeiro_id, servico_id=servico_id,
@@ -142,6 +143,25 @@ def marcar(
     if cobranca is not None:
         _abrir_cobranca_ou_confirmar(criado, cobranca, barbearia_id, agora)
     return criado
+
+
+def _liberar_vencidos_do_barbeiro(barbearia_id, barbeiro_id, agora: datetime) -> None:
+    """Expira os Pix vencidos DESTE barbeiro antes de conferir a vaga, para o
+    horario nao ficar preso por causa do relogio do beat. Fora da transacao do
+    insert (a varredura abre as proprias, curtas) e sem zap dentro de nenhuma.
+    So' olha a Cobranca (barata) antes de abrir transacao no tenant; qualquer
+    falha vira log — o pedido segue e o beat acerta depois."""
+    try:
+        vencidas = Cobranca.objects.using("admin").filter(
+            barbearia_id=barbearia_id, motivo="AGENDAMENTO", status="ABERTA",
+            expira_em__lte=agora,
+        ).exists()
+        if vencidas:
+            pix_agendamento.expirar_vencidos(
+                agora, barbearia_id=barbearia_id, barbeiro_id=barbeiro_id,
+            )
+    except Exception:
+        logger.exception("[pix] nao deu para expirar os vencidos de %s", barbeiro_id)
 
 
 def _abrir_cobranca_ou_confirmar(criado: dict, a_cobrar: dict, barbearia_id, agora: datetime) -> None:
@@ -310,9 +330,15 @@ def cancelar(barbearia_id: str, agendamento_id: str, filtro_barbeiro_id: str | N
             "cliente_nome": a.cliente.nome, "cliente_whatsapp": a.cliente.whatsapp,
             "barbeiro_nome": a.barbeiro.nome, "servico_nome": a.servico_nome, "inicio": a.inicio,
             "aguardando": a.status == AGUARDANDO,
+            "pago_centavos": pix_agendamento.valor_pago(a.id),
         }
     if dados["aguardando"]:
         pix_agendamento.cancelar_abertas([a.id])
+    if dados["pago_centavos"]:
+        pix_agendamento.avisar_cancelamento_pago(barbearia_id, [{
+            "cliente_nome": dados["cliente_nome"], "barbeiro_whatsapp": a.barbeiro.whatsapp,
+            "inicio": a.inicio, "valor_centavos": dados["pago_centavos"],
+        }], pelo_cliente=False)
     return dados
 
 
@@ -412,7 +438,13 @@ def cancelar_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict:
             "barbeiro_whatsapp": a.barbeiro.whatsapp,
             "servico_nome": a.servico_nome,
             "inicio": a.inicio,
+            "pago_centavos": pix_agendamento.valor_pago(a.id),
         }
     if resultado["aguardando"]:
         pix_agendamento.cancelar_abertas([a.id])
+    if resultado["pago_centavos"]:
+        pix_agendamento.avisar_cancelamento_pago(barbearia_id, [{
+            "cliente_nome": resultado["cliente_nome"], "barbeiro_whatsapp": a.barbeiro.whatsapp,
+            "inicio": a.inicio, "valor_centavos": resultado["pago_centavos"],
+        }], pelo_cliente=True)
     return resultado

@@ -9,6 +9,7 @@ from app.api.v1.serializers.agendamentos import CriarAgendamentoSerializer
 from app.services import lista_do_dia
 from app.services.agendamentos import PAINEL, ErroCliente, cancelar, eh_sobreposicao, marcar
 from app.services.autorizacao import filtro_do_barbeiro
+from app.services.confirmar_pagamento import confirmar_pagamento
 from app.services.mensagens import msg_cancelamento_pela_barbearia, msg_confirmacao
 from app.services.whatsapp import enviar_ao_cliente
 from tenant.models import TipoMensagem
@@ -111,4 +112,23 @@ class AgendamentoCancelarView(ExigeSessao, APIView):
                 self.barbearia_id, cancelado["barbeiro_id"], datetime.now(timezone.utc),
                 cancelados=[(cancelado["id"], cancelado["inicio"])],
             )
+        return Response({"ok": True, "pagoCentavos": cancelado["pago_centavos"]})
+
+
+class AgendamentoRecebiView(ExigeSessao, APIView):
+    """POST /api/painel/agendamentos/<id>/recebi — o Pix caiu e o barbeiro
+    confirma na mao. O dono confirma o de qualquer um; o barbeiro, so' o dele
+    (o de outro e' 403). De outra barbearia nem aparece: 404 pelo RLS. Fica na
+    lista livre da trava da mensalidade (tenant/middleware.py): o dinheiro do
+    cliente nao pode ficar preso pelo atraso da barbearia."""
+
+    def post(self, request, id):
+        try:
+            confirmar_pagamento(
+                id, barbearia_id=self.barbearia_id, agora=datetime.now(timezone.utc),
+                filtro_barbeiro_id=filtro_do_barbeiro(self.sessao).get("barbeiro_id"),
+                link_base=request.headers.get("origin", ""),
+            )
+        except ErroCliente as e:
+            return Response({"erro": e.mensagem}, status=e.status)
         return Response({"ok": True})

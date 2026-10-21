@@ -11,7 +11,7 @@ from datetime import datetime
 
 from django.utils import timezone
 
-from tenant.models import Agendamento, Cliente
+from tenant.models import Agendamento, Barbeiro, Cliente
 from tenant.rls import com_barbearia
 
 from . import pix_agendamento
@@ -98,10 +98,19 @@ def bloquear(barbearia_id, agendamento_id, filtro_barbeiro_id, por_id, agora: da
             bloqueado_em=timezone.now(), bloqueado_por_id=por_id,
         )
         futuros = list(_futuros(c.id, agora).values_list("barbeiro_id", "id", "inicio", "status"))
+        pagos = [
+            {
+                "cliente_nome": c.nome, "inicio": inicio, "valor_centavos": valor,
+                "barbeiro_whatsapp": Barbeiro.objects.get(id=barbeiro_id).whatsapp,
+            }
+            for barbeiro_id, i, inicio, st in futuros
+            if st == "CONFIRMADO" and (valor := pix_agendamento.valor_pago(i))
+        ]
         _futuros(c.id, agora).update(status="CANCELADO_BARBEIRO", cancelado_em=timezone.now())
     # Quem esperava o Pix perde a cobranca junto, e nunca entrou na lista do
     # dia: so' os confirmados voltam para a rota refazer a lista.
     pix_agendamento.cancelar_abertas(i for _, i, _, st in futuros if st == AGUARDANDO)
+    pix_agendamento.avisar_cancelamento_pago(barbearia_id, pagos, pelo_cliente=False)
     return [(b, i, ini) for b, i, ini, st in futuros if st != AGUARDANDO]
 
 

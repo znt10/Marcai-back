@@ -1,4 +1,5 @@
 import hmac
+import re
 import time
 
 from django.conf import settings
@@ -237,13 +238,17 @@ class CrivoPainelMiddleware:
 # (Pix no agendamento) vai acrescentar rotas aqui; cada prefixo vale para ele
 # mesmo e para as sub-rotas, nunca para vizinhos de nome parecido.
 ROTAS_LIVRES_NO_BLOQUEIO = ("/api/painel/mensalidade",)
+# Rotas com um id no meio, que um prefixo nao descreve. O "recebi" fica livre:
+# um agendamento que esperava o Pix quando a trava caiu nao pode prender o
+# dinheiro do cliente. `[^/]+` e nao `.+`: so' este segmento, nunca vizinhas.
+PADROES_LIVRES_NO_BLOQUEIO = (re.compile(r"/api/painel/agendamentos/[^/]+/recebi"),)
 
 
 def _livre_no_bloqueio(caminho: str) -> bool:
     return any(
         caminho == prefixo or caminho.startswith(prefixo + "/")
         for prefixo in ROTAS_LIVRES_NO_BLOQUEIO
-    )
+    ) or any(p.fullmatch(caminho) for p in PADROES_LIVRES_NO_BLOQUEIO)
 
 
 def _bloqueada_pela_mensalidade(barbearia_id) -> bool:

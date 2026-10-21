@@ -317,6 +317,10 @@ CELERY_BEAT_SCHEDULE = {
     # tarefa propria logo abaixo, com periodo menor: um numero central caido e
     # um aviso que atrasa, um numero de barbearia caido e o cliente sem
     # confirmacao.
+    # O prazo do Pix do agendamento e' de minutos: uma varredura por hora
+    # seguraria o horario do cliente ate 59 minutos a mais. `marcar()` tambem
+    # expira os vencidos do barbeiro na hora, mas o aviso ao cliente sai daqui.
+    "expirar-pix-vencidos": {"task": "app.tasks.expirar_pix_vencidos", "schedule": 60.0},
     "whatsapp-healthcheck": {"task": "app.tasks.whatsapp_healthcheck", "schedule": 600.0},
     "conferir-instancias": {"task": "app.tasks.conferir_instancias", "schedule": 300.0},
     # `crontab` e nao intervalo: esta tem HORA, e uma agenda por intervalo
