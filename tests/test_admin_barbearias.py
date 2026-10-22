@@ -570,7 +570,7 @@ def test_outro_nasce_branco_e_dourado(client):
 
 
 @pytest.mark.parametrize("extra, erro", [
-    ({"tipo": "MANICURE"}, "Tipo de negócio inválido."),
+    ({"tipo": "UNHAS"}, "Tipo de negócio inválido."),
     ({"paleta": "VERDE"}, "Paleta inválida."),
 ])
 def test_tipo_ou_paleta_inventados_dao_422(client, extra, erro):

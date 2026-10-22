@@ -396,7 +396,7 @@ def test_o_seletor_separa_por_categoria(client, cenario):
     corpo = client.get("/admin/django/escolher-barbearia", headers={"host": HOST_ADMIN}).content.decode()
 
     assert corpo.startswith("<h1>Qual estabelecimento?</h1>")
-    barbearias, sobrancelha = corpo.index("<h2>Barbearias</h2>"), corpo.index("<h2>Sobrancelha</h2>")
+    barbearias, sobrancelha = corpo.index("<h2>Barbearias</h2>"), corpo.index("<h2>Estética</h2>")
     assert barbearias < corpo.index(">brutus<") < sobrancelha < corpo.index(">dontony<")
     assert "<h2>Outros</h2>" not in corpo
 

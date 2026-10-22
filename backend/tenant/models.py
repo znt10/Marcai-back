@@ -51,12 +51,16 @@ class PlanoBarbearia(models.TextChoices):
 class TipoNegocio(models.TextChoices):
     """O ramo do estabelecimento (spec 2026-10-08). Muda as PALAVRAS que o
     cliente e a equipe leem ("o estudio", "a profissional") — nunca o que o
-    sistema faz: agenda, lista do dia e lembrete sao os mesmos nos tres. As
+    sistema faz: agenda, lista do dia e lembrete sao os mesmos em todos. As
     palavras de cada um moram em `tenant/tipos.py` (aqui) e `src/lib/tipos.ts`
     (front). Tipo novo entra pelos dois lados."""
 
     BARBEARIA = "BARBEARIA"
-    SOBRANCELHA = "SOBRANCELHA"
+    # O valor fica SOBRANCELHA (e' o que esta' no banco); o nome mudou para
+    # Estetica em 22/10/2026, que e' como o ramo se chama.
+    SOBRANCELHA = "SOBRANCELHA", "Estética"
+    MANICURE = "MANICURE", "Manicure"
+    MAQUIAGEM = "MAQUIAGEM", "Maquiagem"
     OUTRO = "OUTRO"
 
 
