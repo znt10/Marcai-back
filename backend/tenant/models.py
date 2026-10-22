@@ -692,3 +692,30 @@ class CodigoConta(models.Model):
 
     def __str__(self):
         return f"{self.finalidade} de {self.conta_id}"
+
+
+class Custo(models.Model):
+    """Um gasto que o dono lanca no resumo: o valor e, se quiser, um nome.
+
+    Sem campo de data de proposito (decisao do dono): o custo vale no dia em
+    que foi lancado, e e' `criado_em` que o resumo usa para dizer de que
+    periodo ele e'. So' registro — nao entra na conta do faturamento.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    barbearia = models.ForeignKey(
+        Barbearia, on_delete=models.RESTRICT, related_name="custos",
+    )
+    nome = models.TextField(null=True, blank=True)
+    valor_centavos = models.IntegerField()
+    criado_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(valor_centavos__gt=0), name="custo_valor_positivo",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.nome or 'Custo'} ({self.valor_centavos})"

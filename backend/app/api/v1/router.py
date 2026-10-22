@@ -53,6 +53,7 @@ from .views.expediente import ExpedienteView
 from .views.horarios import DiasComVagaView, HorariosView
 from .views.interno import WhatsappEventoView
 from .views.resumo import ResumoView
+from .views.custos import CustoDetalheView, CustosView
 from .views.servicos import ServicosView
 from .views.servicos_painel import ServicoPainelDetalheView, ServicosPainelView
 from .views.whatsapp_painel import (
@@ -228,6 +229,10 @@ urlpatterns = [
     # que as rotas vizinhas mostram: aquelas respondem "o que vem", esta
     # responde "o que foi".
     path("painel/resumo", ResumoView.as_view(), name="painel-resumo"),
+    # Custos que o dono lanca no resumo: so' registro, nao mexem no
+    # faturamento. Mesmo `de`/`ate` do resumo no GET.
+    path("painel/custos", CustosView.as_view(), name="painel-custos"),
+    path("painel/custos/<id:id>", CustoDetalheView.as_view(), name="painel-custos-detalhe"),
     # Fecha a travessia, bloco A — sessao do admin da plataforma. So estas
     # duas rotas chegam aqui de qualquer host que nao seja o do admin
     # tambem por posicao: a `BarreiraAdminMiddleware` da 404 antes.
