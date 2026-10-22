@@ -564,14 +564,22 @@ def test_paleta_escolhida_ganha_da_sugerida(client):
     assert _guardada(r.json()).paleta == "PRETO_ROSE"
 
 
+@pytest.mark.parametrize("tipo", ["MANICURE", "MAQUIAGEM"])
+def test_manicure_e_maquiagem_nascem_branco_e_rose(client, tipo):
+    r, _ = _criar(client, tipo=tipo)
+    assert r.status_code == 201
+    assert (_guardada(r.json()).tipo, _guardada(r.json()).paleta) == (tipo, "BRANCO_ROSE")
+
+
 def test_outro_nasce_branco_e_dourado(client):
     r, _ = _criar(client, tipo="OUTRO")
     assert _guardada(r.json()).paleta == "BRANCO_DOURADO"
 
 
 @pytest.mark.parametrize("extra, erro", [
-    ({"tipo": "MANICURE"}, "Tipo de negócio inválido."),
+    ({"tipo": "UNHAS"}, "Tipo de negócio inválido."),
     ({"paleta": "VERDE"}, "Paleta inválida."),
+    ({"whatsappContato": "119888877"}, "WhatsApp inválido: DDD e número, ex.: (81) 99999-1234."),
 ])
 def test_tipo_ou_paleta_inventados_dao_422(client, extra, erro):
     from tenant.models import Barbearia
