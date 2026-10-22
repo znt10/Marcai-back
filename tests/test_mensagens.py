@@ -319,3 +319,21 @@ def test_msg_mensalidade_ja_paguei_leva_o_link_do_admin(settings):
     texto = msg_mensalidade_ja_paguei("Brutus", 4990, "Zé")
     assert "Brutus" in texto and "R$ 49,90" in texto and "Zé" in texto
     assert "https://admin.marcai.app/mensalidades" in texto
+
+
+def test_msg_codigo_conta():
+    from app.services.mensagens import msg_codigo_conta
+
+    assert msg_codigo_conta("048213") == (
+        "*Marcaí*\nSeu código: *048213*\n"
+        "Vale por 10 minutos. Não passa esse código pra ninguém."
+    )
+
+
+def test_msg_link_nova_senha():
+    from app.services.mensagens import msg_link_nova_senha
+
+    assert msg_link_nova_senha("https://marcai.app/conta/nova-senha?t=abc") == (
+        "*Marcaí*\nPra criar uma senha nova, abre: https://marcai.app/conta/nova-senha?t=abc\n"
+        "O link vale por 30 minutos. Se não foi você, é só ignorar."
+    )

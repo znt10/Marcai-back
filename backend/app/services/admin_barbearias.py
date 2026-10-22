@@ -17,6 +17,7 @@ from tenant.models import (
     Cliente,
     Cobranca,
     ConversaWhatsapp,
+    Custo,
     HorarioTrabalho,
     ListaDoDiaEnviada,
     MensagemNaoEnviada,
@@ -331,6 +332,7 @@ def reemitir_convite(barbearia_id: str) -> dict:
 # estourar no banco — `test_toda_tabela_que_aponta_para_barbearia_sai_junto`
 # cobra.
 ORDEM_DE_APAGAR = (
+    Custo,
     ListaDoDiaEnviada,
     Cobranca,
     Assinatura,

@@ -1,7 +1,7 @@
 """Duas pessoas marcando o MESMO horario do MESMO barbeiro ao mesmo tempo.
 
 Quem garante e' o banco: `agendamento_sem_sobreposicao` (0003, refeita na
-0015) recusa o segundo INSERT que cruza o intervalo de outro CONFIRMADO (ou
+0017) recusa o segundo INSERT que cruza o intervalo de outro CONFIRMADO (ou
 AGUARDANDO_PAGAMENTO) do mesmo barbeiro,
 mesmo com os dois pedidos passando juntos pela checagem de vaga. O segundo
 recebe 409 com a frase que o site mostra, e so' o primeiro e' confirmado.

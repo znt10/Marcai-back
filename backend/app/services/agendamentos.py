@@ -350,6 +350,15 @@ def cancelar(barbearia_id: str, agendamento_id: str, filtro_barbeiro_id: str | N
     return dados
 
 
+def pode_cancelar(a: Agendamento, agora: datetime) -> bool:
+    """A regra do botao de cancelar, num lugar so': confirmado (ou esperando o
+    Pix, `STATUS_CANCELAVEIS`) e FORA do
+    prazo de `PRAZO_CANCELAMENTO_MIN`. O detalhe publico, o cancelamento pelo
+    link, o cancelamento logado e o historico da conta usam esta mesma conta."""
+    minutos_ate = (como_utc(a.inicio) - agora).total_seconds() / 60
+    return a.status in STATUS_CANCELAVEIS and minutos_ate > PRAZO_CANCELAMENTO_MIN
+
+
 def detalhe_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict | None:
     """GET /agendamentos/<codigo> — sem sessao, so' o RLS garante que um
     codigo de OUTRA barbearia nao e' encontrado aqui (o codigo por si so' e'
@@ -368,7 +377,6 @@ def detalhe_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict | N
         if a is None:
             return None
 
-        minutos_ate = (como_utc(a.inicio) - agora).total_seconds() / 60
         cobranca = None
         if a.status == AGUARDANDO:
             cobranca = (
@@ -387,7 +395,7 @@ def detalhe_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict | N
             "inicio": a.inicio,
             "fim": a.fim,
             "status": a.status,
-            "pode_cancelar": a.status in STATUS_CANCELAVEIS and minutos_ate > PRAZO_CANCELAMENTO_MIN,
+            "pode_cancelar": pode_cancelar(a, agora),
             # O Pix so' aparece enquanto a cobranca esta aberta; vencida ou
             # cancelada, a tela cai no estado que o `status` disser.
             "pix": None if cobranca is None else {
@@ -402,7 +410,9 @@ def detalhe_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict | N
         }
 
 
-def cancelar_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict:
+def cancelar_publico(
+    barbearia_id: str, codigo: str, agora: datetime, *, whatsapps: list[str] | None = None,
+) -> dict:
     """POST /agendamentos/<codigo>/cancelar — pelo CODIGO, nao por id: e' o
     que o cliente tem em maos, sem sessao nenhuma.
 
@@ -412,6 +422,10 @@ def cancelar_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict:
     cancelamento e' que NAO pode acontecer duas vezes, e por isso so' o
     `tipo == "ok"` de verdade (o que efetivamente cancelou agora) devolve os
     dados pro WhatsApp; o `ja_cancelado` nao.
+
+    `whatsapps` e' o cancelamento LOGADO: so' vale se o cliente do agendamento
+    for um dos numeros da conta. De outro numero, e' `nao_encontrado`, igual a
+    um codigo que nao existe — nao confirma que o codigo e' de alguem.
     """
     with com_barbearia(barbearia_id):
         a = (
@@ -420,15 +434,14 @@ def cancelar_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict:
             .select_related("barbeiro", "cliente")
             .first()
         )
-        if a is None:
+        if a is None or (whatsapps is not None and a.cliente.whatsapp not in whatsapps):
             return {"tipo": "nao_encontrado"}
         if a.status not in STATUS_CANCELAVEIS:
             return {"tipo": "ja_cancelado"}
 
         # Reconferido no servidor mesmo com podeCancelar:false na tela —
         # botao desabilitado nao e' controle de acesso.
-        minutos_ate = (como_utc(a.inicio) - agora).total_seconds() / 60
-        if minutos_ate <= PRAZO_CANCELAMENTO_MIN:
+        if not pode_cancelar(a, agora):
             return {"tipo": "fora_do_prazo"}
 
         Agendamento.objects.filter(id=a.id).update(

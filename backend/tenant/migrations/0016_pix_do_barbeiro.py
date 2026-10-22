@@ -7,7 +7,7 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-    dependencies = [("tenant", "0013_mensalidade")]
+    dependencies = [("tenant", "0015_mensalidade")]
 
     operations = [
         migrations.AddField(

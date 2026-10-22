@@ -168,7 +168,7 @@ def test_uma_cobranca_por_agendamento(pronto):
 
 def test_apagar_o_agendamento_zera_a_ligacao_e_guarda_a_cobranca(pronto):
     """Pelo `brutus_app`, que nao pode dar UPDATE em `tenant_cobranca`: quem
-    zera a coluna e' o banco (ON DELETE SET NULL feito a mao na 0015)."""
+    zera a coluna e' o banco (ON DELETE SET NULL feito a mao na 0017)."""
     from tenant.models import Agendamento, Cobranca
     from tenant.rls import com_barbearia
 

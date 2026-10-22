@@ -313,3 +313,28 @@ WHATSAPP_POR_BARBEARIA = False
 # O bot de agendamento. Desligado com o codigo inteiro guardado: volta no
 # plano de agendar pelo WhatsApp, com a API oficial.
 BOT_DISPONIVEL = False
+
+
+# ---- Conta do cliente (spec 2026-10-20) ----------------------------------
+#
+# Conta opcional e global, por WhatsApp. O codigo e o link so' existem no
+# back, guardados como hash.
+
+CONTA_SESSAO_COOKIE = "sessao_conta"
+CONTA_SESSAO_DIAS = 30
+CONTA_SENHA_MINIMA = 6
+# Codigo de 6 digitos: vale por pouco tempo e por poucas tentativas.
+CONTA_CODIGO_VALIDADE_MIN = 10
+CONTA_CODIGO_TENTATIVAS = 5
+CONTA_LINK_VALIDADE_MIN = 30
+# Teto de mensagens que a conta faz o central mandar: por numero, por IP e no
+# geral. Cada envio e' mensagem do numero central, que o WhatsApp bane.
+CONTA_ENVIOS_POR_NUMERO_HORA = 3
+CONTA_ENVIOS_POR_NUMERO_DIA = 10
+CONTA_ENVIOS_POR_IP_HORA = 10
+CONTA_ENVIOS_POR_DIA = 300
+# Trava crescente do login errado (ms): dobra a cada erro, ate o teto.
+CONTA_TRAVA_BASE_MS = 1_000
+CONTA_TRAVA_TETO_MS = 30_000
+# Quantos agendamentos por estabelecimento a tela "meus horarios" lista.
+CONTA_HISTORICO_POR_LUGAR = 20

@@ -35,7 +35,7 @@ EXCLUDE_ANTIGO = [
 # `Agendamento` esta dentro do RLS enquanto `Cobranca` esta fora: apagar o
 # agendamento como `brutus_app` nao pode depender de um UPDATE em
 # `tenant_cobranca` que ele nao tem. O gatilho de RI roda com os direitos do
-# DONO da tabela, como na FK de `informada_por` (0013).
+# DONO da tabela, como na FK de `informada_por` (0015).
 FK_SET_NULL = [
     """
     ALTER TABLE tenant_cobranca ADD CONSTRAINT tenant_cobranca_agendamento_fk
@@ -47,7 +47,7 @@ SEM_FK = ["ALTER TABLE tenant_cobranca DROP CONSTRAINT tenant_cobranca_agendamen
 
 
 class Migration(migrations.Migration):
-    dependencies = [("tenant", "0014_pix_do_barbeiro")]
+    dependencies = [("tenant", "0016_pix_do_barbeiro")]
 
     operations = [
         migrations.AlterField(
