@@ -7,7 +7,7 @@ from tenant.datas import (
     local_para_utc,
     utc_para_local,
 )
-from tenant.models import Agendamento, Bloqueio, HorarioTrabalho
+from tenant.models import STATUS_QUE_SEGURAM_HORARIO, Agendamento, Bloqueio, HorarioTrabalho
 from tenant.rls import com_barbearia
 
 from .slots import colide
@@ -36,7 +36,7 @@ def listar_conflitos(barbearia_id: str, barbeiro_id: str, agora: datetime) -> li
     with com_barbearia(barbearia_id):
         agendamentos = list(
             Agendamento.objects.filter(
-                barbeiro_id=barbeiro_id, status="CONFIRMADO", inicio__gt=agora,
+                barbeiro_id=barbeiro_id, status__in=STATUS_QUE_SEGURAM_HORARIO, inicio__gt=agora,
             )
             .select_related("cliente")
             .order_by("inicio")
@@ -111,7 +111,7 @@ def agendamentos_no_bloqueio(
     with com_barbearia(barbearia_id):
         agendamentos = list(
             Agendamento.objects.filter(
-                barbeiro_id=barbeiro_id, status="CONFIRMADO", inicio__gt=agora,
+                barbeiro_id=barbeiro_id, status__in=STATUS_QUE_SEGURAM_HORARIO, inicio__gt=agora,
             )
             .select_related("cliente")
             .order_by("inicio")

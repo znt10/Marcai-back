@@ -386,6 +386,26 @@ def test_se_a_abertura_falha_o_agendamento_vira_confirmado_sem_cobranca(client, 
     assert str(envios.lista.call_args.kwargs["novos"][0][0]) == str(_agendamento(r.json()["codigo"]).id)
 
 
+def test_abertura_que_falha_depois_de_comitar_cancela_a_cobranca_aberta(cenario):
+    """A cobranca ja' comitou e algo estourou depois: o agendamento vira
+    CONFIRMADO e a cobranca ABERTA precisa morrer, senao a varredura a marca
+    PAGA depois."""
+    from app.services import pix_agendamento
+
+    b = cenario["brutus"]
+    barbeiro, servico = _barbeiro(b)
+    original = pix_agendamento.abrir
+
+    def abrir_e_estourar(**kw):
+        original(**kw)
+        raise RuntimeError("caiu depois do commit")
+
+    with patch("app.services.agendamentos.pix_agendamento.abrir", side_effect=abrir_e_estourar):
+        criado = _chamar_marcar(b, barbeiro, servico, 10 * 60, "SITE")
+    assert criado["status"] == "CONFIRMADO"
+    assert [c.status for c in _cobrancas()] == ["CANCELADA"]
+
+
 # ---- a disputa pelo centavo
 
 def test_perdida_a_disputa_do_centavo_tenta_de_novo(cenario):

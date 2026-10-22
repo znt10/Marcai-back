@@ -186,6 +186,9 @@ def _abrir_cobranca_ou_confirmar(criado: dict, a_cobrar: dict, barbearia_id, ago
             "expira_em": cobranca.expira_em,
         }
         return
+    # Se a cobranca chegou a comitar antes do erro, ela nao pode sobreviver ao
+    # agendamento confirmado: a varredura a marcaria PAGA depois.
+    pix_agendamento.cancelar_abertas([criado["id"]])
     # Dentro da janela do lembrete, a confirmacao que sai agora ja' e' o lembrete.
     with com_barbearia(barbearia_id):
         Agendamento.objects.filter(id=criado["id"], status=AGUARDANDO).update(

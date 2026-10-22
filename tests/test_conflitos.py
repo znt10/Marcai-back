@@ -94,3 +94,19 @@ def test_barbeiro_pedindo_conflito_do_colega_e_404(client, cenario):
 
     r = client.get("/api/painel/conflitos", {"barbeiroId": colega.id}, headers={"host": host})
     assert r.status_code == 404
+
+
+def test_agendamento_aguardando_pagamento_tambem_e_conflito(client, cenario):
+    """Uma folga nao pode passar por cima de horario esperando o Pix."""
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id)
+    host = _logar(client, barbeiro, b.id)
+
+    futuro = datetime.now(timezone.utc) + timedelta(days=2)
+    a = _agendamento_futuro(b.id, barbeiro, futuro)
+    from tenant.models import Agendamento
+
+    Agendamento.objects.using("owner").filter(id=a.id).update(status="AGUARDANDO_PAGAMENTO")
+
+    r = client.get("/api/painel/conflitos", {"barbeiroId": barbeiro.id}, headers={"host": host})
+    assert [c["id"] for c in r.json()["conflitos"]] == [a.id]
