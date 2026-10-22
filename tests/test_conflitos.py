@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.services.sessao import COOKIE_SESSAO, emitir
-from tenant.datas import dia_semana_de, utc_para_local
+from tenant.datas import dia_de_hoje, dia_semana_de, local_para_utc, somar_dias, utc_para_local
 
 
 def _dia_semana(momento):
@@ -72,7 +72,10 @@ def test_agendamento_dentro_da_jornada_sem_bloqueio_nao_e_conflito(client, cenar
     barbeiro = _barbeiro(b.id)
     host = _logar(client, barbeiro, b.id)
 
-    futuro = datetime.now(timezone.utc) + timedelta(days=2)
+    # Meio-dia, e nao `agora + 2 dias`: rodando depois das 23:30 o corte de
+    # 30 minutos virava a meia-noite e saia da jornada 0-1440 — conflito de
+    # verdade, e o teste falhava so' nesse meio hora.
+    futuro = local_para_utc(somar_dias(dia_de_hoje(datetime.now(timezone.utc)), 2), 720)
     from tenant.models import HorarioTrabalho
 
     dia_semana = _dia_semana(futuro)
