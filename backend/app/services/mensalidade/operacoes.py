@@ -372,8 +372,9 @@ def _travar_aberta(cobranca_id):
 
 
 def confirmar(cobranca_id, *, agora, como=ComoFoiPaga.MANUAL):
-    """Marca paga e avanca o `paga_ate`. E' a mesma funcao que o vigia chama."""
-    if como not in (ComoFoiPaga.MANUAL, ComoFoiPaga.VIGIA):
+    """Marca paga e avanca o `paga_ate`. E' a mesma funcao que o vigia e o
+    aviso da InfinitePay chamam."""
+    if como not in (ComoFoiPaga.MANUAL, ComoFoiPaga.VIGIA, ComoFoiPaga.INFINITEPAY):
         raise ValueError(como)
     with transaction.atomic(using=ALIAS):
         assinatura, cobranca = _travar_aberta(cobranca_id)

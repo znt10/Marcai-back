@@ -813,10 +813,11 @@ class Cobranca(models.Model):
     paga_ate_depois = models.DateField(null=True, blank=True)
     observacao = models.TextField(blank=True, default="")
     # So' a cobranca da InfinitePay usa: o link do checkout que a tela abre e
-    # o `transaction_nsu` do primeiro aviso, sem o qual o `payment_check` nao
-    # tem como conferir depois.
+    # o `transaction_nsu` e o `invoice_slug` do primeiro aviso, sem os quais o
+    # `payment_check` nao tem como conferir depois.
     link_pagamento = models.TextField(blank=True, default="")
     ip_transacao = models.TextField(blank=True, default="")
+    ip_fatura = models.TextField(blank=True, default="")
 
     class Meta:
         constraints = [

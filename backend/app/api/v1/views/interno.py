@@ -7,6 +7,9 @@ from django.conf import settings
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from app.services import infinitepay
+from app.services.infinitepay import ErroDaInfinitePay
+from app.services.mensalidade import infinitepay_retorno
 from app.services.bot_entrada import EVENTO_MENSAGEM, Recebida, ler_mensagem, receber
 from app.services.whatsapp_eventos import aplicar_evento
 
@@ -102,4 +105,42 @@ class WhatsappEventoView(APIView):
                 resultado = "ignorado:erro"
         else:
             resultado = aplicar_evento(corpo)
+        return Response({"ok": True, "resultado": resultado})
+
+
+class InfinitePayRetornoView(APIView):
+    """POST /api/interno/infinitepay — a InfinitePay avisando que um link da
+    mensalidade foi pago.
+
+    Chega pelo subdominio da barbearia (a `webhook_url` e' montada assim em
+    `infinitepay.criar_link`), passa pelo front sem sessao e entra no Django
+    sem `x-brutus-cliente` — o `ClienteMiddleware` isenta este caminho.
+
+    O aviso nao e' assinado: a credencial e' o `t` da query string, e mesmo
+    com ele certo nada se confirma sem o `payment_check` (ver
+    `mensalidade/infinitepay_retorno.py`). Responde 200 para o que nao vai
+    mudar nunca (corpo estranho, cobranca desconhecida) e 400 quando a
+    InfinitePay nao respondeu ao `payment_check`: e' com 400 que ela manda o
+    aviso de novo.
+    """
+
+    throttle_classes = []
+
+    def post(self, request):
+        if not infinitepay.segredo_confere(request.query_params.get("t", "")):
+            return Response({"erro": "não autorizado"}, status=401)
+        corpo = request.data if isinstance(request.data, dict) else {}
+        referencia = str(corpo.get("order_nsu") or "")
+        if not referencia:
+            return Response({"ok": True, "resultado": "ignorada"})
+        try:
+            resultado = infinitepay_retorno.processar(
+                referencia=referencia,
+                transacao=str(corpo.get("transaction_nsu") or ""),
+                slug=str(corpo.get("invoice_slug") or ""),
+                agora=datetime.now(timezone.utc),
+            )
+        except ErroDaInfinitePay:
+            logger.exception("[infinitepay] payment_check falhou (order_nsu=%s)", referencia)
+            return Response({"erro": "tente de novo"}, status=400)
         return Response({"ok": True, "resultado": resultado})

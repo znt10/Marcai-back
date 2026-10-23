@@ -475,6 +475,14 @@ def msg_mensalidade_recusada(barbearia_nome: str) -> str:
     )
 
 
+def msg_infinitepay_pago_em_cancelada(barbearia_nome: str, valor_centavos: int) -> str:
+    return (
+        f"Pagamento da InfinitePay numa cobrança cancelada: {barbearia_nome} "
+        f"{_reais(valor_centavos)} — conferir ou devolver:\n"
+        f"https://admin.{settings.DOMINIO_BASE}/mensalidades"
+    )
+
+
 def msg_mensalidade_ja_paguei(barbearia_nome: str, valor_centavos: int, quem: str) -> str:
     return (
         f"{barbearia_nome} avisou que pagou a mensalidade ({_reais(valor_centavos)}), "

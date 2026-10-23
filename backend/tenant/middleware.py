@@ -58,6 +58,7 @@ class ClienteMiddleware:
 
     VERBOS_QUE_ESCREVEM = {"POST", "PATCH", "PUT", "DELETE"}
     HEADER = "HTTP_X_BRUTUS_CLIENTE"
+    CAMINHO_DA_INFINITEPAY = "/api/interno/infinitepay"
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -69,6 +70,11 @@ class ClienteMiddleware:
         # arranjo da API — cross-origin e same-site ao mesmo tempo, onde o
         # SameSite=Lax nao protege nada e so' o preflight obrigatorio protege.
         if request.path.startswith(AdminDjangoMiddleware.PREFIXO):
+            return self.get_response(request)
+        # O aviso da InfinitePay vem de servidor, sem navegador e sem cookie:
+        # nao ha credencial ambiente para um site alheio usar, que e' o que o
+        # header protege. A credencial dele e' o `t`, conferido na view.
+        if request.path == self.CAMINHO_DA_INFINITEPAY:
             return self.get_response(request)
         if request.method in self.VERBOS_QUE_ESCREVEM and self.HEADER not in request.META:
             return JsonResponse({"erro": "pedido sem cliente"}, status=403)

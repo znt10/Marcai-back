@@ -325,6 +325,11 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="0,30", hour="5-11"),
     },
     "zelador": {"task": "app.tasks.zelador", "schedule": 3600.0},
+    # Rede de seguranca do aviso da InfinitePay; sem ela configurada, a
+    # varredura nao acha cobranca nenhuma e sai sem chamar nada.
+    "conferir-pagamentos-infinitepay": {
+        "task": "app.tasks.conferir_pagamentos_infinitepay", "schedule": 600.0,
+    },
     # Uma vez por dia, de manha: os avisos da mensalidade sao por dia (faltam
     # 5, vence hoje, bloqueou), nao por hora.
     "avisos-da-mensalidade": {
