@@ -72,16 +72,16 @@ class AdminMensalidadeDetalheView(ExigeAdmin, APIView):
 
 
 class AdminMensalidadeRegistrarView(ExigeAdmin, APIView):
-    """POST /api/admin/mensalidades/<id>/registrar. Sem `pagaAte`, avanca um
-    mes como o Confirmar; a data so' vem quando o admin quer outra."""
+    """POST /api/admin/mensalidades/<id>/registrar. `pagoEm` e' o dia em que
+    pagou (sem ele, hoje); o "pago ate" sai sozinho, um mes adiante."""
 
     def post(self, request, id):
         corpo = _dict(request)
         data = None
-        if corpo.get("pagaAte") is not None:
-            data = _data(corpo.get("pagaAte"))
+        if corpo.get("pagoEm") is not None:
+            data = _data(corpo.get("pagoEm"))
             if data is None:
-                return _erro("Informe pagaAte como AAAA-MM-DD.")
+                return _erro("Informe pagoEm como AAAA-MM-DD.")
         if not _inteiro(corpo.get("valorCentavos"), 1):
             return _erro("Informe o valor pago, em centavos.")
         observacao = corpo.get("observacao", "")
@@ -90,7 +90,7 @@ class AdminMensalidadeRegistrarView(ExigeAdmin, APIView):
 
         try:
             existe = id is not None and servico.registrar(
-                id, paga_ate=data, valor_centavos=corpo["valorCentavos"],
+                id, pago_em=data, valor_centavos=corpo["valorCentavos"],
                 observacao=observacao.strip(),
             )
         except RecusaDaMensalidade as e:

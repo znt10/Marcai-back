@@ -375,17 +375,19 @@ def test_registrar_manual_cria_paga_e_cancela_a_aberta(b):
     from app.services.mensalidade import operacoes
 
     aberta = operacoes.cobranca_do_ciclo(b, agora=momento(2026, 10, 12))
+    # Pago ate 10/10, na carencia: pagou no dia 11, registrado no dia 12.
     c = operacoes.registrar_manual(
-        b, paga_ate=date(2026, 12, 5), valor_centavos=10000,
+        b, pago_em=date(2026, 10, 11), valor_centavos=10000,
         observacao="pagou em dinheiro", agora=momento(2026, 10, 12),
     )
     assert (c.status, c.como_foi_paga) == ("PAGA", "REGISTRO")
-    assert c.paga_ate_depois == date(2026, 12, 5) and c.observacao == "pagou em dinheiro"
+    assert c.paga_ate_depois == date(2026, 11, 10) and c.observacao == "pagou em dinheiro"
+    assert c.paga_em.astimezone(BRASILIA).date() == date(2026, 10, 11)
     assert (c.valor_base_centavos, c.valor_centavos) == (10000, 10000)
     assert c.copia_e_cola == "" and c.chave_pix == "dono@marcai.com"
     assert _recarregar(aberta).status == "CANCELADA"
     a = _assinatura(b)
-    assert (a.paga_ate, a.dia_de_vencimento) == (date(2026, 12, 5), 5)
+    assert (a.paga_ate, a.dia_de_vencimento) == (date(2026, 11, 10), 10)
 
 
 def test_registrar_manual_sem_aberta_nem_chave(b):
@@ -393,7 +395,7 @@ def test_registrar_manual_sem_aberta_nem_chave(b):
 
     with override_settings(PIX_CHAVE=""):
         c = operacoes.registrar_manual(
-            b, paga_ate=date(2026, 12, 5), valor_centavos=9000, agora=momento(2026, 10, 12),
+            b, valor_centavos=9000, agora=momento(2026, 10, 12),
         )
     assert c.chave_pix == "" and c.status == "PAGA"
 

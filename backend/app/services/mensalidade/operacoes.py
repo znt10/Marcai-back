@@ -10,6 +10,7 @@ barbearia no codigo. O relogio vem de fora (`agora`), sempre."""
 
 import logging
 import uuid
+from datetime import datetime, time
 from decimal import Decimal
 
 from django.conf import settings
@@ -32,8 +33,8 @@ from tenant.rls import com_barbearia_admin
 
 from . import centavos, pix
 from .centavos import SemCentavoLivre
-from .datas import dia_de_vencimento_para
 from .situacao import (
+    SAO_PAULO,
     ESPERA_DA_CONFIRMACAO,
     Leitura,
     Situacao,
@@ -434,27 +435,32 @@ def cancelar_aberta(barbearia_id):
     _abertas_da_mensalidade(barbearia_id).update(status=StatusCobranca.CANCELADA)
 
 
-def registrar_manual(barbearia_id, *, paga_ate=None, valor_centavos, observacao="", agora):
-    """Dinheiro, Pix sem aviso: o pagamento que chegou fora do sistema. Sem
-    `paga_ate`, avanca um mes pela mesma regra do Confirmar (bloqueada
-    recomeca de hoje); com ele, vale a data dada. A cobranca aberta do ciclo
-    deixa de valer, e o centavo dela volta a ficar livre."""
+def registrar_manual(barbearia_id, *, pago_em=None, valor_centavos, observacao="", agora):
+    """Dinheiro, Pix sem aviso: o pagamento que chegou fora do sistema.
+    `pago_em` e' o dia em que pagou (sem ele, hoje). Avanca um mes pela mesma
+    regra do Confirmar, contada daquele dia: bloqueada, o mes comeca no dia
+    em que pagou. A cobranca aberta do ciclo deixa de valer, e o centavo dela
+    volta a ficar livre."""
+    hoje = hoje_em_sao_paulo(agora)
+    if pago_em is None:
+        pago_em = hoje
+    if pago_em > hoje:
+        raise RecusaDaMensalidade("O dia do pagamento não pode ser depois de hoje.")
+    # Meio-dia de Brasilia: o dia nao muda em fuso nenhum ao ler de volta.
+    momento = datetime.combine(pago_em, time(12), tzinfo=SAO_PAULO) if pago_em != hoje else agora
     with transaction.atomic(using=ALIAS):
         assinatura = _travar_assinatura(barbearia_id)
         if assinatura is None:
             raise RecusaDaMensalidade("Esta barbearia não tem assinatura.")
-        if paga_ate is None:
-            bloqueada = leitura(
-                barbearia_id, agora=agora, considerar_aviso=False,
-            ).situacao == Situacao.BLOQUEADA
-            paga_ate, dia = novo_paga_ate(
-                paga_ate=assinatura.paga_ate,
-                dia_de_vencimento=assinatura.dia_de_vencimento,
-                estava_bloqueada=bloqueada,
-                hoje=hoje_em_sao_paulo(agora),
-            )
-        else:
-            dia = dia_de_vencimento_para(paga_ate)
+        bloqueada = leitura(
+            barbearia_id, agora=momento, considerar_aviso=False,
+        ).situacao == Situacao.BLOQUEADA
+        paga_ate, dia = novo_paga_ate(
+            paga_ate=assinatura.paga_ate,
+            dia_de_vencimento=assinatura.dia_de_vencimento,
+            estava_bloqueada=bloqueada,
+            hoje=pago_em,
+        )
         _abertas_da_mensalidade(barbearia_id).update(status=StatusCobranca.CANCELADA)
         cobranca = Cobranca.objects.using(ALIAS).create(
             barbearia_id=barbearia_id,
@@ -464,7 +470,7 @@ def registrar_manual(barbearia_id, *, paga_ate=None, valor_centavos, observacao=
             valor_centavos=valor_centavos,
             copia_e_cola="",
             status=StatusCobranca.PAGA,
-            paga_em=agora,
+            paga_em=momento,
             como_foi_paga=ComoFoiPaga.REGISTRO,
             paga_ate_depois=paga_ate,
             observacao=observacao,
