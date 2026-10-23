@@ -35,11 +35,24 @@ def _corpo(barbearia_id, papel, *, agora):
         "valorCentavos": assinatura.valor_centavos if assinatura and not assinatura.isenta else None,
         "souDono": sou_dono,
         "pixErro": pix_erro,
-        "pix": None if cobranca is None else {
-            "copiaECola": cobranca.copia_e_cola,
-            "qrSvg": pix.qr_svg(cobranca.copia_e_cola),
-            "valorCentavos": cobranca.valor_centavos,
-        },
+        "pix": None if cobranca is None else _pagamento(cobranca),
+    }
+
+
+def _pagamento(cobranca):
+    """Pela InfinitePay a tela so' abre o link: sem QR, sem copia e cola e sem
+    "Ja paguei", porque o aviso dela confirma sozinho."""
+    if operacoes.eh_da_infinitepay(cobranca):
+        return {
+            "copiaECola": None, "qrSvg": None, "valorCentavos": cobranca.valor_centavos,
+            "link": cobranca.link_pagamento, "automatico": True,
+        }
+    return {
+        "copiaECola": cobranca.copia_e_cola,
+        "qrSvg": pix.qr_svg(cobranca.copia_e_cola),
+        "valorCentavos": cobranca.valor_centavos,
+        "link": None,
+        "automatico": False,
     }
 
 

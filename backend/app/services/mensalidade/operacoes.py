@@ -15,7 +15,8 @@ from decimal import Decimal
 from django.conf import settings
 from django.db import IntegrityError, transaction
 
-from app.services import mensagens
+from app.services import infinitepay, mensagens
+from app.services.infinitepay import ErroDaInfinitePay
 from app.services.whatsapp import enviar_a_equipe
 from tenant.models import (
     Assinatura,
@@ -118,18 +119,32 @@ def _travar_assinatura(barbearia_id):
     )
 
 
+def _pix_estatico_completo() -> bool:
+    return (
+        bool(pix.normalizar_chave(settings.PIX_CHAVE))
+        and bool(settings.PIX_NOME_RECEBEDOR)
+        and bool(settings.PIX_CIDADE)
+    )
+
+
+def eh_da_infinitepay(cobranca) -> bool:
+    """A marca fica na chave: `ip:<id>` e' unica por cobranca, entao o indice
+    de centavos nunca poe duas barbearias de mesmo preco para disputar nada, e
+    `_ocupados(PIX_CHAVE)` nem enxerga estas linhas."""
+    return cobranca.chave_pix.startswith("ip:")
+
+
 def cobravel(assinatura) -> bool:
-    """Ha como pagar esta mensalidade? Precisa de valor e do Pix completo
-    (chave, nome e cidade: sem um deles o BR Code sai invalido no banco).
+    """Ha como pagar esta mensalidade? Precisa de valor e de um jeito de
+    pagar: a InfinitePay configurada ou o Pix completo (chave, nome e cidade:
+    sem um deles o BR Code sai invalido no banco).
     Quem nao tem como pagar le como ISENTA em todo lugar — a trava, a tela,
     a lista do admin e os avisos perguntam aqui —, porque trancar quem nao
     tem como sair do bloqueio e' trancar para sempre."""
     return (
         not assinatura.isenta
         and assinatura.valor_centavos > 0
-        and bool(pix.normalizar_chave(settings.PIX_CHAVE))
-        and bool(settings.PIX_NOME_RECEBEDOR)
-        and bool(settings.PIX_CIDADE)
+        and (infinitepay.configurada() or _pix_estatico_completo())
     )
 
 
@@ -180,7 +195,43 @@ def _ocupados(chave_pix):
     )
 
 
+def _abrir_pela_infinitepay(assinatura):
+    """O link antes da linha: se a InfinitePay falhar, nao fica cobranca
+    aberta sem como pagar. O valor e' o redondo — quem diz de quem e' o
+    pagamento e' o `order_nsu`, nao o centavo."""
+    cobranca_id = uuid.uuid4()
+    barbearia = (
+        Barbearia.objects.using(ALIAS)
+        .filter(id=assinatura.barbearia_id).values("nome", "slug").first()
+    )
+    try:
+        link = infinitepay.criar_link(
+            valor_centavos=assinatura.valor_centavos,
+            descricao=f"Mensalidade Marcaí - {barbearia['nome']}",
+            referencia=str(cobranca_id),
+            barbearia_slug=barbearia["slug"],
+        )
+    except ErroDaInfinitePay:
+        logger.exception("[mensalidade] link da InfinitePay nao saiu")
+        raise RecusaDaMensalidade(
+            "Não foi possível gerar o link de pagamento agora. "
+            "Tente de novo em alguns minutos."
+        )
+    return Cobranca.objects.using(ALIAS).create(
+        id=cobranca_id,
+        barbearia_id=assinatura.barbearia_id,
+        motivo=MotivoCobranca.MENSALIDADE,
+        chave_pix=f"ip:{cobranca_id}",
+        valor_base_centavos=assinatura.valor_centavos,
+        valor_centavos=assinatura.valor_centavos,
+        copia_e_cola="",
+        link_pagamento=link,
+    )
+
+
 def _abrir_cobranca(assinatura):
+    if infinitepay.configurada():
+        return _abrir_pela_infinitepay(assinatura)
     chave = pix.normalizar_chave(settings.PIX_CHAVE)
     for tentativa in range(TENTATIVAS_DE_CENTAVO):
         try:
@@ -258,6 +309,8 @@ def informar_pagamento(barbearia_id, barbeiro_id, *, agora):
         cobranca = _garantir_cobranca(assinatura, agora)
         if cobranca is None:
             raise RecusaDaMensalidade(SEM_MENSALIDADE)
+        if eh_da_infinitepay(cobranca):
+            raise RecusaDaMensalidade("A confirmação deste pagamento é automática.")
         # Recusado uma vez, o aviso nao volta para a mesma cobranca: o Jose ja
         # olhou e nao achou o Pix, e um novo "ja paguei" so' seguraria o
         # painel mais 3 dias. A conversa segue fora do painel; uma cobranca

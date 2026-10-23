@@ -440,3 +440,116 @@ def test_valor_zero_le_como_isenta(b):
 
     _paga(b, valor=0)
     assert operacoes.leitura(b, agora=momento(2026, 10, 20)).situacao == Situacao.ISENTA
+
+
+# --- InfinitePay ---
+IP = {"INFINITEPAY_HANDLE": "marcai", "INFINITEPAY_WEBHOOK_SEGREDO": "s3gredo"}
+LINK = "https://checkout.infinitepay.io/x/abc"
+
+
+@pytest.fixture
+def ip(monkeypatch):
+    """Liga a InfinitePay com o `criar_link` trocado. `ip.chamadas` guarda o
+    que foi pedido; `ip.erro` faz o falso levantar."""
+    from app.services import infinitepay
+
+    class Falso:
+        chamadas = []
+        erro = None
+
+        def __call__(self, **kw):
+            self.chamadas.append(kw)
+            if self.erro:
+                raise self.erro
+            return LINK
+
+    falso = Falso()
+    falso.chamadas = []
+    monkeypatch.setattr(infinitepay, "criar_link", falso)
+    with override_settings(**IP):
+        yield falso
+
+
+def test_com_infinitepay_a_cobranca_sai_com_valor_redondo(b, ip):
+    from app.services.mensalidade import operacoes
+
+    c = operacoes.cobranca_do_ciclo(b, agora=momento(2026, 10, 12))
+    assert (c.valor_base_centavos, c.valor_centavos) == (10000, 10000)
+    assert c.chave_pix == f"ip:{c.id}"
+    assert c.link_pagamento == LINK
+    assert c.copia_e_cola == ""
+    (chamada,) = ip.chamadas
+    assert chamada["referencia"] == str(c.id)
+    assert chamada["valor_centavos"] == 10000
+    assert chamada["barbearia_slug"] == "brutus"
+    assert operacoes.eh_da_infinitepay(c) is True
+
+
+def test_duas_barbearias_mesmo_preco_nao_disputam_centavo(cenario, ip):
+    from app.services.mensalidade import operacoes
+
+    a, o = cenario["brutus"].id, cenario["dontony"].id
+    _paga(a)
+    _paga(o)
+    ca = operacoes.cobranca_do_ciclo(a, agora=momento(2026, 10, 12))
+    co = operacoes.cobranca_do_ciclo(o, agora=momento(2026, 10, 12))
+    assert ca.valor_centavos == co.valor_centavos == 10000
+
+
+def test_sem_infinitepay_continua_o_pix_com_centavo(b):
+    from app.services.mensalidade import operacoes
+
+    c = operacoes.cobranca_do_ciclo(b, agora=momento(2026, 10, 12))
+    assert c.valor_centavos == 10001
+    assert c.link_pagamento == ""
+    assert operacoes.eh_da_infinitepay(c) is False
+
+
+def test_com_infinitepay_cobra_mesmo_sem_o_pix_estatico(b, ip):
+    from app.services.mensalidade import operacoes
+
+    with override_settings(PIX_CHAVE="", PIX_NOME_RECEBEDOR="", PIX_CIDADE=""):
+        c = operacoes.cobranca_do_ciclo(b, agora=momento(2026, 10, 12))
+    assert c is not None and c.link_pagamento == LINK
+
+
+def test_isenta_nao_gera_link(b, ip):
+    from app.services.mensalidade import operacoes
+    from tenant.models import Assinatura
+
+    Assinatura.objects.using("admin").filter(barbearia_id=b).update(isenta=True)
+    assert operacoes.cobranca_do_ciclo(b, agora=momento(2026, 10, 12)) is None
+    assert ip.chamadas == []
+
+
+def test_nunca_bloquear_continua_sem_bloquear_com_infinitepay(b, ip):
+    from app.services.mensalidade import operacoes
+    from app.services.mensalidade.situacao import Situacao
+
+    _paga(b, nunca_bloquear=True)
+    lido = operacoes.leitura(b, agora=momento(2026, 10, 30))
+    assert lido.situacao != Situacao.BLOQUEADA
+
+
+def test_infinitepay_fora_do_ar_nao_grava_cobranca(b, ip):
+    from app.services.infinitepay import ErroDaInfinitePay
+    from app.services.mensalidade import operacoes
+    from app.services.mensalidade.operacoes import RecusaDaMensalidade
+    from tenant.models import Cobranca
+
+    ip.erro = ErroDaInfinitePay("fora")
+    with pytest.raises(RecusaDaMensalidade) as e:
+        operacoes.cobranca_do_ciclo(b, agora=momento(2026, 10, 12))
+    assert e.value.mensagem == (
+        "Não foi possível gerar o link de pagamento agora. Tente de novo em alguns minutos."
+    )
+    assert not Cobranca.objects.using("admin").filter(barbearia_id=b).exists()
+
+
+def test_ja_paguei_recusado_quando_e_automatico(b, barbeiro, ip):
+    from app.services.mensalidade import operacoes
+    from app.services.mensalidade.operacoes import RecusaDaMensalidade
+
+    with pytest.raises(RecusaDaMensalidade) as e:
+        operacoes.informar_pagamento(b, barbeiro, agora=momento(2026, 10, 12))
+    assert e.value.mensagem == "A confirmação deste pagamento é automática."
