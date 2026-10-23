@@ -291,8 +291,34 @@ def test_registrar_avanca_o_paga_ate_e_devolve_a_linha(client):
     assert _status(c) == "CANCELADA"
 
 
+def test_registrar_sem_data_avanca_um_mes_como_o_confirmar(client):
+    from app.services.mensalidade.datas import mes_seguinte
+
+    _logar_admin(client)
+    vence = hoje() + timedelta(days=2)
+    b = _nova("regmes", paga_ate=vence)
+    from tenant.models import Assinatura
+    Assinatura.objects.using("owner").filter(barbearia_id=b.id).update(dia_de_vencimento=vence.day)
+    c = _aberta(b.id)
+    r = _post(client, f"/api/admin/mensalidades/{b.id}/registrar", {"valorCentavos": 10000})
+    assert r.status_code == 200
+    assert r.json()["pagaAte"] == mes_seguinte(vence, vence.day).isoformat()
+    assert r.json()["ultimaPaga"]["como"] == "REGISTRO"
+    assert _status(c) == "CANCELADA"
+
+
+def test_registrar_sem_data_bloqueada_recomeca_de_hoje(client):
+    from app.services.mensalidade.datas import dia_de_vencimento_para, mes_seguinte
+
+    _logar_admin(client)
+    b = _nova("regblq", paga_ate=hoje() - timedelta(days=20))
+    r = _post(client, f"/api/admin/mensalidades/{b.id}/registrar", {"valorCentavos": 10000})
+    assert r.status_code == 200
+    assert r.json()["pagaAte"] == mes_seguinte(hoje(), dia_de_vencimento_para(hoje())).isoformat()
+
+
 @pytest.mark.parametrize("corpo", [
-    {"valorCentavos": 9000}, {"pagaAte": "2027-01-15"},
+    {"pagaAte": "2027-01-15"},
     {"pagaAte": "2027-13-01", "valorCentavos": 9000},
     {"pagaAte": "2027-01-15", "valorCentavos": 0},
     {"pagaAte": "2027-01-15", "valorCentavos": "9000"},

@@ -434,13 +434,27 @@ def cancelar_aberta(barbearia_id):
     _abertas_da_mensalidade(barbearia_id).update(status=StatusCobranca.CANCELADA)
 
 
-def registrar_manual(barbearia_id, *, paga_ate, valor_centavos, observacao="", agora):
-    """Dinheiro, Pix sem aviso: o dono diz ate quando esta pago. A cobranca
-    aberta do ciclo deixa de valer, e o centavo dela volta a ficar livre."""
+def registrar_manual(barbearia_id, *, paga_ate=None, valor_centavos, observacao="", agora):
+    """Dinheiro, Pix sem aviso: o pagamento que chegou fora do sistema. Sem
+    `paga_ate`, avanca um mes pela mesma regra do Confirmar (bloqueada
+    recomeca de hoje); com ele, vale a data dada. A cobranca aberta do ciclo
+    deixa de valer, e o centavo dela volta a ficar livre."""
     with transaction.atomic(using=ALIAS):
         assinatura = _travar_assinatura(barbearia_id)
         if assinatura is None:
             raise RecusaDaMensalidade("Esta barbearia não tem assinatura.")
+        if paga_ate is None:
+            bloqueada = leitura(
+                barbearia_id, agora=agora, considerar_aviso=False,
+            ).situacao == Situacao.BLOQUEADA
+            paga_ate, dia = novo_paga_ate(
+                paga_ate=assinatura.paga_ate,
+                dia_de_vencimento=assinatura.dia_de_vencimento,
+                estava_bloqueada=bloqueada,
+                hoje=hoje_em_sao_paulo(agora),
+            )
+        else:
+            dia = dia_de_vencimento_para(paga_ate)
         _abertas_da_mensalidade(barbearia_id).update(status=StatusCobranca.CANCELADA)
         cobranca = Cobranca.objects.using(ALIAS).create(
             barbearia_id=barbearia_id,
@@ -456,6 +470,6 @@ def registrar_manual(barbearia_id, *, paga_ate, valor_centavos, observacao="", a
             observacao=observacao,
         )
         assinatura.paga_ate = paga_ate
-        assinatura.dia_de_vencimento = dia_de_vencimento_para(paga_ate)
+        assinatura.dia_de_vencimento = dia
         assinatura.save(using=ALIAS, update_fields=["paga_ate", "dia_de_vencimento"])
         return cobranca
