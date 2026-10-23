@@ -58,7 +58,7 @@ from .views.equipe import (
 from .views.foto import FotoView
 from .views.expediente import ExpedienteView
 from .views.horarios import DiasComVagaView, HorariosView
-from .views.interno import WhatsappEventoView
+from .views.interno import InfinitePayRetornoView, WhatsappEventoView
 from .views.resumo import ResumoView
 from .views.custos import CustoDetalheView, CustosView
 from .views.servicos import ServicosView
@@ -318,5 +318,12 @@ urlpatterns = [
         "interno/whatsapp/evento",
         WhatsappEventoView.as_view(),
         name="interno-whatsapp-evento",
+    ),
+    # O aviso da InfinitePay. Este vem de FORA, pelo subdominio da barbearia;
+    # a credencial e' o `t` da query string, conferido na view.
+    path(
+        "interno/infinitepay",
+        InfinitePayRetornoView.as_view(),
+        name="interno-infinitepay",
     ),
 ]

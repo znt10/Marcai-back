@@ -10,12 +10,14 @@ barbearia no codigo. O relogio vem de fora (`agora`), sempre."""
 
 import logging
 import uuid
+from datetime import datetime, time
 from decimal import Decimal
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
 
-from app.services import mensagens
+from app.services import infinitepay, mensagens
+from app.services.infinitepay import ErroDaInfinitePay
 from app.services.whatsapp import enviar_a_equipe
 from tenant.models import (
     Assinatura,
@@ -31,8 +33,8 @@ from tenant.rls import com_barbearia_admin
 
 from . import centavos, pix
 from .centavos import SemCentavoLivre
-from .datas import dia_de_vencimento_para
 from .situacao import (
+    SAO_PAULO,
     ESPERA_DA_CONFIRMACAO,
     Leitura,
     Situacao,
@@ -46,6 +48,7 @@ logger = logging.getLogger(__name__)
 ALIAS = "admin"
 TENTATIVAS_DE_CENTAVO = 3
 SEM_MENSALIDADE = "Esta barbearia não tem mensalidade a pagar."
+AUTOMATICA = "A confirmação deste pagamento é automática."
 
 
 class RecusaDaMensalidade(Exception):
@@ -118,18 +121,32 @@ def _travar_assinatura(barbearia_id):
     )
 
 
+def _pix_estatico_completo() -> bool:
+    return (
+        bool(pix.normalizar_chave(settings.PIX_CHAVE))
+        and bool(settings.PIX_NOME_RECEBEDOR)
+        and bool(settings.PIX_CIDADE)
+    )
+
+
+def eh_da_infinitepay(cobranca) -> bool:
+    """A marca fica na chave: `ip:<id>` e' unica por cobranca, entao o indice
+    de centavos nunca poe duas barbearias de mesmo preco para disputar nada, e
+    `_ocupados(PIX_CHAVE)` nem enxerga estas linhas."""
+    return cobranca.chave_pix.startswith("ip:")
+
+
 def cobravel(assinatura) -> bool:
-    """Ha como pagar esta mensalidade? Precisa de valor e do Pix completo
-    (chave, nome e cidade: sem um deles o BR Code sai invalido no banco).
+    """Ha como pagar esta mensalidade? Precisa de valor e de um jeito de
+    pagar: a InfinitePay configurada ou o Pix completo (chave, nome e cidade:
+    sem um deles o BR Code sai invalido no banco).
     Quem nao tem como pagar le como ISENTA em todo lugar — a trava, a tela,
     a lista do admin e os avisos perguntam aqui —, porque trancar quem nao
     tem como sair do bloqueio e' trancar para sempre."""
     return (
         not assinatura.isenta
         and assinatura.valor_centavos > 0
-        and bool(pix.normalizar_chave(settings.PIX_CHAVE))
-        and bool(settings.PIX_NOME_RECEBEDOR)
-        and bool(settings.PIX_CIDADE)
+        and (infinitepay.configurada() or _pix_estatico_completo())
     )
 
 
@@ -180,7 +197,43 @@ def _ocupados(chave_pix):
     )
 
 
+def _abrir_pela_infinitepay(assinatura):
+    """O link antes da linha: se a InfinitePay falhar, nao fica cobranca
+    aberta sem como pagar. O valor e' o redondo — quem diz de quem e' o
+    pagamento e' o `order_nsu`, nao o centavo."""
+    cobranca_id = uuid.uuid4()
+    barbearia = (
+        Barbearia.objects.using(ALIAS)
+        .filter(id=assinatura.barbearia_id).values("nome", "slug").first()
+    )
+    try:
+        link = infinitepay.criar_link(
+            valor_centavos=assinatura.valor_centavos,
+            descricao=f"Mensalidade Marcaí - {barbearia['nome']}",
+            referencia=str(cobranca_id),
+            barbearia_slug=barbearia["slug"],
+        )
+    except ErroDaInfinitePay:
+        logger.exception("[mensalidade] link da InfinitePay nao saiu")
+        raise RecusaDaMensalidade(
+            "Não foi possível gerar o link de pagamento agora. "
+            "Tente de novo em alguns minutos."
+        )
+    return Cobranca.objects.using(ALIAS).create(
+        id=cobranca_id,
+        barbearia_id=assinatura.barbearia_id,
+        motivo=MotivoCobranca.MENSALIDADE,
+        chave_pix=f"ip:{cobranca_id}",
+        valor_base_centavos=assinatura.valor_centavos,
+        valor_centavos=assinatura.valor_centavos,
+        copia_e_cola="",
+        link_pagamento=link,
+    )
+
+
 def _abrir_cobranca(assinatura):
+    if infinitepay.configurada():
+        return _abrir_pela_infinitepay(assinatura)
     chave = pix.normalizar_chave(settings.PIX_CHAVE)
     for tentativa in range(TENTATIVAS_DE_CENTAVO):
         try:
@@ -255,9 +308,15 @@ def informar_pagamento(barbearia_id, barbeiro_id, *, agora):
         assinatura = _travar_assinatura(barbearia_id)
         if assinatura is None or not cobravel(assinatura):
             raise RecusaDaMensalidade(SEM_MENSALIDADE)
+        # Antes de abrir cobranca: com a InfinitePay ligada, tentar gerar o
+        # link aqui so' trocaria esta frase pela de "nao foi possivel".
+        if infinitepay.configurada():
+            raise RecusaDaMensalidade(AUTOMATICA)
         cobranca = _garantir_cobranca(assinatura, agora)
         if cobranca is None:
             raise RecusaDaMensalidade(SEM_MENSALIDADE)
+        if eh_da_infinitepay(cobranca):
+            raise RecusaDaMensalidade(AUTOMATICA)
         # Recusado uma vez, o aviso nao volta para a mesma cobranca: o Jose ja
         # olhou e nao achou o Pix, e um novo "ja paguei" so' seguraria o
         # painel mais 3 dias. A conversa segue fora do painel; uma cobranca
@@ -319,8 +378,9 @@ def _travar_aberta(cobranca_id):
 
 
 def confirmar(cobranca_id, *, agora, como=ComoFoiPaga.MANUAL):
-    """Marca paga e avanca o `paga_ate`. E' a mesma funcao que o vigia chama."""
-    if como not in (ComoFoiPaga.MANUAL, ComoFoiPaga.VIGIA):
+    """Marca paga e avanca o `paga_ate`. E' a mesma funcao que o vigia e o
+    aviso da InfinitePay chamam."""
+    if como not in (ComoFoiPaga.MANUAL, ComoFoiPaga.VIGIA, ComoFoiPaga.INFINITEPAY):
         raise ValueError(como)
     with transaction.atomic(using=ALIAS):
         assinatura, cobranca = _travar_aberta(cobranca_id)
@@ -375,13 +435,32 @@ def cancelar_aberta(barbearia_id):
     _abertas_da_mensalidade(barbearia_id).update(status=StatusCobranca.CANCELADA)
 
 
-def registrar_manual(barbearia_id, *, paga_ate, valor_centavos, observacao="", agora):
-    """Dinheiro, Pix sem aviso: o dono diz ate quando esta pago. A cobranca
-    aberta do ciclo deixa de valer, e o centavo dela volta a ficar livre."""
+def registrar_manual(barbearia_id, *, pago_em=None, valor_centavos, observacao="", agora):
+    """Dinheiro, Pix sem aviso: o pagamento que chegou fora do sistema.
+    `pago_em` e' o dia em que pagou (sem ele, hoje). Avanca um mes pela mesma
+    regra do Confirmar, contada daquele dia: bloqueada, o mes comeca no dia
+    em que pagou. A cobranca aberta do ciclo deixa de valer, e o centavo dela
+    volta a ficar livre."""
+    hoje = hoje_em_sao_paulo(agora)
+    if pago_em is None:
+        pago_em = hoje
+    if pago_em > hoje:
+        raise RecusaDaMensalidade("O dia do pagamento não pode ser depois de hoje.")
+    # Meio-dia de Brasilia: o dia nao muda em fuso nenhum ao ler de volta.
+    momento = datetime.combine(pago_em, time(12), tzinfo=SAO_PAULO) if pago_em != hoje else agora
     with transaction.atomic(using=ALIAS):
         assinatura = _travar_assinatura(barbearia_id)
         if assinatura is None:
             raise RecusaDaMensalidade("Esta barbearia não tem assinatura.")
+        bloqueada = leitura(
+            barbearia_id, agora=momento, considerar_aviso=False,
+        ).situacao == Situacao.BLOQUEADA
+        paga_ate, dia = novo_paga_ate(
+            paga_ate=assinatura.paga_ate,
+            dia_de_vencimento=assinatura.dia_de_vencimento,
+            estava_bloqueada=bloqueada,
+            hoje=pago_em,
+        )
         _abertas_da_mensalidade(barbearia_id).update(status=StatusCobranca.CANCELADA)
         cobranca = Cobranca.objects.using(ALIAS).create(
             barbearia_id=barbearia_id,
@@ -391,12 +470,12 @@ def registrar_manual(barbearia_id, *, paga_ate, valor_centavos, observacao="", a
             valor_centavos=valor_centavos,
             copia_e_cola="",
             status=StatusCobranca.PAGA,
-            paga_em=agora,
+            paga_em=momento,
             como_foi_paga=ComoFoiPaga.REGISTRO,
             paga_ate_depois=paga_ate,
             observacao=observacao,
         )
         assinatura.paga_ate = paga_ate
-        assinatura.dia_de_vencimento = dia_de_vencimento_para(paga_ate)
+        assinatura.dia_de_vencimento = dia
         assinatura.save(using=ALIAS, update_fields=["paga_ate", "dia_de_vencimento"])
         return cobranca

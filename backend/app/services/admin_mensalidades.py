@@ -194,13 +194,13 @@ def atualizar(barbearia_id, campos, *, agora=None):
     return True
 
 
-def registrar(barbearia_id, *, paga_ate, valor_centavos, observacao, agora=None):
+def registrar(barbearia_id, *, pago_em=None, valor_centavos, observacao, agora=None):
     """Levanta `RecusaDaMensalidade`; False se a barbearia nao existe."""
     agora = agora or timezone.now()
     if not Barbearia.objects.using(ALIAS).filter(id=barbearia_id).exists():
         return False
     operacoes.registrar_manual(
-        barbearia_id, paga_ate=paga_ate, valor_centavos=valor_centavos,
+        barbearia_id, pago_em=pago_em, valor_centavos=valor_centavos,
         observacao=observacao, agora=agora,
     )
     return True

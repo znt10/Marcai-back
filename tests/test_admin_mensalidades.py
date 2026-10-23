@@ -275,29 +275,71 @@ def test_patch_que_nao_muda_valor_nem_isenta_mantem_a_cobranca(client):
 # ------------------------------------------------------------------- registrar
 
 
-def test_registrar_avanca_o_paga_ate_e_devolve_a_linha(client):
+def test_registrar_avanca_um_mes_e_devolve_a_linha(client):
+    from app.services.mensalidade.datas import mes_seguinte
+
     _logar_admin(client)
-    b = _nova("reg", paga_ate=hoje() - timedelta(days=10))
+    vence = hoje() + timedelta(days=2)
+    b = _nova("reg", paga_ate=vence)
+    from tenant.models import Assinatura
+    Assinatura.objects.using("owner").filter(barbearia_id=b.id).update(dia_de_vencimento=vence.day)
     c = _aberta(b.id)
     r = _post(client, f"/api/admin/mensalidades/{b.id}/registrar", {
-        "pagaAte": "2027-01-15", "valorCentavos": 9000, "observacao": " dinheiro ",
+        "valorCentavos": 9000, "observacao": " dinheiro ",
     })
     assert r.status_code == 200
     corpo = r.json()
-    assert corpo["pagaAte"] == "2027-01-15" and corpo["situacao"] == "EM_DIA"
+    assert corpo["pagaAte"] == mes_seguinte(vence, vence.day).isoformat()
+    assert corpo["situacao"] == "EM_DIA"
     assert corpo["ultimaPaga"]["como"] == "REGISTRO"
     assert corpo["ultimaPaga"]["valorCentavos"] == 9000
-    assert _assinatura(b.id).dia_de_vencimento == 15
+    # sem `pagoEm`, pagou hoje
+    assert corpo["ultimaPaga"]["pagaEm"][:10] == hoje().isoformat()
     assert _status(c) == "CANCELADA"
 
 
+def test_registrar_guarda_o_dia_que_pagou(client):
+    _logar_admin(client)
+    vence = hoje() + timedelta(days=2)
+    b = _nova("regdia", paga_ate=vence)
+    ontem = hoje() - timedelta(days=1)
+    r = _post(client, f"/api/admin/mensalidades/{b.id}/registrar", {
+        "valorCentavos": 10000, "pagoEm": ontem.isoformat(),
+    })
+    assert r.status_code == 200
+    assert r.json()["ultimaPaga"]["pagaEm"][:10] == ontem.isoformat()
+
+
+def test_registrar_bloqueada_conta_o_mes_do_dia_que_pagou(client):
+    from app.services.mensalidade.datas import dia_de_vencimento_para, mes_seguinte
+
+    _logar_admin(client)
+    b = _nova("regblq", paga_ate=hoje() - timedelta(days=20))
+    pagou = hoje() - timedelta(days=1)
+    r = _post(client, f"/api/admin/mensalidades/{b.id}/registrar", {
+        "valorCentavos": 10000, "pagoEm": pagou.isoformat(),
+    })
+    assert r.status_code == 200
+    assert r.json()["pagaAte"] == mes_seguinte(pagou, dia_de_vencimento_para(pagou)).isoformat()
+
+
+def test_registrar_com_dia_no_futuro_da_400(client):
+    _logar_admin(client)
+    b = _nova("regfut", paga_ate=date(2026, 1, 10))
+    r = _post(client, f"/api/admin/mensalidades/{b.id}/registrar", {
+        "valorCentavos": 10000, "pagoEm": (hoje() + timedelta(days=1)).isoformat(),
+    })
+    assert r.status_code == 400
+    assert _assinatura(b.id).paga_ate == date(2026, 1, 10)
+
+
 @pytest.mark.parametrize("corpo", [
-    {"valorCentavos": 9000}, {"pagaAte": "2027-01-15"},
-    {"pagaAte": "2027-13-01", "valorCentavos": 9000},
-    {"pagaAte": "2027-01-15", "valorCentavos": 0},
-    {"pagaAte": "2027-01-15", "valorCentavos": "9000"},
-    {"pagaAte": "2027-01-15", "valorCentavos": True},
-    {"pagaAte": "2027-01-15", "valorCentavos": 9000, "observacao": 5},
+    {}, {"pagoEm": "2026-01-05"},
+    {"pagoEm": "2026-13-01", "valorCentavos": 9000},
+    {"valorCentavos": 0},
+    {"valorCentavos": "9000"},
+    {"valorCentavos": True},
+    {"valorCentavos": 9000, "observacao": 5},
 ])
 def test_registrar_com_entrada_ruim_da_400(client, corpo):
     _logar_admin(client)
@@ -310,7 +352,7 @@ def test_registrar_com_entrada_ruim_da_400(client, corpo):
 def test_registrar_em_barbearia_inexistente_da_404(client):
     _logar_admin(client)
     r = _post(client, f"/api/admin/mensalidades/{uuid.uuid4()}/registrar", {
-        "pagaAte": "2027-01-15", "valorCentavos": 9000,
+        "valorCentavos": 9000,
     })
     assert r.status_code == 404
 
@@ -319,7 +361,7 @@ def test_registrar_sem_assinatura_da_400(client):
     _logar_admin(client)
     b = _nova("regsem", paga_ate=None)
     r = _post(client, f"/api/admin/mensalidades/{b.id}/registrar", {
-        "pagaAte": "2027-01-15", "valorCentavos": 9000,
+        "valorCentavos": 9000,
     })
     assert r.status_code == 400
 
