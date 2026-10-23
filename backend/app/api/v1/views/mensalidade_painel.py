@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from app.api.v1.mixins import ExigeDono, ExigeSessao
+from app.services import infinitepay
 from app.services.mensalidade import operacoes, pix
 from app.services.mensalidade.operacoes import RecusaDaMensalidade
 from tenant.models import Assinatura
@@ -35,6 +36,10 @@ def _corpo(barbearia_id, papel, *, agora):
         "valorCentavos": assinatura.valor_centavos if assinatura and not assinatura.isenta else None,
         "souDono": sou_dono,
         "pixErro": pix_erro,
+        # Com a InfinitePay ligada nao ha "Ja paguei", nem quando o link falhou:
+        # quem confirma e' o aviso dela, e o aviso manual so' seguraria o
+        # painel em AGUARDANDO esperando o Jose.
+        "pagamentoAutomatico": infinitepay.configurada(),
         "pix": None if cobranca is None else _pagamento(cobranca),
     }
 

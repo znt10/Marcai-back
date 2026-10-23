@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 ALIAS = "admin"
 TENTATIVAS_DE_CENTAVO = 3
 SEM_MENSALIDADE = "Esta barbearia não tem mensalidade a pagar."
+AUTOMATICA = "A confirmação deste pagamento é automática."
 
 
 class RecusaDaMensalidade(Exception):
@@ -306,11 +307,15 @@ def informar_pagamento(barbearia_id, barbeiro_id, *, agora):
         assinatura = _travar_assinatura(barbearia_id)
         if assinatura is None or not cobravel(assinatura):
             raise RecusaDaMensalidade(SEM_MENSALIDADE)
+        # Antes de abrir cobranca: com a InfinitePay ligada, tentar gerar o
+        # link aqui so' trocaria esta frase pela de "nao foi possivel".
+        if infinitepay.configurada():
+            raise RecusaDaMensalidade(AUTOMATICA)
         cobranca = _garantir_cobranca(assinatura, agora)
         if cobranca is None:
             raise RecusaDaMensalidade(SEM_MENSALIDADE)
         if eh_da_infinitepay(cobranca):
-            raise RecusaDaMensalidade("A confirmação deste pagamento é automática.")
+            raise RecusaDaMensalidade(AUTOMATICA)
         # Recusado uma vez, o aviso nao volta para a mesma cobranca: o Jose ja
         # olhou e nao achou o Pix, e um novo "ja paguei" so' seguraria o
         # painel mais 3 dias. A conversa segue fora do painel; uma cobranca
