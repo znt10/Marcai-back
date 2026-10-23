@@ -131,3 +131,18 @@ def test_apagar_barbeiro_zera_informada_por_e_guarda_a_cobranca(cenario):
         Barbeiro.objects.using("admin").filter(id=barbeiro.id).delete()
     c = Cobranca.objects.using("admin").get(id=c.id)
     assert c.informada_por_id is None
+
+
+def test_cobranca_guarda_o_link_da_infinitepay():
+    from tenant.models import Cobranca, ComoFoiPaga
+
+    _, barbearia_id = _criar()
+    c = _cobranca(barbearia_id, 5000, chave="ip:x")
+    c.link_pagamento = "https://checkout.infinitepay.io/marcai/abc"
+    c.ip_transacao = "nsu-123"
+    c.como_foi_paga = ComoFoiPaga.INFINITEPAY
+    c.save(using="owner")
+    relida = Cobranca.objects.using("owner").get(pk=c.pk)
+    assert relida.link_pagamento == "https://checkout.infinitepay.io/marcai/abc"
+    assert relida.ip_transacao == "nsu-123"
+    assert relida.como_foi_paga == "INFINITEPAY"
