@@ -2,6 +2,7 @@ import secrets
 import uuid
 from datetime import datetime, timedelta
 
+from django.db import OperationalError
 from django.utils import timezone
 
 from tenant.config import PRAZO_CANCELAMENTO_MIN
@@ -46,6 +47,15 @@ def eh_sobreposicao(exc: BaseException) -> bool:
             return True
         atual = getattr(atual, "__cause__", None)
     return "agendamento_sem_sobreposicao" in str(exc)
+
+
+def _eh_impasse(exc: BaseException) -> bool:
+    """40P01 = deadlock_detected. Duas marcacoes do mesmo horario que gravam
+    juntas podem travar uma na outra ENQUANTO o Postgres confere
+    `agendamento_sem_sobreposicao`: ele mata uma delas com impasse, nao com
+    23P01. Para quem marcou o desfecho e' o mesmo — o horario foi pego."""
+    causa = getattr(exc, "__cause__", None)
+    return getattr(causa, "sqlstate", None) == "40P01"
 
 
 def _upsert_cliente(barbearia_id: str, whatsapp: str, nome: str) -> str:
@@ -113,19 +123,24 @@ def marcar(
 
         novo_id = str(uuid.uuid4())
         codigo = _gerar_codigo()
-        Agendamento.objects.create(
-            id=novo_id, barbearia_id=barbearia_id, codigo=codigo,
-            barbeiro_id=barbeiro_id, cliente_id=cliente_id, servico_id=servico_id,
-            servico_nome=vinculo.servico.nome, inicio=inicio, fim=fim, duracao_min=duracao_min,
-            # Snapshot do preco praticado agora — reprecar depois nao pode
-            # reescrever quanto ESTE agendamento custou.
-            preco_centavos=preco_centavos,
-            status="CONFIRMADO",
-            # Dentro da janela do lembrete, a confirmacao que sai a seguir JA
-            # e' o lembrete: nasce avisado, o cron nunca o ve.
-            lembrete_enviado_em=lembrete_ao_criar(inicio, agora),
-            aparelho=aparelho,
-        )
+        try:
+            Agendamento.objects.create(
+                id=novo_id, barbearia_id=barbearia_id, codigo=codigo,
+                barbeiro_id=barbeiro_id, cliente_id=cliente_id, servico_id=servico_id,
+                servico_nome=vinculo.servico.nome, inicio=inicio, fim=fim, duracao_min=duracao_min,
+                # Snapshot do preco praticado agora — reprecar depois nao pode
+                # reescrever quanto ESTE agendamento custou.
+                preco_centavos=preco_centavos,
+                status="CONFIRMADO",
+                # Dentro da janela do lembrete, a confirmacao que sai a seguir JA
+                # e' o lembrete: nasce avisado, o cron nunca o ve.
+                lembrete_enviado_em=lembrete_ao_criar(inicio, agora),
+                aparelho=aparelho,
+            )
+        except OperationalError as e:
+            if _eh_impasse(e):
+                raise ErroCliente(409, "Esse horário acabou de ser pego. Escolhe outro?") from e
+            raise
 
     return {
         "id": novo_id,
