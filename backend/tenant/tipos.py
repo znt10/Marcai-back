@@ -25,6 +25,18 @@ PALAVRAS = {
         "esse_prof": "Essa profissional",
         "desativado": "desativada",
     },
+    TipoNegocio.MANICURE: {
+        "o_lugar": "o estúdio",
+        "do_nome": "do estúdio {nome}",
+        "esse_prof": "Essa profissional",
+        "desativado": "desativada",
+    },
+    TipoNegocio.MAQUIAGEM: {
+        "o_lugar": "o estúdio",
+        "do_nome": "do estúdio {nome}",
+        "esse_prof": "Essa profissional",
+        "desativado": "desativada",
+    },
     TipoNegocio.OUTRO: {
         "o_lugar": "o espaço",
         "do_nome": "do espaço {nome}",
@@ -37,6 +49,8 @@ PALAVRAS = {
 PALETA_PADRAO = {
     TipoNegocio.BARBEARIA: Paleta.PRETO_AMARELO,
     TipoNegocio.SOBRANCELHA: Paleta.BRANCO_ROSE,
+    TipoNegocio.MANICURE: Paleta.BRANCO_ROSE,
+    TipoNegocio.MAQUIAGEM: Paleta.BRANCO_ROSE,
     TipoNegocio.OUTRO: Paleta.BRANCO_DOURADO,
 }
 

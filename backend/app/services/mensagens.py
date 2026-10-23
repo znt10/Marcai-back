@@ -395,6 +395,27 @@ def msg_saudacao(*, link: str) -> str:
     )
 
 
+def msg_codigo_conta(codigo: str) -> str:
+    """O codigo de 6 digitos que confirma o WhatsApp da conta do cliente. Vem do
+    numero central, entao assina "Marcaí" (nao ha nome de barbearia). Os 10
+    minutos sao os de `CONTA_CODIGO_VALIDADE_MIN`; o aviso de nao repassar e' o
+    que impede o golpe em que alguem pede o codigo "por engano"."""
+    return (
+        f"*Marcaí*\nSeu código: *{codigo}*\n"
+        "Vale por 10 minutos. Não passa esse código pra ninguém."
+    )
+
+
+def msg_link_nova_senha(link: str) -> str:
+    """O link de "esqueci a senha". Os 30 minutos sao os de
+    `CONTA_LINK_VALIDADE_MIN`. O "se nao foi voce" cobre quem recebe o link sem
+    ter pedido: ignorar basta, a senha so' muda quem abrir."""
+    return (
+        f"*Marcaí*\nPra criar uma senha nova, abre: {link}\n"
+        "O link vale por 30 minutos. Se não foi você, é só ignorar."
+    )
+
+
 # --- Mensalidade do Marcai ------------------------------------------------
 #
 # Avisos do que a barbearia paga ao Marcai. Ao DONO: curtos, sempre com o nome

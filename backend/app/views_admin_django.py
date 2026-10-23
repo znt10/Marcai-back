@@ -24,7 +24,9 @@ from tenant.models import Barbearia, TipoNegocio
 # nome aqui ainda aparece, com o rotulo do proprio enum.
 _CATEGORIAS = {
     TipoNegocio.BARBEARIA: "Barbearias",
-    TipoNegocio.SOBRANCELHA: "Sobrancelha",
+    TipoNegocio.SOBRANCELHA: "Estética",
+    TipoNegocio.MANICURE: "Manicure",
+    TipoNegocio.MAQUIAGEM: "Maquiagem",
     TipoNegocio.OUTRO: "Outros",
 }
 

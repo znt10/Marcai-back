@@ -30,6 +30,8 @@ class AdminBarbeariasView(ExigeAdmin, APIView):
             return Response({"erro": "Slug inválido ou reservado."}, status=422)
         if resultado["tipo"] == "faltou_campo":
             return Response({"erro": "Faltou preencher algum campo."}, status=422)
+        if resultado["tipo"] == "whatsapp_invalido":
+            return Response({"erro": "WhatsApp inválido: DDD e número, ex.: (81) 99999-1234."}, status=422)
         if resultado["tipo"] == "plano_invalido":
             return Response({"erro": "Plano inválido."}, status=422)
         if resultado["tipo"] == "tipo_invalido":

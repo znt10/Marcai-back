@@ -51,12 +51,16 @@ class PlanoBarbearia(models.TextChoices):
 class TipoNegocio(models.TextChoices):
     """O ramo do estabelecimento (spec 2026-10-08). Muda as PALAVRAS que o
     cliente e a equipe leem ("o estudio", "a profissional") — nunca o que o
-    sistema faz: agenda, lista do dia e lembrete sao os mesmos nos tres. As
+    sistema faz: agenda, lista do dia e lembrete sao os mesmos em todos. As
     palavras de cada um moram em `tenant/tipos.py` (aqui) e `src/lib/tipos.ts`
     (front). Tipo novo entra pelos dois lados."""
 
     BARBEARIA = "BARBEARIA"
-    SOBRANCELHA = "SOBRANCELHA"
+    # O valor fica SOBRANCELHA (e' o que esta' no banco); o nome mudou para
+    # Estetica em 22/10/2026, que e' como o ramo se chama.
+    SOBRANCELHA = "SOBRANCELHA", "Estética"
+    MANICURE = "MANICURE", "Manicure"
+    MAQUIAGEM = "MAQUIAGEM", "Maquiagem"
     OUTRO = "OUTRO"
 
 
@@ -649,6 +653,96 @@ class ListaDoDiaEnviada(models.Model):
         return f"lista de {self.dia} ({self.mensagem_id})"
 
 
+class FinalidadeCodigo(models.TextChoices):
+    """Para que serve um `CodigoConta`: confirmar o WhatsApp de uma conta
+    recem-criada, ou escolher senha nova (esqueci a senha)."""
+
+    CONFIRMAR = "CONFIRMAR"
+    NOVA_SENHA = "NOVA_SENHA"
+
+
+class ContaCliente(models.Model):
+    """A conta opcional e GLOBAL do cliente (spec 2026-10-20): uma por
+    WhatsApp, valendo em todos os estabelecimentos. Fica fora do RLS, como
+    `Barbearia`: nao tem `barbearia_id` e nao pertence a tenant nenhum — e' de
+    quem a criou, e atravessa todos. Por isso o `brutus_app` le e escreve nela
+    direto (GRANT padrao do init-db.sh), sem `com_barbearia`.
+
+    O que protege a conta nao e' politica, e' o que ela guarda: so' o hash da
+    senha, e o numero em `canonico()` (tenant/telefone.py). Quem a enxerga por
+    dentro de um tenant faz isso pela funcao `barbearias_do_whatsapp`, que
+    devolve ids e mais nada.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    nome = models.TextField()
+    # Unico no sistema inteiro: uma conta por numero, em `canonico()`.
+    whatsapp = models.TextField(unique=True)
+    senha_hash = models.TextField()
+    # Nulo ate o cliente provar o numero com o codigo. Conta nao confirmada
+    # nao entra e nao ve historico.
+    confirmada_em = models.DateTimeField(null=True, blank=True)
+    # Sobe quando a senha muda: derruba toda sessao emitida antes.
+    token_version = models.IntegerField(default=0)
+    criado_em = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return f"{self.nome} ({self.whatsapp})"
+
+
+class CodigoConta(models.Model):
+    """Codigo de 6 digitos (ou token de link) mandado pelo WhatsApp. Fora do
+    RLS pelo mesmo motivo de `ContaCliente`: pertence a conta, que e' global.
+
+    So' o HASH e' guardado, nunca o codigo nem o token. `hash` tem indice e
+    NAO e' unico: o de 6 digitos leva o id da conta junto
+    (`hash_de_convite(f"{conta_id}:{codigo}")`) e e' procurado dentro da conta;
+    o do link e' o hash do token, procurado direto. O que segura um chute e'
+    `tentativas` mais `expira_em`, nao a unicidade.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    conta = models.ForeignKey(
+        ContaCliente, on_delete=models.CASCADE, related_name="codigos",
+    )
+    finalidade = models.CharField(max_length=20, choices=FinalidadeCodigo)
+    hash = models.TextField(db_index=True)
+    expira_em = models.DateTimeField()
+    tentativas = models.IntegerField(default=0)
+    usado_em = models.DateTimeField(null=True, blank=True)
+    criado_em = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return f"{self.finalidade} de {self.conta_id}"
+
+
+class Custo(models.Model):
+    """Um gasto que o dono lanca no resumo: o valor e, se quiser, um nome.
+
+    Sem campo de data de proposito (decisao do dono): o custo vale no dia em
+    que foi lancado, e e' `criado_em` que o resumo usa para dizer de que
+    periodo ele e'. So' registro — nao entra na conta do faturamento.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    barbearia = models.ForeignKey(
+        Barbearia, on_delete=models.RESTRICT, related_name="custos",
+    )
+    nome = models.TextField(null=True, blank=True)
+    valor_centavos = models.IntegerField()
+    criado_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(valor_centavos__gt=0), name="custo_valor_positivo",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.nome or 'Custo'} ({self.valor_centavos})"
+
+
 class Assinatura(models.Model):
     """A mensalidade que a barbearia paga ao Marcai. Uma por barbearia.
 
@@ -704,7 +798,7 @@ class Cobranca(models.Model):
     expira_em = models.DateTimeField(null=True, blank=True)
     informada_em = models.DateTimeField(null=True, blank=True)
     # O barbeiro apagado nao leva a cobranca junto: quem zera a coluna e' o
-    # BANCO (FK feita a mao na 0013, ON DELETE SET NULL; por isso
+    # BANCO (FK feita a mao na 0016, ON DELETE SET NULL; por isso
     # `db_constraint=False`, ou o Django criaria outra, sem a acao). `SET_NULL` do Django faria o
     # coletor dar UPDATE em `tenant_cobranca` como `brutus_app`, que nao tem
     # esse direito — e apagar barbeiro pelo admin do Django estourava.

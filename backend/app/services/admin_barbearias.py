@@ -17,6 +17,7 @@ from tenant.models import (
     Cliente,
     Cobranca,
     ConversaWhatsapp,
+    Custo,
     HorarioTrabalho,
     ListaDoDiaEnviada,
     MensagemNaoEnviada,
@@ -118,8 +119,12 @@ def criar(dados: dict) -> dict:
     nome = dados.get("nome")
     dono_nome = dados.get("donoNome")
     endereco = dados.get("endereco")
-    if not contato or not nome or not dono_nome or not endereco:
+    if not nome or not dono_nome or not endereco or not dados.get("whatsappContato"):
         return {"tipo": "faltou_campo"}
+    # Preenchido mas fora do formato: antes caia no "faltou campo", e o admin
+    # procurava o campo vazio que nao existia.
+    if not contato:
+        return {"tipo": "whatsapp_invalido"}
 
     if Barbearia.objects.using("admin").filter(slug=slug).exists():
         return {"tipo": "slug_duplicado", "slug": slug}
@@ -323,6 +328,7 @@ def reemitir_convite(barbearia_id: str) -> dict:
 # estourar no banco — `test_toda_tabela_que_aponta_para_barbearia_sai_junto`
 # cobra.
 ORDEM_DE_APAGAR = (
+    Custo,
     ListaDoDiaEnviada,
     Cobranca,
     Assinatura,
