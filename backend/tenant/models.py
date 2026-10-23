@@ -117,6 +117,24 @@ class EstadoConversa(models.TextChoices):
     AGUARDANDO_LEMBRETE = "AGUARDANDO_LEMBRETE"
 
 
+class MotivoCobranca(models.TextChoices):
+    MENSALIDADE = "MENSALIDADE"
+    AGENDAMENTO = "AGENDAMENTO"
+
+
+class StatusCobranca(models.TextChoices):
+    ABERTA = "ABERTA"
+    PAGA = "PAGA"
+    EXPIRADA = "EXPIRADA"
+    CANCELADA = "CANCELADA"
+
+
+class ComoFoiPaga(models.TextChoices):
+    MANUAL = "MANUAL"
+    VIGIA = "VIGIA"
+    REGISTRO = "REGISTRO"
+
+
 class Barbearia(models.Model):
     """A tabela de tenant. Unica sem barbearia_id e unica fora do RLS — ela e
     lida ANTES de existir tenant, para traduzir subdominio em id, e por isso e
@@ -723,3 +741,85 @@ class Custo(models.Model):
 
     def __str__(self):
         return f"{self.nome or 'Custo'} ({self.valor_centavos})"
+
+
+class Assinatura(models.Model):
+    """A mensalidade que a barbearia paga ao Marcai. Uma por barbearia.
+
+    FORA do RLS, como `tenant_barbearia`: a busca de centavos livres atravessa
+    barbearias, e quem le e' o middleware que decide se o painel trava. Quem
+    protege e' o GRANT (a migration revoga INSERT/UPDATE/DELETE do
+    `brutus_app`): leitura e escrita de verdade so' pelo alias `admin`, e todo
+    acesso filtra por barbearia no codigo.
+
+    Barbearia SEM linha aqui vale como isenta — dado torto nunca trava painel.
+    """
+
+    barbearia = models.OneToOneField(
+        Barbearia, on_delete=models.RESTRICT, primary_key=True, related_name="assinatura",
+    )
+    valor_centavos = models.PositiveIntegerField(default=0)
+    # 1 a 28: todo mes tem esse dia.
+    dia_de_vencimento = models.PositiveSmallIntegerField()
+    paga_ate = models.DateField()
+    isenta = models.BooleanField(default=False)
+    nunca_bloquear = models.BooleanField(default=False)
+    # Qual aviso de vencimento ja foi dado e para qual `paga_ate`, para nao
+    # repetir o mesmo aviso a cada tique.
+    ultimo_aviso = models.TextField(blank=True, default="")
+    ultimo_aviso_paga_ate = models.DateField(null=True, blank=True)
+    atualizada_em = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return f"assinatura de {self.barbearia_id} (paga ate {self.paga_ate})"
+
+
+class Cobranca(models.Model):
+    """Um Pix pedido: mensalidade (etapa 1) ou sinal de agendamento (etapa 2).
+
+    Fora do RLS, pelo mesmo motivo da `Assinatura`. O valor cobrado e' a base
+    mais 1 a 99 centavos, o menor livre para a mesma chave entre cobrancas
+    ABERTAS: e' isso que deixa o vigia casar o Pix recebido com a cobranca.
+    O indice unico parcial abaixo e' a garantia no banco; a busca e' otimista.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    barbearia = models.ForeignKey(
+        Barbearia, on_delete=models.RESTRICT, related_name="cobrancas",
+    )
+    motivo = models.TextField(choices=MotivoCobranca.choices)
+    # Ja normalizada (a mesma forma do `copia_e_cola`).
+    chave_pix = models.TextField()
+    valor_base_centavos = models.PositiveIntegerField()
+    valor_centavos = models.PositiveIntegerField()
+    copia_e_cola = models.TextField()
+    status = models.TextField(choices=StatusCobranca.choices, default=StatusCobranca.ABERTA)
+    criada_em = models.DateTimeField(default=timezone.now)
+    expira_em = models.DateTimeField(null=True, blank=True)
+    informada_em = models.DateTimeField(null=True, blank=True)
+    # O barbeiro apagado nao leva a cobranca junto: quem zera a coluna e' o
+    # BANCO (FK feita a mao na 0016, ON DELETE SET NULL; por isso
+    # `db_constraint=False`, ou o Django criaria outra, sem a acao). `SET_NULL` do Django faria o
+    # coletor dar UPDATE em `tenant_cobranca` como `brutus_app`, que nao tem
+    # esse direito — e apagar barbeiro pelo admin do Django estourava.
+    informada_por = models.ForeignKey(
+        Barbeiro, on_delete=models.DO_NOTHING, null=True, blank=True, related_name="+",
+        db_constraint=False,
+    )
+    recusada_em = models.DateTimeField(null=True, blank=True)
+    paga_em = models.DateTimeField(null=True, blank=True)
+    como_foi_paga = models.TextField(choices=ComoFoiPaga.choices, null=True, blank=True)
+    paga_ate_depois = models.DateField(null=True, blank=True)
+    observacao = models.TextField(blank=True, default="")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("chave_pix", "valor_centavos"),
+                condition=models.Q(status="ABERTA"),
+                name="cobranca_aberta_por_chave_e_valor",
+            ),
+        ]
+
+    def __str__(self):
+        return f"cobranca {self.valor_centavos} ({self.status})"

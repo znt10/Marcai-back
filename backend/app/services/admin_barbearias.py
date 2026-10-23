@@ -1,17 +1,21 @@
 import uuid
 
+from django.conf import settings
 from django.db import connections, transaction
+from django.utils import timezone
 from django.db.models import F
 
 from tenant import config
 from tenant.config import SLUG_REGEX, SUBDOMINIOS_RESERVADOS
 from tenant.models import (
     Agendamento,
+    Assinatura,
     Barbearia,
     Barbeiro,
     BarbeiroServico,
     Bloqueio,
     Cliente,
+    Cobranca,
     ConversaWhatsapp,
     Custo,
     HorarioTrabalho,
@@ -28,6 +32,9 @@ from tenant.telefone import normalizar
 from tenant.tipos import PALETA_PADRAO
 
 from .convite import gerar_convite
+from .mensalidade import operacoes
+from .mensalidade.datas import dia_de_vencimento_para, mes_seguinte
+from .mensalidade.situacao import hoje_em_sao_paulo
 from .whatsapp_instancias import (
     apagar_instancia,
     desligar_na_evolution,
@@ -64,6 +71,23 @@ def listar_com_contagem() -> list[dict]:
             }
         )
     return resultado
+
+
+def _criar_assinatura(barbearia) -> None:
+    """Sem valor padrao configurado, a barbearia nasce isenta (nada trava).
+    Com valor, o primeiro mes e' gratis: paga_ate cai no vencimento do mes
+    seguinte. Na transacao e no alias da criacao, para nao sobrar barbearia
+    sem assinatura nem assinatura sem barbearia."""
+    hoje = hoje_em_sao_paulo(timezone.now())
+    dia = dia_de_vencimento_para(hoje)
+    valor = settings.MENSALIDADE_VALOR_PADRAO_CENTAVOS
+    Assinatura.objects.using("admin").create(
+        barbearia_id=barbearia.id,
+        valor_centavos=valor,
+        dia_de_vencimento=dia,
+        paga_ate=mes_seguinte(hoje, dia) if valor else hoje,
+        isenta=not valor,
+    )
 
 
 def criar(dados: dict) -> dict:
@@ -125,6 +149,7 @@ def criar(dados: dict) -> dict:
             tipo=tipo_negocio,
             paleta=paleta,
         )
+        _criar_assinatura(barbearia)
         with connections["admin"].cursor() as cur:
             cur.execute(
                 "SELECT set_config('app.barbearia_id', %s, true)", [str(barbearia.id)]
@@ -217,6 +242,11 @@ def atualizar_ativo(barbearia_id: str, ativo: bool) -> bool:
         return False
 
     Barbearia.objects.using("admin").filter(id=barbearia_id).update(ativo=ativo)
+    if not ativo:
+        # O Pix aberto da mensalidade deixa de valer (avisado ou nao): ao
+        # reativar, a barbearia comeca de uma cobranca nova, e o centavo
+        # dela nao fica preso na chave enquanto ela esta desligada.
+        operacoes.cancelar_aberta(barbearia.id)
 
     if barbearia.plano == PlanoBarbearia.COM_ZAP:
         if ativo:
@@ -300,6 +330,8 @@ def reemitir_convite(barbearia_id: str) -> dict:
 ORDEM_DE_APAGAR = (
     Custo,
     ListaDoDiaEnviada,
+    Cobranca,
+    Assinatura,
     ConversaWhatsapp,
     MensagemNaoEnviada,
     WhatsappInstancia,
@@ -319,7 +351,10 @@ def o_que_sai_com(barbearia_id) -> list[tuple[type, int]]:
     do admin do Django esta presa a barbearia escolhida no seletor, que pode
     ser outra, e ali estas linhas nem apareceriam."""
     with com_barbearia_admin(barbearia_id):
-        return [(m, m.objects.using("admin").count()) for m in ORDEM_DE_APAGAR]
+        return [
+            (m, m.objects.using("admin").filter(barbearia_id=barbearia_id).count())
+            for m in ORDEM_DE_APAGAR
+        ]
 
 
 def apagar_barbearia(barbearia_id) -> None:
@@ -334,7 +369,9 @@ def apagar_barbearia(barbearia_id) -> None:
             WhatsappInstancia.objects.using("admin").values_list("nome", flat=True).first()
         )
         for modelo in ORDEM_DE_APAGAR:
-            modelo.objects.using("admin").all().delete()
+            # O filtro por barbearia NAO e' redundante: Assinatura e Cobranca
+            # ficam fora do RLS, e sem ele o `all()` apagaria as de todas.
+            modelo.objects.using("admin").filter(barbearia_id=barbearia_id).delete()
         Barbearia.objects.using("admin").filter(id=barbearia_id).delete()
 
     if instancia:

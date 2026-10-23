@@ -202,6 +202,9 @@ class CrivoPainelMiddleware:
     """
 
     PREFIXOS = ("/painel", "/api/painel")
+    # So' a API trava pela mensalidade: `/painel` e' a pagina do Next, que
+    # nem passa por aqui quando o front esta na frente.
+    PREFIXO_DA_API = "/api/painel"
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -210,9 +213,50 @@ class CrivoPainelMiddleware:
         if request.path.startswith(self.PREFIXOS):
             from app.services.sessao import da_requisicao
 
-            if da_requisicao(request) is None:
+            sessao = da_requisicao(request)
+            if sessao is None:
                 return nao_autorizado()
+            if (
+                request.path.startswith(self.PREFIXO_DA_API)
+                and not _livre_no_bloqueio(request.path)
+                and _bloqueada_pela_mensalidade(sessao["bid"])
+            ):
+                return JsonResponse(
+                    {
+                        "erro": "O painel está bloqueado pela mensalidade.",
+                        "code": "mensalidade_bloqueada",
+                    },
+                    status=402,
+                )
         return self.get_response(request)
+
+
+# O que o painel bloqueado ainda alcanca: so' a tela da mensalidade, para o
+# dono poder pagar. `auth/eu` e `auth/logout` nem passam pelo crivo (estao fora
+# de `/api/painel`) e o site publico de agendamento tambem nao. A etapa 2
+# (Pix no agendamento) vai acrescentar rotas aqui; cada prefixo vale para ele
+# mesmo e para as sub-rotas, nunca para vizinhos de nome parecido.
+ROTAS_LIVRES_NO_BLOQUEIO = ("/api/painel/mensalidade",)
+
+
+def _livre_no_bloqueio(caminho: str) -> bool:
+    return any(
+        caminho == prefixo or caminho.startswith(prefixo + "/")
+        for prefixo in ROTAS_LIVRES_NO_BLOQUEIO
+    )
+
+
+def _bloqueada_pela_mensalidade(barbearia_id) -> bool:
+    """Uma consulta a mais por pedido, sem cache: destravar tem que valer no
+    pedido seguinte ao "confirmei o Pix". DESATIVADA nao entra: barbearia
+    desativada nem resolve como tenant, o 404 vem antes."""
+    from django.utils import timezone
+
+    from app.services.mensalidade import operacoes
+    from app.services.mensalidade.situacao import Situacao
+
+    leitura = operacoes.leitura(barbearia_id, agora=timezone.now(), using="default")
+    return leitura.situacao == Situacao.BLOQUEADA
 
 
 def nao_autorizado() -> JsonResponse:

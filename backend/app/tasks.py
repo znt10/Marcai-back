@@ -5,6 +5,7 @@ from celery import shared_task
 
 from app.services.bot import processar as processar_mensagem_do_bot
 from app.services.lembrete import enviar_pendentes
+from app.services.mensalidade.avisos import enviar_do_dia as enviar_avisos_da_mensalidade
 from app.services.lista_do_dia import enviar as enviar_lista_do_dia
 from app.services.lista_do_dia import refazer as refazer_lista_do_dia
 from app.services.whatsapp import estado_da_instancia
@@ -160,3 +161,11 @@ def tratar_mensagem(barbearia_id: str, numero: str, texto: str, mensagem_id: str
             barbearia_id, mensagem_id,
         )
         raise
+
+
+@shared_task
+def avisos_da_mensalidade() -> int:
+    """Todo dia as 09:00 de Sao Paulo: avisa o dono que a mensalidade esta
+    vencendo, vence hoje ou bloqueou o painel. Cada aviso sai uma vez por
+    `paga_ate`. Devolve quantos saiu."""
+    return enviar_avisos_da_mensalidade(agora=datetime.now(timezone.utc))

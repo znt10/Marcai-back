@@ -7,6 +7,13 @@ from .views.admin_barbearias import (
     AdminBarbeariaDetalheView,
     AdminBarbeariasView,
 )
+from .views.admin_mensalidades import (
+    AdminCobrancaConfirmarView,
+    AdminCobrancaRecusarView,
+    AdminMensalidadeDetalheView,
+    AdminMensalidadeRegistrarView,
+    AdminMensalidadesView,
+)
 from .views.admin_whatsapp_central import AdminWhatsappCentralView
 from .views.agenda_painel import AgendaPainelView
 from .views.agendamentos import (
@@ -55,6 +62,7 @@ from .views.interno import WhatsappEventoView
 from .views.resumo import ResumoView
 from .views.custos import CustoDetalheView, CustosView
 from .views.servicos import ServicosView
+from .views.mensalidade_painel import MensalidadeJaPagueiView, MensalidadePainelView
 from .views.servicos_painel import ServicoPainelDetalheView, ServicosPainelView
 from .views.whatsapp_painel import (
     WhatsappBotView,
@@ -195,6 +203,14 @@ urlpatterns = [
     ),
     # Fatia 4, bloco 4 — agenda, quadro do dia, conflitos, agendamentos e a
     # frase de horario da barbearia.
+    # A unica sub-arvore do painel que responde com a barbearia bloqueada
+    # (ROTAS_LIVRES_NO_BLOQUEIO, em tenant/middleware.py).
+    path("painel/mensalidade", MensalidadePainelView.as_view(), name="painel-mensalidade"),
+    path(
+        "painel/mensalidade/ja-paguei",
+        MensalidadeJaPagueiView.as_view(),
+        name="painel-mensalidade-ja-paguei",
+    ),
     path("painel/agenda", AgendaPainelView.as_view(), name="painel-agenda"),
     path("painel/dia", DiaView.as_view(), name="painel-dia"),
     path("painel/conflitos", ConflitosView.as_view(), name="painel-conflitos"),
@@ -251,6 +267,27 @@ urlpatterns = [
         "admin/barbearias/<id:id>/convite",
         AdminBarbeariaConviteView.as_view(),
         name="admin-barbearias-convite",
+    ),
+    path("admin/mensalidades", AdminMensalidadesView.as_view(), name="admin-mensalidades"),
+    path(
+        "admin/mensalidades/<id:id>",
+        AdminMensalidadeDetalheView.as_view(),
+        name="admin-mensalidades-detalhe",
+    ),
+    path(
+        "admin/mensalidades/<id:id>/registrar",
+        AdminMensalidadeRegistrarView.as_view(),
+        name="admin-mensalidades-registrar",
+    ),
+    path(
+        "admin/cobrancas/<id:id>/confirmar",
+        AdminCobrancaConfirmarView.as_view(),
+        name="admin-cobrancas-confirmar",
+    ),
+    path(
+        "admin/cobrancas/<id:id>/recusar",
+        AdminCobrancaRecusarView.as_view(),
+        name="admin-cobrancas-recusar",
     ),
     path(
         "admin/whatsapp-central",

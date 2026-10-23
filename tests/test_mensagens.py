@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -277,3 +277,63 @@ def test_msg_link_nova_senha():
         "*Marcaí*\nPra criar uma senha nova, abre: https://marcai.app/conta/nova-senha?t=abc\n"
         "O link vale por 30 minutos. Se não foi você, é só ignorar."
     )
+
+
+# --- mensalidade ---
+
+def test_msg_mensalidade_vencendo_diz_valor_data_e_onde_pagar():
+    from app.services.mensagens import msg_mensalidade_vencendo
+
+    texto = msg_mensalidade_vencendo("Brutus", 4990, date(2026, 10, 10), 3)
+    assert "Brutus" in texto
+    assert "R$ 49,90" in texto
+    assert "10/10" in texto
+    assert "3 dias" in texto
+    assert "painel do Marcaí" in texto
+
+
+def test_msg_mensalidade_vencendo_um_dia_fica_no_singular():
+    from app.services.mensagens import msg_mensalidade_vencendo
+
+    assert "1 dia" in msg_mensalidade_vencendo("Brutus", 4990, date(2026, 10, 10), 1)
+    assert "1 dias" not in msg_mensalidade_vencendo("Brutus", 4990, date(2026, 10, 10), 1)
+
+
+def test_msg_mensalidade_vence_hoje():
+    from app.services.mensagens import msg_mensalidade_vence_hoje
+
+    texto = msg_mensalidade_vence_hoje("Brutus", 10000)
+    assert "Brutus" in texto and "hoje" in texto and "R$ 100,00" in texto
+    assert "painel do Marcaí" in texto
+
+
+def test_msg_mensalidade_bloqueada_diz_que_o_site_continua():
+    from app.services.mensagens import msg_mensalidade_bloqueada
+
+    texto = msg_mensalidade_bloqueada("Brutus")
+    assert "Brutus" in texto
+    assert "site" in texto and "painel" in texto
+    assert "continua" in texto
+
+
+def test_msg_mensalidade_confirmada_traz_a_nova_data():
+    from app.services.mensagens import msg_mensalidade_confirmada
+
+    texto = msg_mensalidade_confirmada("Brutus", date(2026, 11, 10))
+    assert "Brutus" in texto and "10/11" in texto
+
+
+def test_msg_mensalidade_recusada_manda_conferir_no_painel():
+    from app.services.mensagens import msg_mensalidade_recusada
+
+    texto = msg_mensalidade_recusada("Brutus")
+    assert "Brutus" in texto and "painel do Marcaí" in texto
+
+
+def test_msg_mensalidade_ja_paguei_leva_o_link_do_admin(settings):
+    from app.services.mensagens import msg_mensalidade_ja_paguei
+
+    settings.DOMINIO_BASE = "marcai.app"
+    texto = msg_mensalidade_ja_paguei("Brutus", 4990, "Zé")
+    assert "Brutus" in texto and "R$ 49,90" in texto and "Zé" in texto
+    assert "https://admin.marcai.app/mensalidades" in texto

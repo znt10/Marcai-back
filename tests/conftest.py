@@ -94,6 +94,7 @@ def limpar_banco(request):
                 "tenant_barbeiroservico, tenant_servico, tenant_barbeiro, "
                 "tenant_whatsappinstancia, tenant_mensagemnaoenviada, "
                 "tenant_listadodiaenviada, tenant_conversawhatsapp, "
+                "tenant_cobranca, tenant_assinatura, "
                 "tenant_codigoconta, tenant_contacliente, tenant_custo, "
                 "tenant_barbearia RESTART IDENTITY CASCADE"
             )
@@ -128,7 +129,9 @@ def cenario():
     `uuid` de verdade e os dois funcionam — UUIDField converte a string na
     entrada. Fica como esta porque a fatia 1 nao mexe em teste que ja passa.
     """
-    from tenant.models import Barbearia, Barbeiro
+    import datetime
+
+    from tenant.models import Assinatura, Barbearia, Barbeiro
 
     dados = {}
     for slug, nome in (("brutus", "Brutus"), ("dontony", "Dom Tony")):
@@ -146,6 +149,11 @@ def cenario():
             whatsapp_contato="11999998888",
             ativo=True,
             criado_em="2026-08-11T12:00:00Z",
+        )
+        # Isenta: nenhum teste antigo pode esbarrar na trava da mensalidade.
+        Assinatura.objects.using("owner").create(
+            barbearia_id=b.id, valor_centavos=0, dia_de_vencimento=1,
+            paga_ate=datetime.date(2026, 8, 11), isenta=True,
         )
         Barbeiro.objects.using("owner").create(
             id=str(uuid.uuid4()),
@@ -168,3 +176,4 @@ def refazer_enfileirado():
 
     with patch("app.services.lista_do_dia._enfileirar_refazer") as enfileirar:
         yield enfileirar
+
