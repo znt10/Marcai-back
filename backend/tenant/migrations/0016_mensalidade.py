@@ -54,7 +54,7 @@ def isentar_existentes(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    dependencies = [("tenant", "0012_cliente_bloqueado")]
+    dependencies = [("tenant", "0015_estetica_manicure_maquiagem")]
 
     operations = [
         migrations.CreateModel(
