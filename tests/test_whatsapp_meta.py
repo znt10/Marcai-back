@@ -118,6 +118,16 @@ def test_achatar_corta_o_que_passa_do_limite():
 # -------------------------------------------- o que a Meta nao tem
 
 
+def test_numero_existe_continua_pela_evolution_quando_ela_esta_configurada(monkeypatch):
+    monkeypatch.setenv("EVOLUTION_API_URL", "http://evolution:8080")
+    monkeypatch.setenv("EVOLUTION_INSTANCE", "Antigo")
+    barbearia = Mock(plano=whatsapp.PlanoBarbearia.COM_ZAP)
+    resposta = _resposta(True, [{"exists": False}])
+    with patch.object(whatsapp.requests, "post", return_value=resposta) as post:
+        assert whatsapp.numero_existe(barbearia, "83988982852", "1.2.3.4") == "nao_existe"
+    assert "/chat/whatsappNumbers/Antigo" in post.call_args.args[0]
+
+
 def test_apagar_e_numero_existe_nao_vao_a_lugar_nenhum():
     barbearia = Mock(plano=whatsapp.PlanoBarbearia.COM_ZAP)
     with patch.object(whatsapp.requests, "post") as post, patch.object(whatsapp.requests, "delete") as delete:

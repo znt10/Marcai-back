@@ -305,10 +305,10 @@ def numero_existe(barbearia, whatsapp_digitos: str, ip: str) -> str:
     if barbearia.plano != PlanoBarbearia.COM_ZAP:
         return "indeterminado"
 
-    # A Cloud API nao tem consulta de "esse numero tem WhatsApp".
-    if whatsapp_meta.ligado():
-        return "indeterminado"
-
+    # A Cloud API nao tem consulta de "esse numero tem WhatsApp". Com a Meta
+    # ligada, a pergunta continua pela Evolution SE ela estiver configurada:
+    # o numero antigo fica la' so' para consultar, sem mandar nada. Sem
+    # Evolution, cai no `indeterminado` abaixo e deixa passar.
     cfg = _config()
     if not cfg["url"] or not cfg["instancia"]:
         return "indeterminado"
