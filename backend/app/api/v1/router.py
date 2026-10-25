@@ -10,6 +10,8 @@ from .views.admin_barbearias import (
 from .views.admin_mensalidades import (
     AdminCobrancaConfirmarView,
     AdminCobrancaRecusarView,
+    AdminCobrancaRemoverView,
+    AdminMensalidadeHistoricoView,
     AdminMensalidadeDetalheView,
     AdminMensalidadeRegistrarView,
     AdminMensalidadesView,
@@ -288,6 +290,16 @@ urlpatterns = [
         "admin/cobrancas/<id:id>/recusar",
         AdminCobrancaRecusarView.as_view(),
         name="admin-cobrancas-recusar",
+    ),
+    path(
+        "admin/cobrancas/<id:id>/remover",
+        AdminCobrancaRemoverView.as_view(),
+        name="admin-cobrancas-remover",
+    ),
+    path(
+        "admin/mensalidades/<id:id>/historico",
+        AdminMensalidadeHistoricoView.as_view(),
+        name="admin-mensalidades-historico",
     ),
     path(
         "admin/whatsapp-central",

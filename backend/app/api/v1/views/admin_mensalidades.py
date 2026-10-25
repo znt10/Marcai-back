@@ -124,3 +124,27 @@ class AdminCobrancaRecusarView(_DecisaoView):
     """POST /api/admin/cobrancas/<id>/recusar"""
 
     decidir = staticmethod(servico.recusar)
+
+
+class AdminMensalidadeHistoricoView(ExigeAdmin, APIView):
+    """GET /api/admin/mensalidades/<id>/historico — os pagamentos da barbearia."""
+
+    def get(self, request, id):
+        corpo = servico.historico(id) if id is not None else None
+        if corpo is None:
+            return Response(NAO_ENCONTRADA, status=404)
+        return Response(corpo)
+
+
+class AdminCobrancaRemoverView(ExigeAdmin, APIView):
+    """POST /api/admin/cobrancas/<id>/remover — tira um pagamento do historico.
+    O `paga_ate` nao muda; devolve o historico ja' sem ele."""
+
+    def post(self, request, id):
+        try:
+            if id is None:
+                raise RecusaDaMensalidade("Este não é um pagamento do histórico.")
+            barbearia_id = servico.remover_pagamento(id)
+        except RecusaDaMensalidade as e:
+            return _erro(e.mensagem)
+        return Response(servico.historico(barbearia_id))
