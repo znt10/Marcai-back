@@ -48,6 +48,16 @@ x-django: &django
     EVOLUTION_API_URL: http://evolution:8080
     EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?}
     EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-Marcai}
+    # API oficial da Meta. Vazias = tudo pela Evolution, como antes
+    # (ver `.env.example`).
+    WHATSAPP_PROVEDOR: ${WHATSAPP_PROVEDOR:-}
+    META_WHATSAPP_TOKEN: ${META_WHATSAPP_TOKEN:-}
+    META_WHATSAPP_NUMERO_ID: ${META_WHATSAPP_NUMERO_ID:-}
+    META_WHATSAPP_TEMPLATE: ${META_WHATSAPP_TEMPLATE:-}
+    META_WHATSAPP_TEMPLATE_IDIOMA: ${META_WHATSAPP_TEMPLATE_IDIOMA:-pt_BR}
+    META_GRAPH_VERSAO: ${META_GRAPH_VERSAO:-v21.0}
+    META_WEBHOOK_TOKEN: ${META_WEBHOOK_TOKEN:-}
+    META_APP_SECRET: ${META_APP_SECRET:-}
     # O par do webhook por barbearia. A Evolution bate de volta no Django pela
     # rede interna, com `Host: admin.${DOMINIO_BASE}` — o mesmo truque do cron.
     # O segredo leva `:?` porque vazio NEGA TUDO: subir sem ele nao quebraria

@@ -58,6 +58,7 @@ class ClienteMiddleware:
 
     VERBOS_QUE_ESCREVEM = {"POST", "PATCH", "PUT", "DELETE"}
     HEADER = "HTTP_X_BRUTUS_CLIENTE"
+    WEBHOOK_DA_META = "/api/interno/whatsapp/meta"
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -69,6 +70,11 @@ class ClienteMiddleware:
         # arranjo da API — cross-origin e same-site ao mesmo tempo, onde o
         # SameSite=Lax nao protege nada e so' o preflight obrigatorio protege.
         if request.path.startswith(AdminDjangoMiddleware.PREFIXO):
+            return self.get_response(request)
+        # O webhook da Meta vem de um servidor, nao de navegador: nao ha
+        # preflight a forcar, e a Meta nao sabe mandar este header. Quem
+        # barra estranho la' e' a assinatura do App Secret.
+        if request.path == self.WEBHOOK_DA_META:
             return self.get_response(request)
         if request.method in self.VERBOS_QUE_ESCREVEM and self.HEADER not in request.META:
             return JsonResponse({"erro": "pedido sem cliente"}, status=403)

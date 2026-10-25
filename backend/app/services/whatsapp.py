@@ -14,6 +14,8 @@ from tenant.config import (
 from tenant.models import MensagemNaoEnviada, PlanoBarbearia
 from tenant.rls import com_barbearia
 
+from . import whatsapp_meta
+
 logger = logging.getLogger(__name__)
 
 _HORA_MS = 3_600_000
@@ -109,7 +111,7 @@ def enviar_ao_cliente(
         return False
 
     cfg = _config()
-    if not cfg["url"]:
+    if not cfg["url"] and not whatsapp_meta.ligado():
         logger.info("[whatsapp] sem EVOLUTION_API_URL: %s %s", whatsapp_digitos, mensagem)
         return False
 
@@ -134,7 +136,7 @@ def enviar_pelo_central(whatsapp_digitos: str, mensagem: str) -> bool:
     False e diz ao cliente que nao deu pra mandar.
     """
     cfg = _config()
-    if not cfg["url"]:
+    if not cfg["url"] and not whatsapp_meta.ligado():
         logger.info("[whatsapp] sem EVOLUTION_API_URL: %s %s", whatsapp_digitos, mensagem)
         return True
     return _enviar_aceita(cfg["instancia"], whatsapp_digitos, mensagem) is not None
@@ -178,7 +180,15 @@ def _enviar_aceita(
     avisos rodam dentro do pedido HTTP de alguem, e nao podem esperar).
 
     Devolve o que a Evolution aceitou (`Aceita`), ou None quando nao saiu.
+
+    Com `WHATSAPP_PROVEDOR=meta` sai pela API oficial (`whatsapp_meta.py`):
+    sem "digitando" e sem jid — a Meta nao apaga mensagem, entao nao ha o que
+    guardar para isso.
     """
+    if whatsapp_meta.ligado():
+        mensagem_id = whatsapp_meta.enviar(whatsapp_digitos, mensagem)
+        return Aceita(mensagem_id, None) if mensagem_id else None
+
     cfg = _config()
     if not cfg["url"]:
         logger.info("[whatsapp] sem EVOLUTION_API_URL: %s %s", whatsapp_digitos, mensagem)
@@ -242,7 +252,12 @@ def apagar_para_todos(jid: str | None, mensagem_id: str | None) -> bool:
 
     Premissa medida na Task 12 do plano: ha relato de a 2.3.7 nao apagar
     (evolution-api#592).
+
+    Pela Meta devolve False sempre: a Cloud API nao apaga mensagem enviada.
+    A lista refeita chega como mensagem nova, sem a velha sumir.
     """
+    if whatsapp_meta.ligado():
+        return False
     cfg = _config()
     if not cfg["url"] or not jid or not mensagem_id:
         return False
@@ -288,6 +303,10 @@ def numero_existe(barbearia, whatsapp_digitos: str, ip: str) -> str:
     do ar cai no mesmo `indeterminado` de sempre — deixa passar.
     """
     if barbearia.plano != PlanoBarbearia.COM_ZAP:
+        return "indeterminado"
+
+    # A Cloud API nao tem consulta de "esse numero tem WhatsApp".
+    if whatsapp_meta.ligado():
         return "indeterminado"
 
     cfg = _config()
@@ -350,6 +369,8 @@ def estado_da_instancia() -> str:
     acesso a chave arriscaria adivinhar uma forma que o shell nunca precisou
     conhecer.
     """
+    if whatsapp_meta.ligado():
+        return whatsapp_meta.estado()
     cfg = _config()
     if not cfg["url"]:
         return "sem-configuracao"

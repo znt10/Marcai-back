@@ -58,7 +58,7 @@ from .views.equipe import (
 from .views.foto import FotoView
 from .views.expediente import ExpedienteView
 from .views.horarios import DiasComVagaView, HorariosView
-from .views.interno import WhatsappEventoView
+from .views.interno import WhatsappEventoView, WhatsappMetaView
 from .views.resumo import ResumoView
 from .views.custos import CustoDetalheView, CustosView
 from .views.servicos import ServicosView
@@ -318,5 +318,12 @@ urlpatterns = [
         "interno/whatsapp/evento",
         WhatsappEventoView.as_view(),
         name="interno-whatsapp-evento",
+    ),
+    # A Meta chama de FORA, pelo rewrite do front no host do admin; a
+    # credencial e' a assinatura do App Secret, conferida na view.
+    path(
+        "interno/whatsapp/meta",
+        WhatsappMetaView.as_view(),
+        name="interno-whatsapp-meta",
     ),
 ]

@@ -12,7 +12,7 @@ import requests
 
 from tenant.models import EstadoInstancia
 
-from . import whatsapp
+from . import whatsapp, whatsapp_meta
 from .whatsapp_eventos import _numero_do_jid
 from .whatsapp_instancias import TIMEOUT_CRIACAO_S, consultar_dono, consultar_estado, pedir_qr
 
@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 
 def ver_central() -> dict:
+    if whatsapp_meta.ligado():
+        return _ver_pela_meta()
     cfg = whatsapp._config()
     if not cfg["url"] or not cfg["instancia"]:
         return {"configurado": False, "conectado": False, "numero": None, "qrBase64": None}
@@ -36,6 +38,20 @@ def ver_central() -> dict:
     if estado == EstadoInstancia.PENDENTE:
         _criar(cfg, nome)
     return {"configurado": True, "conectado": False, "numero": None, "qrBase64": pedir_qr(nome)}
+
+
+def _ver_pela_meta() -> dict:
+    """Pela API oficial nao ha QR: o numero se verifica uma vez no WhatsApp
+    Manager. A tela so' mostra se esta de pe e qual numero e'."""
+    if not whatsapp_meta.configurado():
+        return {"configurado": False, "conectado": False, "numero": None, "qrBase64": None}
+    dados = whatsapp_meta.dados_do_numero() or {}
+    return {
+        "configurado": True,
+        "conectado": whatsapp_meta.estado() == "open",
+        "numero": dados.get("display_phone_number"),
+        "qrBase64": None,
+    }
 
 
 def _criar(cfg: dict, nome: str) -> None:
