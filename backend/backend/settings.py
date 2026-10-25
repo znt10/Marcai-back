@@ -296,6 +296,13 @@ INFINITEPAY_WEBHOOK_SEGREDO = os.environ.get("INFINITEPAY_WEBHOOK_SEGREDO", "")
 # e' avisado; o aviso continua aparecendo na tela Plataforma.
 MENSALIDADE_WHATSAPP_AVISO = os.environ.get("MENSALIDADE_WHATSAPP_AVISO", "")
 
+# O CRM pessoal (github.com/znt10/CRM): cada mensalidade paga vira uma linha
+# la'. A URL ja' leva o projeto, ex.
+# https://crm.exemplo.com/api/webhooks/recebimento?project=marcai. Vazios =
+# nada sai; ver `app/services/crm.py`.
+CRM_WEBHOOK_URL = os.environ.get("CRM_WEBHOOK_URL", "")
+CRM_WEBHOOK_SEGREDO = os.environ.get("CRM_WEBHOOK_SEGREDO", "")
+
 CELERY_BROKER_URL = os.environ.get("REDIS_URL", "redis://redis:6379/1")
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_TIMEZONE = "America/Sao_Paulo"

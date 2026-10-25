@@ -181,3 +181,22 @@ def conferir_pagamentos_infinitepay() -> dict:
     from app.services.mensalidade.infinitepay_retorno import conferir_pendentes
 
     return conferir_pendentes()
+
+
+@shared_task(
+    bind=True, max_retries=8, retry_backoff=60, retry_backoff_max=3600, retry_jitter=True,
+)
+def avisar_crm(self, cobranca_id: str, acao: str) -> None:
+    """Manda ao CRM pessoal a mensalidade paga (ou tirada do historico).
+    Agendada depois do commit por `crm.avisar_depois_do_commit`. Com o CRM
+    fora, tenta de novo por umas horas e desiste so' no log: o Marcai nao
+    depende dele para nada."""
+    from app.services.crm import ErroDoCrm, enviar
+
+    try:
+        enviar(cobranca_id, acao)
+    except ErroDoCrm as e:
+        if self.request.retries >= self.max_retries:
+            logger.error("[crm] desistiu do aviso (cobranca=%s, acao=%s): %s", cobranca_id, acao, e)
+            return
+        raise self.retry(exc=e, countdown=min(3600, 60 * 2 ** self.request.retries))

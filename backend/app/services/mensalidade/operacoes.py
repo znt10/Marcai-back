@@ -16,7 +16,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.db import IntegrityError, transaction
 
-from app.services import infinitepay, mensagens
+from app.services import crm, infinitepay, mensagens
 from app.services.infinitepay import ErroDaInfinitePay
 from app.services.whatsapp import enviar_a_equipe
 from tenant.models import (
@@ -409,6 +409,7 @@ def confirmar(cobranca_id, *, agora, como=ComoFoiPaga.MANUAL):
             assinatura.barbearia_id,
             lambda nome: mensagens.msg_mensalidade_confirmada(nome, novo),
         )
+        crm.avisar_depois_do_commit(cobranca.id, crm.PAGO)
         return cobranca
 
 
@@ -478,4 +479,5 @@ def registrar_manual(barbearia_id, *, pago_em=None, valor_centavos, observacao="
         assinatura.paga_ate = paga_ate
         assinatura.dia_de_vencimento = dia
         assinatura.save(using=ALIAS, update_fields=["paga_ate", "dia_de_vencimento"])
+        crm.avisar_depois_do_commit(cobranca.id, crm.PAGO)
         return cobranca

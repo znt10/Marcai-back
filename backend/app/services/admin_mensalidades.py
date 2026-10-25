@@ -23,6 +23,7 @@ from tenant.models import (
 )
 from tenant.rls import com_barbearia_admin
 
+from . import crm
 from .mensalidade import operacoes
 from .mensalidade.datas import dia_de_vencimento_para, mes_seguinte
 from .mensalidade.situacao import Situacao, hoje_em_sao_paulo, ler_situacao
@@ -274,4 +275,5 @@ def remover_pagamento(cobranca_id, *, agora=None):
             raise operacoes.RecusaDaMensalidade("Este pagamento já foi removido.")
         cobranca.removida_em = agora
         cobranca.save(using=ALIAS, update_fields=["removida_em"])
+        crm.avisar_depois_do_commit(cobranca.id, crm.REMOVIDO)
         return cobranca.barbearia_id
