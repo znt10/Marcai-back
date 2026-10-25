@@ -94,6 +94,8 @@ def _post(client, url, corpo=None):
     ("post", f"/api/admin/mensalidades/{uuid.uuid4()}/registrar"),
     ("post", f"/api/admin/cobrancas/{uuid.uuid4()}/confirmar"),
     ("post", f"/api/admin/cobrancas/{uuid.uuid4()}/recusar"),
+    ("get", f"/api/admin/mensalidades/{uuid.uuid4()}/historico"),
+    ("post", f"/api/admin/cobrancas/{uuid.uuid4()}/remover"),
 ])
 def test_sem_cookie_da_401(client, metodo, url):
     r = getattr(client, metodo)(url, headers={**CABECALHO, "host": HOST})
@@ -500,3 +502,103 @@ def test_desativar_a_barbearia_cancela_a_cobranca_aberta(client):
     c = _aberta(b.id, informada_em=timezone.now())
     assert atualizar_ativo(str(b.id), False)
     assert _status(c) == "CANCELADA"
+
+
+# ------------------------------------------------------------------ historico
+
+
+def _paga(bid, *, como, paga_em, valor=10000, status="PAGA", **extra):
+    from tenant.models import Cobranca
+
+    return Cobranca.objects.using("admin").create(
+        barbearia_id=bid, motivo="MENSALIDADE", chave_pix=f"h:{uuid.uuid4()}",
+        valor_base_centavos=valor, valor_centavos=valor, copia_e_cola="",
+        status=status, como_foi_paga=como, paga_em=paga_em,
+        paga_ate_depois=date(2026, 11, 10), **extra,
+    )
+
+
+def _historico(client, bid):
+    return _get(client, f"/api/admin/mensalidades/{bid}/historico")
+
+
+def test_historico_lista_os_pagamentos_do_mais_novo_ao_mais_velho(client):
+    from datetime import datetime, timezone as fuso
+
+    _logar_admin(client)
+    b = _nova("hist", paga_ate=hoje())
+    velho = _paga(b.id, como="MANUAL", paga_em=datetime(2026, 8, 10, 15, 0, tzinfo=fuso.utc))
+    meio = _paga(b.id, como="REGISTRO", paga_em=datetime(2026, 9, 10, 15, 0, tzinfo=fuso.utc),
+                 observacao="dinheiro")
+    novo = _paga(b.id, como="INFINITEPAY", paga_em=datetime(2026, 10, 10, 15, 30, tzinfo=fuso.utc),
+                 valor=4990)
+    _aberta(b.id)
+    _paga(b.id, como="MANUAL", paga_em=datetime(2026, 7, 1, tzinfo=fuso.utc), status="CANCELADA")
+
+    r = _historico(client, b.id)
+    assert r.status_code == 200
+    corpo = r.json()
+    assert corpo["barbearia"] == {"id": str(b.id), "nome": "Hist", "tipo": b.tipo}
+    assert [p["id"] for p in corpo["pagamentos"]] == [str(novo.id), str(meio.id), str(velho.id)]
+    p = corpo["pagamentos"][0]
+    assert p["como"] == "INFINITEPAY" and p["valorCentavos"] == 4990
+    assert p["pagaEm"].startswith("2026-10-10T15:30")
+    assert p["registradaEm"] and p["pagaAteDepois"] == "2026-11-10"
+    assert corpo["pagamentos"][1]["observacao"] == "dinheiro"
+
+
+def test_historico_diz_quem_avisou(client):
+    from datetime import datetime, timezone as fuso
+
+    from tenant.models import Barbeiro
+
+    _logar_admin(client)
+    b = _nova("histav", paga_ate=hoje())
+    zeca = Barbeiro.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=b.id, nome="Zeca", whatsapp="11988880001",
+        papel="DONO", ativo=True,
+    )
+    _paga(b.id, como="MANUAL", paga_em=datetime(2026, 10, 10, tzinfo=fuso.utc),
+          informada_em=datetime(2026, 10, 9, tzinfo=fuso.utc), informada_por_id=zeca.id)
+    assert _historico(client, b.id).json()["pagamentos"][0]["avisadoPor"] == "Zeca"
+
+
+def test_historico_de_barbearia_inexistente_da_404(client):
+    _logar_admin(client)
+    assert _historico(client, uuid.uuid4()).status_code == 404
+
+
+def test_remover_tira_do_historico_e_da_ultima_paga_sem_mexer_no_paga_ate(client):
+    from datetime import datetime, timezone as fuso
+
+    _logar_admin(client)
+    b = _nova("histrm", paga_ate=date(2026, 11, 10))
+    fica = _paga(b.id, como="MANUAL", paga_em=datetime(2026, 9, 10, tzinfo=fuso.utc))
+    sai = _paga(b.id, como="REGISTRO", paga_em=datetime(2026, 10, 10, tzinfo=fuso.utc))
+
+    r = _post(client, f"/api/admin/cobrancas/{sai.id}/remover")
+    assert r.status_code == 200
+    assert [p["id"] for p in r.json()["pagamentos"]] == [str(fica.id)]
+    assert _assinatura(b.id).paga_ate == date(2026, 11, 10)
+    linha = next(x for x in _get(client).json()["barbearias"] if x["barbeariaId"] == str(b.id))
+    assert linha["ultimaPaga"]["como"] == "MANUAL"
+
+
+def test_remover_duas_vezes_da_400(client):
+    from datetime import datetime, timezone as fuso
+
+    _logar_admin(client)
+    b = _nova("histrm2", paga_ate=hoje())
+    c = _paga(b.id, como="MANUAL", paga_em=datetime(2026, 10, 10, tzinfo=fuso.utc))
+    assert _post(client, f"/api/admin/cobrancas/{c.id}/remover").status_code == 200
+    r = _post(client, f"/api/admin/cobrancas/{c.id}/remover")
+    assert r.status_code == 400 and r.json()["erro"] == "Este pagamento já foi removido."
+
+
+def test_remover_aberta_ou_inexistente_da_400(client):
+    _logar_admin(client)
+    b = _nova("histrm3", paga_ate=hoje())
+    aberta = _aberta(b.id)
+    assert _post(client, f"/api/admin/cobrancas/{aberta.id}/remover").status_code == 400
+    assert _status(aberta) == "ABERTA"
+    assert _post(client, f"/api/admin/cobrancas/{uuid.uuid4()}/remover").status_code == 400

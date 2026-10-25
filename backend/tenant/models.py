@@ -818,6 +818,10 @@ class Cobranca(models.Model):
     link_pagamento = models.TextField(blank=True, default="")
     ip_transacao = models.TextField(blank=True, default="")
     ip_fatura = models.TextField(blank=True, default="")
+    # Pagamento tirado do historico pelo admin. A linha fica (um clique errado
+    # nao perde nada); so' some da tela e do "ultima paga". O `paga_ate` da
+    # assinatura nao volta: corrigir a data e' outro botao.
+    removida_em = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
