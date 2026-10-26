@@ -94,6 +94,32 @@ def test_instancia_velha_da_barbearia_nao_desvia_o_cliente(cenario):
     assert _instancia_usada(post) == "central-do-marcai"
 
 
+def test_pausa_do_cliente_nao_manda_e_nao_registra(cenario, monkeypatch):
+    """Enquanto a API oficial nao libera, o cliente nao recebe nada — e o
+    painel nao ganha "nao enviada", porque nada caiu. A equipe segue."""
+    monkeypatch.setattr(whatsapp, "CLIENTE_SEM_WHATSAPP", True)
+    b = _com_zap(cenario["brutus"])
+    with patch.object(whatsapp.requests, "post", return_value=_ok()) as post:
+        assert _para_o_cliente(b) is False
+        assert post.call_count == 0
+        whatsapp.enviar_a_equipe_da(b.id, "11966665555", "Lista de hoje")
+    assert _instancia_usada(post) == "central-do-marcai"
+    assert _nao_enviadas(b) == []
+
+
+def test_pausa_do_cliente_nao_manda_e_nao_registra(cenario, monkeypatch):
+    """Enquanto a API oficial nao libera, o cliente nao recebe nada — e o
+    painel nao ganha "nao enviada", porque nada caiu. A equipe segue."""
+    monkeypatch.setattr(whatsapp, "CLIENTE_SEM_WHATSAPP", True)
+    b = _com_zap(cenario["brutus"])
+    with patch.object(whatsapp.requests, "post", return_value=_ok()) as post:
+        assert _para_o_cliente(b) is False
+        assert post.call_count == 0
+        whatsapp.enviar_a_equipe_da(b.id, "11966665555", "Lista de hoje")
+    assert _instancia_usada(post) == "central-do-marcai"
+    assert _nao_enviadas(b) == []
+
+
 def test_sem_zap_nao_manda_e_nao_registra(cenario):
     b = cenario["brutus"]
     with patch.object(whatsapp.requests, "post") as post:

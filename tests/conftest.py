@@ -106,6 +106,16 @@ def limpar_banco(request):
 
 
 @pytest.fixture(autouse=True)
+def cliente_com_whatsapp(monkeypatch):
+    """A pausa do WhatsApp ao cliente (`whatsapp.CLIENTE_SEM_WHATSAPP`) e'
+    temporaria; a suite continua provando o envio de sempre. Quem testa a
+    pausa liga de novo no proprio caso."""
+    from app.services import whatsapp
+
+    monkeypatch.setattr(whatsapp, "CLIENTE_SEM_WHATSAPP", False)
+
+
+@pytest.fixture(autouse=True)
 def limpar_cache():
     """Os contadores do limite de login e da trava do admin moram no cache.
     Sem limpar, as tentativas de um teste contam no seguinte, e o 11o login
