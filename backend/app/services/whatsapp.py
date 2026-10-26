@@ -98,6 +98,13 @@ def enviar_a_equipe_aceita(whatsapp_digitos: str, mensagem: str) -> Aceita | Non
 CLIENTE_SEM_WHATSAPP = True
 
 
+def cliente_sem_whatsapp() -> bool:
+    """A pausa vale so' pela Evolution: com `WHATSAPP_PROVEDOR=meta` o
+    cliente volta a receber sem outro deploy. O site pergunta isto pela
+    `GET /api/barbearia` (`whatsappAoCliente`) para tirar o aviso junto."""
+    return CLIENTE_SEM_WHATSAPP and not whatsapp_meta.ligado()
+
+
 def enviar_ao_cliente(
     barbearia, whatsapp_digitos: str, mensagem: str, *, tipo: str, cliente_nome: str,
 ) -> bool:
@@ -120,7 +127,7 @@ def enviar_ao_cliente(
 
     # Nao registra `MensagemNaoEnviada`: nada caiu, a pausa e' de proposito,
     # e o painel encheria de aviso falso.
-    if CLIENTE_SEM_WHATSAPP:
+    if cliente_sem_whatsapp():
         return False
 
     cfg = _config()

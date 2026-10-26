@@ -4,6 +4,7 @@ from rest_framework.views import APIView
 
 from app.api.v1.mixins import ExigeTenant
 from app.services.barbearia import ler
+from app.services.whatsapp import cliente_sem_whatsapp
 
 
 class BarbeariaView(ExigeTenant, APIView):
@@ -39,5 +40,7 @@ class BarbeariaView(ExigeTenant, APIView):
                 "whatsappContato": dados["whatsapp_contato"],
                 "tipo": dados["tipo"],
                 "paleta": dados["paleta"],
+                # O site diz "a confirmacao chega no WhatsApp" so' quando chega.
+                "whatsappAoCliente": not cliente_sem_whatsapp(),
             }
         )

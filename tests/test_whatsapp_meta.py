@@ -196,3 +196,10 @@ def test_webhook_com_assinatura_errada_da_401(client):
         headers={"host": HOST, "x-hub-signature-256": "sha256=errada"},
     )
     assert r.status_code == 401
+
+
+def test_meta_ligada_tira_a_pausa_do_cliente(monkeypatch):
+    monkeypatch.setattr(whatsapp, "CLIENTE_SEM_WHATSAPP", True)
+    assert whatsapp.cliente_sem_whatsapp() is False
+    monkeypatch.setenv("WHATSAPP_PROVEDOR", "")
+    assert whatsapp.cliente_sem_whatsapp() is True
