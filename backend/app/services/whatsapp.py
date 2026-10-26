@@ -90,6 +90,14 @@ def enviar_a_equipe_aceita(whatsapp_digitos: str, mensagem: str) -> Aceita | Non
     return _enviar_aceita(_config()["instancia"], whatsapp_digitos, mensagem)
 
 
+# Temporario, enquanto a API oficial da Meta nao libera (spec 2026-10-26): o
+# numero antigo da Evolution so' manda a lista e os avisos da EQUIPE, e o
+# cliente nao recebe confirmacao nem lembrete. Menos mensagem saindo e' menos
+# risco de outra restricao. O site avisa o cliente (Marcai-front, mesma branch).
+# Voltar a False junto com o texto do front.
+CLIENTE_SEM_WHATSAPP = True
+
+
 def enviar_ao_cliente(
     barbearia, whatsapp_digitos: str, mensagem: str, *, tipo: str, cliente_nome: str,
 ) -> bool:
@@ -108,6 +116,11 @@ def enviar_ao_cliente(
     clientes param juntos ate a troca.
     """
     if barbearia.plano != PlanoBarbearia.COM_ZAP:
+        return False
+
+    # Nao registra `MensagemNaoEnviada`: nada caiu, a pausa e' de proposito,
+    # e o painel encheria de aviso falso.
+    if CLIENTE_SEM_WHATSAPP:
         return False
 
     cfg = _config()
