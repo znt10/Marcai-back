@@ -255,7 +255,7 @@ def test_registrar_manual_nao_manda_nada(b):
 
     with patch(ENVIO_OPS) as envio:
         operacoes.registrar_manual(
-            b, paga_ate=date(2026, 12, 10), valor_centavos=4990, agora=momento(2026, 10, 11),
+            b, valor_centavos=4990, agora=momento(2026, 10, 11),
         )
     envio.assert_not_called()
 

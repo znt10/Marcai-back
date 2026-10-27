@@ -62,6 +62,7 @@ def test_isenta_volta_nulos(client, cenario):
     assert r.json() == {
         "situacao": "ISENTA", "dias": None, "bloqueiaEm": None, "pagaAte": None,
         "valorCentavos": None, "souDono": True, "pix": None, "pixErro": None,
+        "pagamentoAutomatico": False,
     }
 
 
@@ -192,3 +193,56 @@ def test_em_dia_nao_tem_pix(client, cenario):
     corpo = _ver(client).json()
     assert corpo["situacao"] == "EM_DIA"
     assert corpo["pix"] is None and corpo["pixErro"] is None
+
+
+def test_portao_manda_o_link_e_diz_que_e_automatico(client, cenario, monkeypatch):
+    from app.services import infinitepay
+
+    monkeypatch.setattr(infinitepay, "criar_link", lambda **kw: "https://checkout.infinitepay.io/x")
+    b = cenario["brutus"]
+    _logar(client, _barbeiro(b.id), b.id)
+    _paga_ate(b.id, 2)
+
+    with override_settings(INFINITEPAY_HANDLE="marcai", INFINITEPAY_WEBHOOK_SEGREDO="s3gredo"):
+        pix = _ver(client).json()["pix"]
+    assert pix == {
+        "copiaECola": None, "qrSvg": None, "valorCentavos": 10000,
+        "link": "https://checkout.infinitepay.io/x", "automatico": True,
+    }
+
+
+def test_portao_sem_infinitepay_manda_link_nulo(client, cenario):
+    b = cenario["brutus"]
+    _logar(client, _barbeiro(b.id), b.id)
+    _paga_ate(b.id, 2)
+
+    pix = _ver(client).json()["pix"]
+    assert pix["link"] is None and pix["automatico"] is False
+
+
+def test_com_infinitepay_o_portao_diz_que_e_automatico_mesmo_sem_link(client, cenario, monkeypatch):
+    from app.services import infinitepay
+    from app.services.infinitepay import ErroDaInfinitePay
+
+    def falha(**kw):
+        raise ErroDaInfinitePay("fora")
+
+    monkeypatch.setattr(infinitepay, "criar_link", falha)
+    b = cenario["brutus"]
+    _logar(client, _barbeiro(b.id), b.id)
+    _paga_ate(b.id, 2)
+
+    with override_settings(INFINITEPAY_HANDLE="marcai", INFINITEPAY_WEBHOOK_SEGREDO="s3gredo"):
+        corpo = _ver(client).json()
+        ja_paguei = _ja_paguei(client)
+    assert corpo["pix"] is None
+    assert corpo["pagamentoAutomatico"] is True
+    assert ja_paguei.status_code == 400
+    assert ja_paguei.json()["erro"] == "A confirmação deste pagamento é automática."
+
+
+def test_sem_infinitepay_o_portao_nao_e_automatico(client, cenario):
+    b = cenario["brutus"]
+    _logar(client, _barbeiro(b.id), b.id)
+    _paga_ate(b.id, 2)
+    assert _ver(client).json()["pagamentoAutomatico"] is False

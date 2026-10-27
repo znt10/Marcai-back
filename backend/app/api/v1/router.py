@@ -10,6 +10,8 @@ from .views.admin_barbearias import (
 from .views.admin_mensalidades import (
     AdminCobrancaConfirmarView,
     AdminCobrancaRecusarView,
+    AdminCobrancaRemoverView,
+    AdminMensalidadeHistoricoView,
     AdminMensalidadeDetalheView,
     AdminMensalidadeRegistrarView,
     AdminMensalidadesView,
@@ -58,7 +60,7 @@ from .views.equipe import (
 from .views.foto import FotoView
 from .views.expediente import ExpedienteView
 from .views.horarios import DiasComVagaView, HorariosView
-from .views.interno import WhatsappEventoView
+from .views.interno import InfinitePayRetornoView, WhatsappEventoView
 from .views.resumo import ResumoView
 from .views.custos import CustoDetalheView, CustosView
 from .views.servicos import ServicosView
@@ -290,6 +292,16 @@ urlpatterns = [
         name="admin-cobrancas-recusar",
     ),
     path(
+        "admin/cobrancas/<id:id>/remover",
+        AdminCobrancaRemoverView.as_view(),
+        name="admin-cobrancas-remover",
+    ),
+    path(
+        "admin/mensalidades/<id:id>/historico",
+        AdminMensalidadeHistoricoView.as_view(),
+        name="admin-mensalidades-historico",
+    ),
+    path(
         "admin/whatsapp-central",
         AdminWhatsappCentralView.as_view(),
         name="admin-whatsapp-central",
@@ -318,5 +330,12 @@ urlpatterns = [
         "interno/whatsapp/evento",
         WhatsappEventoView.as_view(),
         name="interno-whatsapp-evento",
+    ),
+    # O aviso da InfinitePay. Este vem de FORA, pelo subdominio da barbearia;
+    # a credencial e' o `t` da query string, conferido na view.
+    path(
+        "interno/infinitepay",
+        InfinitePayRetornoView.as_view(),
+        name="interno-infinitepay",
     ),
 ]

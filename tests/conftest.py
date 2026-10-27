@@ -116,6 +116,20 @@ def cliente_com_whatsapp(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _sem_infinitepay():
+    """A InfinitePay desligada por padrao: o `.env` de quem roda pode ter a
+    InfiniteTag de verdade, e a suite nao pode mudar de comportamento (nem
+    falar com a InfinitePay) por isso. Quem testa a InfinitePay liga com
+    `override_settings` dentro do proprio teste."""
+    from django.test import override_settings
+
+    with override_settings(
+        INFINITEPAY_HANDLE="", INFINITEPAY_API_KEY="", INFINITEPAY_WEBHOOK_SEGREDO="",
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def limpar_cache():
     """Os contadores do limite de login e da trava do admin moram no cache.
     Sem limpar, as tentativas de um teste contam no seguinte, e o 11o login

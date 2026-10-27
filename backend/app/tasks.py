@@ -169,3 +169,15 @@ def avisos_da_mensalidade() -> int:
     vencendo, vence hoje ou bloqueou o painel. Cada aviso sai uma vez por
     `paga_ate`. Devolve quantos saiu."""
     return enviar_avisos_da_mensalidade(agora=datetime.now(timezone.utc))
+
+
+@shared_task
+def conferir_pagamentos_infinitepay() -> dict:
+    """A cada 10 min: pergunta de novo a InfinitePay pelas cobrancas abertas
+    que ja receberam aviso, para o caso do aviso ter chegado antes do
+    pagamento cair ou do `payment_check` ter falhado na hora. Cobranca que
+    nunca recebeu aviso nao entra (sem `transaction_nsu` e `slug` nao ha o
+    que perguntar) e fica para o "registrar na mao" do admin."""
+    from app.services.mensalidade.infinitepay_retorno import conferir_pendentes
+
+    return conferir_pendentes()

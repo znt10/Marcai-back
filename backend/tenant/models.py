@@ -133,6 +133,7 @@ class ComoFoiPaga(models.TextChoices):
     MANUAL = "MANUAL"
     VIGIA = "VIGIA"
     REGISTRO = "REGISTRO"
+    INFINITEPAY = "INFINITEPAY"
 
 
 class Barbearia(models.Model):
@@ -811,6 +812,16 @@ class Cobranca(models.Model):
     como_foi_paga = models.TextField(choices=ComoFoiPaga.choices, null=True, blank=True)
     paga_ate_depois = models.DateField(null=True, blank=True)
     observacao = models.TextField(blank=True, default="")
+    # So' a cobranca da InfinitePay usa: o link do checkout que a tela abre e
+    # o `transaction_nsu` e o `invoice_slug` do primeiro aviso, sem os quais o
+    # `payment_check` nao tem como conferir depois.
+    link_pagamento = models.TextField(blank=True, default="")
+    ip_transacao = models.TextField(blank=True, default="")
+    ip_fatura = models.TextField(blank=True, default="")
+    # Pagamento tirado do historico pelo admin. A linha fica (um clique errado
+    # nao perde nada); so' some da tela e do "ultima paga". O `paga_ate` da
+    # assinatura nao volta: corrigir a data e' outro botao.
+    removida_em = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
