@@ -106,6 +106,16 @@ def limpar_banco(request):
 
 
 @pytest.fixture(autouse=True)
+def cliente_com_whatsapp(monkeypatch):
+    """A pausa do WhatsApp ao cliente (`whatsapp.CLIENTE_SEM_WHATSAPP`) e'
+    temporaria; a suite continua provando o envio de sempre. Quem testa a
+    pausa liga de novo no proprio caso."""
+    from app.services import whatsapp
+
+    monkeypatch.setattr(whatsapp, "CLIENTE_SEM_WHATSAPP", False)
+
+
+@pytest.fixture(autouse=True)
 def _sem_infinitepay():
     """A InfinitePay desligada por padrao: o `.env` de quem roda pode ter a
     InfiniteTag de verdade, e a suite nao pode mudar de comportamento (nem

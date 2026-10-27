@@ -296,7 +296,9 @@ def test_registrar_avanca_um_mes_e_devolve_a_linha(client):
     assert corpo["ultimaPaga"]["como"] == "REGISTRO"
     assert corpo["ultimaPaga"]["valorCentavos"] == 9000
     # sem `pagoEm`, pagou hoje
-    assert corpo["ultimaPaga"]["pagaEm"][:10] == hoje().isoformat()
+    from datetime import datetime
+    pago = datetime.fromisoformat(corpo["ultimaPaga"]["pagaEm"])
+    assert hoje_em_sao_paulo(pago) == hoje()
     assert _status(c) == "CANCELADA"
 
 
@@ -309,7 +311,8 @@ def test_registrar_guarda_o_dia_que_pagou(client):
         "valorCentavos": 10000, "pagoEm": ontem.isoformat(),
     })
     assert r.status_code == 200
-    assert r.json()["ultimaPaga"]["pagaEm"][:10] == ontem.isoformat()
+    from datetime import datetime
+    assert hoje_em_sao_paulo(datetime.fromisoformat(r.json()["ultimaPaga"]["pagaEm"])) == ontem
 
 
 def test_registrar_bloqueada_conta_o_mes_do_dia_que_pagou(client):
