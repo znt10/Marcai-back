@@ -564,8 +564,8 @@ def test_paleta_escolhida_ganha_da_sugerida(client):
     assert _guardada(r.json()).paleta == "PRETO_ROSE"
 
 
-@pytest.mark.parametrize("tipo", ["MANICURE", "MAQUIAGEM"])
-def test_manicure_e_maquiagem_nascem_branco_e_rose(client, tipo):
+@pytest.mark.parametrize("tipo", ["MANICURE", "MAQUIAGEM", "CABELEIREIRA"])
+def test_manicure_maquiagem_e_cabeleireira_nascem_rose(client, tipo):
     r, _ = _criar(client, tipo=tipo)
     assert r.status_code == 201
     assert (_guardada(r.json()).tipo, _guardada(r.json()).paleta) == (tipo, "BRANCO_ROSE")

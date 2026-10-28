@@ -61,6 +61,7 @@ class TipoNegocio(models.TextChoices):
     SOBRANCELHA = "SOBRANCELHA", "Estética"
     MANICURE = "MANICURE", "Manicure"
     MAQUIAGEM = "MAQUIAGEM", "Maquiagem"
+    CABELEIREIRA = "CABELEIREIRA", "Cabeleireira"
     OUTRO = "OUTRO"
 
 
@@ -71,7 +72,9 @@ class Paleta(models.TextChoices):
     (`src/lib/paletas.ts`): o back so' guarda qual."""
 
     PRETO_AMARELO = "PRETO_AMARELO", "Preto e amarelo"
-    BRANCO_ROSE = "BRANCO_ROSE", "Branco e rosé"
+    # O valor fica BRANCO_ROSE; o nome virou Rose em 28/10/2026, quando a
+    # paleta ganhou o fundo nude do kit.
+    BRANCO_ROSE = "BRANCO_ROSE", "Rosé"
     PRETO_ROSE = "PRETO_ROSE", "Preto e rosé"
     BRANCO_DOURADO = "BRANCO_DOURADO", "Branco e dourado"
 
