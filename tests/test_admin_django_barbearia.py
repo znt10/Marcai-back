@@ -264,7 +264,7 @@ def test_a_lista_mostra_o_tipo_e_filtra_por_ele(client, cenario):
     _entrar(client, b)
 
     tudo = client.get("/admin/django/tenant/barbearia/", headers={"host": HOST}).content.decode()
-    assert "Estética" in tudo and "Branco e rosé" in tudo
+    assert "Estética" in tudo and "Rosé" in tudo
     assert f">{b.slug}<" in tudo
 
     so_sobrancelha = client.get(

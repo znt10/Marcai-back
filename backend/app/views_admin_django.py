@@ -27,6 +27,7 @@ _CATEGORIAS = {
     TipoNegocio.SOBRANCELHA: "Estética",
     TipoNegocio.MANICURE: "Manicure",
     TipoNegocio.MAQUIAGEM: "Maquiagem",
+    TipoNegocio.CABELEIREIRA: "Cabeleireira",
     TipoNegocio.OUTRO: "Outros",
 }
 
