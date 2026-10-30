@@ -113,6 +113,11 @@ def cliente_com_whatsapp(monkeypatch):
     from app.services import whatsapp
 
     monkeypatch.setattr(whatsapp, "CLIENTE_SEM_WHATSAPP", False)
+    # O `.env` de quem desenvolve pode ter a Meta ligada com o token de
+    # verdade: a suite nunca pode mandar mensagem real. Quem testa a Meta
+    # liga de novo no proprio caso, com `requests` falso.
+    for nome in ("WHATSAPP_PROVEDOR", "META_WHATSAPP_TOKEN", "META_WHATSAPP_NUMERO_ID"):
+        monkeypatch.delenv(nome, raising=False)
 
 
 @pytest.fixture(autouse=True)

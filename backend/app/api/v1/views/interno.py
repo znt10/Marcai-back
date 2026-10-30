@@ -4,10 +4,11 @@ import os
 from datetime import datetime, timezone
 
 from django.conf import settings
+from django.http import HttpResponse
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from app.services import infinitepay
+from app.services import infinitepay, whatsapp_meta
 from app.services.infinitepay import ErroDaInfinitePay
 from app.services.mensalidade import infinitepay_retorno
 from app.services.bot_entrada import EVENTO_MENSAGEM, Recebida, ler_mensagem, receber
@@ -143,4 +144,46 @@ class InfinitePayRetornoView(APIView):
         except ErroDaInfinitePay:
             logger.exception("[infinitepay] payment_check falhou (order_nsu=%s)", referencia)
             return Response({"erro": "tente de novo"}, status=400)
+        return Response({"ok": True, "resultado": resultado})
+
+
+class WhatsappMetaView(APIView):
+    """GET/POST /api/interno/whatsapp/meta — o webhook da API oficial.
+
+    Diferente do da Evolution, este vem da INTERNET: a Meta chama
+    `https://admin.<DOMINIO_BASE>/api/interno/whatsapp/meta`, que passa pelo
+    rewrite do front. Sem `x-brutus-cliente` — o `ClienteMiddleware` isenta
+    este caminho — e com a credencial que a Meta sabe mandar:
+
+    - GET: o desafio de quando se cadastra a URL no painel do app. Devolve
+      `hub.challenge` em texto puro se `hub.verify_token` bater com
+      `META_WEBHOOK_TOKEN`.
+    - POST: assinado em `X-Hub-Signature-256` com o App Secret
+      (`META_APP_SECRET`). Assinatura errada e' 401; o resto e' 200, porque a
+      Meta reenvia o que nao foi aceito.
+    """
+
+    throttle_classes = []
+
+    def get(self, request):
+        p = request.query_params
+        if p.get("hub.mode") == "subscribe" and whatsapp_meta.token_de_verificacao_confere(
+            p.get("hub.verify_token", "")
+        ):
+            return HttpResponse(p.get("hub.challenge", ""), content_type="text/plain")
+        return Response({"erro": "não autorizado"}, status=403)
+
+    def post(self, request):
+        # O corpo CRU, antes de `request.data`: a assinatura e' sobre os bytes
+        # exatos que a Meta mandou, e o JSON reserializado nao bate.
+        corpo_cru = request.body
+        if not whatsapp_meta.assinatura_confere(
+            corpo_cru, request.headers.get("x-hub-signature-256", "")
+        ):
+            return Response({"erro": "não autorizado"}, status=401)
+        try:
+            resultado = whatsapp_meta.registrar_evento(request.data)
+        except Exception:  # noqa: BLE001 — 500 aqui viraria reenvio em laco
+            logger.exception("[whatsapp-meta] falha ao ler evento")
+            resultado = "ignorado:erro"
         return Response({"ok": True, "resultado": resultado})

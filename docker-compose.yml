@@ -58,6 +58,16 @@ services:
       EVOLUTION_API_URL: http://evolution:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
       EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-brutus}
+      # API oficial da Meta. Vazias = tudo pela Evolution, como antes
+      # (ver `.env.example`).
+      WHATSAPP_PROVEDOR: ${WHATSAPP_PROVEDOR:-}
+      META_WHATSAPP_TOKEN: ${META_WHATSAPP_TOKEN:-}
+      META_WHATSAPP_NUMERO_ID: ${META_WHATSAPP_NUMERO_ID:-}
+      META_WHATSAPP_TEMPLATE: ${META_WHATSAPP_TEMPLATE:-}
+      META_WHATSAPP_TEMPLATE_IDIOMA: ${META_WHATSAPP_TEMPLATE_IDIOMA:-pt_BR}
+      META_GRAPH_VERSAO: ${META_GRAPH_VERSAO:-v21.0}
+      META_WEBHOOK_TOKEN: ${META_WEBHOOK_TOKEN:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
       # O webhook por barbearia (fatia 1). Em dev o segredo tem default: o
       # ambiente de desenvolvimento ja e fechado, e exigir a variavel aqui
       # quebraria o `up` de quem so quer mexer em agenda. Em producao ele leva
@@ -210,6 +220,16 @@ services:
       EVOLUTION_API_URL: http://evolution:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
       EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-brutus}
+      # API oficial da Meta. Vazias = tudo pela Evolution, como antes
+      # (ver `.env.example`).
+      WHATSAPP_PROVEDOR: ${WHATSAPP_PROVEDOR:-}
+      META_WHATSAPP_TOKEN: ${META_WHATSAPP_TOKEN:-}
+      META_WHATSAPP_NUMERO_ID: ${META_WHATSAPP_NUMERO_ID:-}
+      META_WHATSAPP_TEMPLATE: ${META_WHATSAPP_TEMPLATE:-}
+      META_WHATSAPP_TEMPLATE_IDIOMA: ${META_WHATSAPP_TEMPLATE_IDIOMA:-pt_BR}
+      META_GRAPH_VERSAO: ${META_GRAPH_VERSAO:-v21.0}
+      META_WEBHOOK_TOKEN: ${META_WEBHOOK_TOKEN:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
       # O webhook por barbearia (fatia 1). Em dev o segredo tem default: o
       # ambiente de desenvolvimento ja e fechado, e exigir a variavel aqui
       # quebraria o `up` de quem so quer mexer em agenda. Em producao ele leva
