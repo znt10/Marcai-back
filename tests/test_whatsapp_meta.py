@@ -38,43 +38,46 @@ def _resposta(ok, corpo, status=200):
 
 
 ACEITA = _resposta(True, {"messages": [{"id": "wamid.ABC"}]})
-FORA_DA_JANELA = _resposta(False, {"error": {"code": 131047, "message": "Re-engagement"}}, 400)
 
 
 # ------------------------------------------------------------------- envio
 
 
-def test_texto_aceito_devolve_o_wamid_sem_jid():
+def test_com_template_sai_sempre_pelo_template_com_a_mensagem_achatada():
+    """A Meta aceita texto fora da janela de 24h com 200 e so' falha depois,
+    pelo webhook: tentar o texto primeiro faria a mensagem sumir."""
     with patch.object(whatsapp_meta.requests, "post", return_value=ACEITA) as post:
-        aceita = whatsapp.enviar_a_equipe_aceita("83988982852", "oi")
+        aceita = whatsapp.enviar_a_equipe_aceita("83988982852", "Agenda de hoje:\n09:00 Ana\n\n10:00 Bia")
     assert aceita == whatsapp.Aceita("wamid.ABC", None)
+    assert post.call_count == 1
     corpo = post.call_args.kwargs["json"]
     assert corpo["to"] == "5583988982852"
-    assert corpo["type"] == "text"
+    assert corpo["type"] == "template"
+    assert corpo["template"]["name"] == "marcai_aviso"
+    assert corpo["template"]["language"] == {"code": "pt_BR"}
+    assert corpo["template"]["components"][0]["parameters"][0]["text"] == "Agenda de hoje: · 09:00 Ana · 10:00 Bia"
     assert post.call_args.kwargs["headers"] == {"Authorization": "Bearer token"}
     assert "/1411744118692075/messages" in post.call_args.args[0]
 
 
-def test_fora_da_janela_manda_de_novo_pelo_template_com_a_mensagem_achatada():
-    with patch.object(whatsapp_meta.requests, "post", side_effect=[FORA_DA_JANELA, ACEITA]) as post:
-        mensagem_id = whatsapp_meta.enviar("83988982852", "Agenda de hoje:\n09:00 Ana\n\n10:00 Bia")
-    assert mensagem_id == "wamid.ABC"
-    template = post.call_args_list[1].kwargs["json"]["template"]
-    assert template["name"] == "marcai_aviso"
-    assert template["language"] == {"code": "pt_BR"}
-    assert template["components"][0]["parameters"][0]["text"] == "Agenda de hoje: · 09:00 Ana · 10:00 Bia"
-
-
-def test_fora_da_janela_sem_template_nao_sai_e_loga(monkeypatch, caplog):
+def test_sem_template_sai_como_texto(monkeypatch):
     monkeypatch.setenv("META_WHATSAPP_TEMPLATE", "")
-    with patch.object(whatsapp_meta.requests, "post", return_value=FORA_DA_JANELA) as post:
+    with patch.object(whatsapp_meta.requests, "post", return_value=ACEITA) as post:
+        assert whatsapp_meta.enviar("83988982852", "oi\nlinha 2") == "wamid.ABC"
+    corpo = post.call_args.kwargs["json"]
+    assert corpo["type"] == "text"
+    assert corpo["text"]["body"] == "oi\nlinha 2"
+
+
+def test_template_recusado_nao_sai_e_loga(caplog):
+    nao_aprovado = _resposta(False, {"error": {"code": 132001}}, 400)
+    with patch.object(whatsapp_meta.requests, "post", return_value=nao_aprovado):
         with caplog.at_level("ERROR"):
             assert whatsapp_meta.enviar("83988982852", "oi") is None
-    assert post.call_count == 1
-    assert "131047" in caplog.text
+    assert "132001" in caplog.text
 
 
-def test_outro_erro_nao_tenta_template(caplog):
+def test_erro_de_token_nao_sai_e_loga(caplog):
     token_vencido = _resposta(False, {"error": {"code": 190}}, 401)
     with patch.object(whatsapp_meta.requests, "post", return_value=token_vencido) as post:
         with caplog.at_level("ERROR"):

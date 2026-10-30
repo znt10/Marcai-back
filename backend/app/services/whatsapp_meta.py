@@ -8,9 +8,12 @@ da conta nao sabem qual dos dois mandou.
 **A regra que a Meta impoe e a Evolution nao:** texto livre so' sai para
 quem falou com o numero nas ultimas 24 horas. Fora disso — que e' o caso de
 quase tudo que o Marcai manda (lembrete, lista do dia, aviso de horario) — a
-Meta recusa com o erro 131047 e so' aceita um TEMPLATE aprovado. Por isso o
-envio tenta o texto e, recusado por janela, manda de novo pelo template
-generico `META_WHATSAPP_TEMPLATE`, com a mensagem inteira no `{{1}}`.
+Meta so' entrega um TEMPLATE aprovado. E ela NAO recusa o texto na hora:
+aceita com 200 e so' depois avisa a falha (131047) pelo webhook — medido em
+30/10, quando nenhum outro numero recebia. Por isso, com
+`META_WHATSAPP_TEMPLATE` configurado, TUDO sai pelo template, com a mensagem
+inteira no `{{1}}`. Sem template, sai como texto (so' chega a quem falou com
+o numero nas ultimas 24h).
 
 Nunca levanta, mesmo contrato do `_enviar_aceita`: falha de WhatsApp nao
 derruba agendamento.
@@ -25,10 +28,6 @@ import re
 import requests
 
 logger = logging.getLogger(__name__)
-
-# "Re-engagement message": fora da janela de 24h. O unico erro que o template
-# resolve — qualquer outro (token, numero, pagamento) falharia igual nele.
-ERRO_FORA_DA_JANELA = 131047
 
 # Limite do corpo de um template: 1024 caracteres no total, e o texto fixo
 # do template come uma parte. Folga para um cabecalho curto.
@@ -85,13 +84,6 @@ def _post(cfg: dict, corpo: dict) -> requests.Response | None:
         return None
 
 
-def _codigo_do_erro(r: requests.Response) -> int | None:
-    try:
-        return int(((r.json() or {}).get("error") or {}).get("code"))
-    except (ValueError, TypeError, AttributeError):
-        return None
-
-
 def _id_aceito(r: requests.Response) -> str | None:
     try:
         mensagens = (r.json() or {}).get("messages") or []
@@ -112,19 +104,9 @@ def enviar(whatsapp_digitos: str, mensagem: str) -> str | None:
         return None
 
     destino = f"55{whatsapp_digitos}"
-    r = _post(cfg, {
-        "messaging_product": "whatsapp",
-        "to": destino,
-        "type": "text",
-        "text": {"body": mensagem, "preview_url": False},
-    })
-    if r is None:
-        return None
-    if r.ok:
-        return _registrar_aceita(r, whatsapp_digitos, "texto")
-
-    if _codigo_do_erro(r) == ERRO_FORA_DA_JANELA and cfg["template"]:
-        r = _post(cfg, {
+    if cfg["template"]:
+        como = "template"
+        corpo = {
             "messaging_product": "whatsapp",
             "to": destino,
             "type": "template",
@@ -136,11 +118,20 @@ def enviar(whatsapp_digitos: str, mensagem: str) -> str | None:
                     "parameters": [{"type": "text", "text": achatar(mensagem)}],
                 }],
             },
-        })
-        if r is None:
-            return None
-        if r.ok:
-            return _registrar_aceita(r, whatsapp_digitos, "template")
+        }
+    else:
+        como = "texto"
+        corpo = {
+            "messaging_product": "whatsapp",
+            "to": destino,
+            "type": "text",
+            "text": {"body": mensagem, "preview_url": False},
+        }
+    r = _post(cfg, corpo)
+    if r is None:
+        return None
+    if r.ok:
+        return _registrar_aceita(r, whatsapp_digitos, como)
 
     # O corpo e' onde a Meta diz o motivo: token vencido (190), numero nao
     # registrado (133010), sem cartao (131042), template nao aprovado (132001).
