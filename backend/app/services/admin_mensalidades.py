@@ -64,7 +64,8 @@ def _linhas(agora, barbearia_id=None):
     }
     # A mais recente primeiro; a primeira de cada barbearia e' a ultima paga.
     ultimas = {}
-    for c in mensalidades.filter(status=StatusCobranca.PAGA).order_by("-paga_em", "-criada_em"):
+    pagas = mensalidades.filter(status=StatusCobranca.PAGA, removida_em=None)
+    for c in pagas.order_by("-paga_em", "-criada_em"):
         ultimas.setdefault(c.barbearia_id, c)
 
     linhas = []
@@ -194,13 +195,13 @@ def atualizar(barbearia_id, campos, *, agora=None):
     return True
 
 
-def registrar(barbearia_id, *, paga_ate, valor_centavos, observacao, agora=None):
+def registrar(barbearia_id, *, pago_em=None, valor_centavos, observacao, agora=None):
     """Levanta `RecusaDaMensalidade`; False se a barbearia nao existe."""
     agora = agora or timezone.now()
     if not Barbearia.objects.using(ALIAS).filter(id=barbearia_id).exists():
         return False
     operacoes.registrar_manual(
-        barbearia_id, paga_ate=paga_ate, valor_centavos=valor_centavos,
+        barbearia_id, pago_em=pago_em, valor_centavos=valor_centavos,
         observacao=observacao, agora=agora,
     )
     return True
@@ -217,3 +218,60 @@ def recusar(cobranca_id, *, agora=None):
     agora = agora or timezone.now()
     cobranca = operacoes.recusar(cobranca_id, agora=agora)
     return cobranca.barbearia_id
+
+
+def historico(barbearia_id):
+    """Os pagamentos da mensalidade da barbearia, do mais novo ao mais velho:
+    confirmados, registrados na mao e pagos pela InfinitePay. Aberta,
+    cancelada e removida ficam de fora. None se a barbearia nao existe."""
+    barbearia = (
+        Barbearia.objects.using(ALIAS)
+        .filter(id=barbearia_id).values("id", "nome", "tipo").first()
+    )
+    if barbearia is None:
+        return None
+    pagas = (
+        Cobranca.objects.using(ALIAS)
+        .filter(
+            barbearia_id=barbearia_id, motivo=MotivoCobranca.MENSALIDADE,
+            status=StatusCobranca.PAGA, removida_em=None,
+        )
+        .order_by("-paga_em", "-criada_em")
+    )
+    return {
+        "barbearia": {
+            "id": str(barbearia["id"]), "nome": barbearia["nome"], "tipo": barbearia["tipo"],
+        },
+        "pagamentos": [
+            {
+                "id": str(c.id),
+                "pagaEm": c.paga_em.isoformat() if c.paga_em else None,
+                "registradaEm": c.criada_em.isoformat(),
+                "valorCentavos": c.valor_centavos,
+                "como": c.como_foi_paga,
+                "pagaAteDepois": _data(c.paga_ate_depois),
+                "observacao": c.observacao,
+                "avisadoPor": _nome_de_quem_avisou(barbearia_id, c.informada_por_id),
+            }
+            for c in pagas
+        ],
+    }
+
+
+def remover_pagamento(cobranca_id, *, agora=None):
+    """Tira o pagamento do historico e devolve o id da barbearia. Levanta
+    `RecusaDaMensalidade` para o que nao e' pagamento de mensalidade ou ja'
+    saiu."""
+    agora = agora or timezone.now()
+    with transaction.atomic(using=ALIAS):
+        cobranca = (
+            Cobranca.objects.using(ALIAS).select_for_update()
+            .filter(id=cobranca_id, motivo=MotivoCobranca.MENSALIDADE).first()
+        )
+        if cobranca is None or cobranca.status != StatusCobranca.PAGA:
+            raise operacoes.RecusaDaMensalidade("Este não é um pagamento do histórico.")
+        if cobranca.removida_em is not None:
+            raise operacoes.RecusaDaMensalidade("Este pagamento já foi removido.")
+        cobranca.removida_em = agora
+        cobranca.save(using=ALIAS, update_fields=["removida_em"])
+        return cobranca.barbearia_id

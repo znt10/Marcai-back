@@ -282,6 +282,16 @@ PIX_CHAVE = os.environ.get("PIX_CHAVE", "")
 PIX_NOME_RECEBEDOR = os.environ.get("PIX_NOME_RECEBEDOR", "")
 PIX_CIDADE = os.environ.get("PIX_CIDADE", "")
 
+# A mensalidade pelo Checkout Integrado da InfinitePay. Com HANDLE (a
+# InfiniteTag, sem o `$`) e SEGREDO preenchidos, cobranca NOVA sai como link
+# da InfinitePay, com o valor redondo e confirmacao sozinha; faltando um, tudo
+# segue no Pix estatico acima. O SEGREDO vai na `webhook_url` (`?t=`), porque
+# o aviso da InfinitePay nao e' assinado. A API_KEY a documentacao (10/2026)
+# nao pede; se um dia pedir, vai no cabecalho `X-Api-Key`.
+INFINITEPAY_HANDLE = os.environ.get("INFINITEPAY_HANDLE", "")
+INFINITEPAY_API_KEY = os.environ.get("INFINITEPAY_API_KEY", "")
+INFINITEPAY_WEBHOOK_SEGREDO = os.environ.get("INFINITEPAY_WEBHOOK_SEGREDO", "")
+
 # Quem recebe o "ja paguei" das barbearias (digitos com DDD). Vazio = ninguem
 # e' avisado; o aviso continua aparecendo na tela Plataforma.
 MENSALIDADE_WHATSAPP_AVISO = os.environ.get("MENSALIDADE_WHATSAPP_AVISO", "")
@@ -315,6 +325,11 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="0,30", hour="5-11"),
     },
     "zelador": {"task": "app.tasks.zelador", "schedule": 3600.0},
+    # Rede de seguranca do aviso da InfinitePay; sem ela configurada, a
+    # varredura nao acha cobranca nenhuma e sai sem chamar nada.
+    "conferir-pagamentos-infinitepay": {
+        "task": "app.tasks.conferir_pagamentos_infinitepay", "schedule": 600.0,
+    },
     # Uma vez por dia, de manha: os avisos da mensalidade sao por dia (faltam
     # 5, vence hoje, bloqueou), nao por hora.
     "avisos-da-mensalidade": {

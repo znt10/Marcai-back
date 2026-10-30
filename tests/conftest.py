@@ -113,6 +113,25 @@ def cliente_com_whatsapp(monkeypatch):
     from app.services import whatsapp
 
     monkeypatch.setattr(whatsapp, "CLIENTE_SEM_WHATSAPP", False)
+    # O `.env` de quem desenvolve pode ter a Meta ligada com o token de
+    # verdade: a suite nunca pode mandar mensagem real. Quem testa a Meta
+    # liga de novo no proprio caso, com `requests` falso.
+    for nome in ("WHATSAPP_PROVEDOR", "META_WHATSAPP_TOKEN", "META_WHATSAPP_NUMERO_ID"):
+        monkeypatch.delenv(nome, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _sem_infinitepay():
+    """A InfinitePay desligada por padrao: o `.env` de quem roda pode ter a
+    InfiniteTag de verdade, e a suite nao pode mudar de comportamento (nem
+    falar com a InfinitePay) por isso. Quem testa a InfinitePay liga com
+    `override_settings` dentro do proprio teste."""
+    from django.test import override_settings
+
+    with override_settings(
+        INFINITEPAY_HANDLE="", INFINITEPAY_API_KEY="", INFINITEPAY_WEBHOOK_SEGREDO="",
+    ):
+        yield
 
 
 @pytest.fixture(autouse=True)

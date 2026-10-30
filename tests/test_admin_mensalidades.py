@@ -94,6 +94,8 @@ def _post(client, url, corpo=None):
     ("post", f"/api/admin/mensalidades/{uuid.uuid4()}/registrar"),
     ("post", f"/api/admin/cobrancas/{uuid.uuid4()}/confirmar"),
     ("post", f"/api/admin/cobrancas/{uuid.uuid4()}/recusar"),
+    ("get", f"/api/admin/mensalidades/{uuid.uuid4()}/historico"),
+    ("post", f"/api/admin/cobrancas/{uuid.uuid4()}/remover"),
 ])
 def test_sem_cookie_da_401(client, metodo, url):
     r = getattr(client, metodo)(url, headers={**CABECALHO, "host": HOST})
@@ -275,29 +277,74 @@ def test_patch_que_nao_muda_valor_nem_isenta_mantem_a_cobranca(client):
 # ------------------------------------------------------------------- registrar
 
 
-def test_registrar_avanca_o_paga_ate_e_devolve_a_linha(client):
+def test_registrar_avanca_um_mes_e_devolve_a_linha(client):
+    from app.services.mensalidade.datas import mes_seguinte
+
     _logar_admin(client)
-    b = _nova("reg", paga_ate=hoje() - timedelta(days=10))
+    vence = hoje() + timedelta(days=2)
+    b = _nova("reg", paga_ate=vence)
+    from tenant.models import Assinatura
+    Assinatura.objects.using("owner").filter(barbearia_id=b.id).update(dia_de_vencimento=vence.day)
     c = _aberta(b.id)
     r = _post(client, f"/api/admin/mensalidades/{b.id}/registrar", {
-        "pagaAte": "2027-01-15", "valorCentavos": 9000, "observacao": " dinheiro ",
+        "valorCentavos": 9000, "observacao": " dinheiro ",
     })
     assert r.status_code == 200
     corpo = r.json()
-    assert corpo["pagaAte"] == "2027-01-15" and corpo["situacao"] == "EM_DIA"
+    assert corpo["pagaAte"] == mes_seguinte(vence, vence.day).isoformat()
+    assert corpo["situacao"] == "EM_DIA"
     assert corpo["ultimaPaga"]["como"] == "REGISTRO"
     assert corpo["ultimaPaga"]["valorCentavos"] == 9000
-    assert _assinatura(b.id).dia_de_vencimento == 15
+    # sem `pagoEm`, pagou hoje
+    from datetime import datetime
+    pago = datetime.fromisoformat(corpo["ultimaPaga"]["pagaEm"])
+    assert hoje_em_sao_paulo(pago) == hoje()
     assert _status(c) == "CANCELADA"
 
 
+def test_registrar_guarda_o_dia_que_pagou(client):
+    _logar_admin(client)
+    vence = hoje() + timedelta(days=2)
+    b = _nova("regdia", paga_ate=vence)
+    ontem = hoje() - timedelta(days=1)
+    r = _post(client, f"/api/admin/mensalidades/{b.id}/registrar", {
+        "valorCentavos": 10000, "pagoEm": ontem.isoformat(),
+    })
+    assert r.status_code == 200
+    from datetime import datetime
+    assert hoje_em_sao_paulo(datetime.fromisoformat(r.json()["ultimaPaga"]["pagaEm"])) == ontem
+
+
+def test_registrar_bloqueada_conta_o_mes_do_dia_que_pagou(client):
+    from app.services.mensalidade.datas import dia_de_vencimento_para, mes_seguinte
+
+    _logar_admin(client)
+    b = _nova("regblq", paga_ate=hoje() - timedelta(days=20))
+    pagou = hoje() - timedelta(days=1)
+    r = _post(client, f"/api/admin/mensalidades/{b.id}/registrar", {
+        "valorCentavos": 10000, "pagoEm": pagou.isoformat(),
+    })
+    assert r.status_code == 200
+    assert r.json()["pagaAte"] == mes_seguinte(pagou, dia_de_vencimento_para(pagou)).isoformat()
+
+
+def test_registrar_com_dia_no_futuro_da_400(client):
+    _logar_admin(client)
+    b = _nova("regfut", paga_ate=date(2026, 1, 10))
+    r = _post(client, f"/api/admin/mensalidades/{b.id}/registrar", {
+        "valorCentavos": 10000, "pagoEm": (hoje() + timedelta(days=1)).isoformat(),
+    })
+    assert r.status_code == 400
+    assert _assinatura(b.id).paga_ate == date(2026, 1, 10)
+
+
 @pytest.mark.parametrize("corpo", [
-    {"valorCentavos": 9000}, {"pagaAte": "2027-01-15"},
-    {"pagaAte": "2027-13-01", "valorCentavos": 9000},
-    {"pagaAte": "2027-01-15", "valorCentavos": 0},
-    {"pagaAte": "2027-01-15", "valorCentavos": "9000"},
-    {"pagaAte": "2027-01-15", "valorCentavos": True},
-    {"pagaAte": "2027-01-15", "valorCentavos": 9000, "observacao": 5},
+    {}, {"pagoEm": "2026-01-05"},
+    {"pagoEm": "2026-13-01", "valorCentavos": 9000},
+    {"valorCentavos": 0},
+    {"valorCentavos": "9000"},
+    {"valorCentavos": True},
+    {"valorCentavos": 9000, "observacao": 5},
 ])
 def test_registrar_com_entrada_ruim_da_400(client, corpo):
     _logar_admin(client)
@@ -310,7 +357,7 @@ def test_registrar_com_entrada_ruim_da_400(client, corpo):
 def test_registrar_em_barbearia_inexistente_da_404(client):
     _logar_admin(client)
     r = _post(client, f"/api/admin/mensalidades/{uuid.uuid4()}/registrar", {
-        "pagaAte": "2027-01-15", "valorCentavos": 9000,
+        "valorCentavos": 9000,
     })
     assert r.status_code == 404
 
@@ -319,7 +366,7 @@ def test_registrar_sem_assinatura_da_400(client):
     _logar_admin(client)
     b = _nova("regsem", paga_ate=None)
     r = _post(client, f"/api/admin/mensalidades/{b.id}/registrar", {
-        "pagaAte": "2027-01-15", "valorCentavos": 9000,
+        "valorCentavos": 9000,
     })
     assert r.status_code == 400
 
@@ -458,3 +505,103 @@ def test_desativar_a_barbearia_cancela_a_cobranca_aberta(client):
     c = _aberta(b.id, informada_em=timezone.now())
     assert atualizar_ativo(str(b.id), False)
     assert _status(c) == "CANCELADA"
+
+
+# ------------------------------------------------------------------ historico
+
+
+def _paga(bid, *, como, paga_em, valor=10000, status="PAGA", **extra):
+    from tenant.models import Cobranca
+
+    return Cobranca.objects.using("admin").create(
+        barbearia_id=bid, motivo="MENSALIDADE", chave_pix=f"h:{uuid.uuid4()}",
+        valor_base_centavos=valor, valor_centavos=valor, copia_e_cola="",
+        status=status, como_foi_paga=como, paga_em=paga_em,
+        paga_ate_depois=date(2026, 11, 10), **extra,
+    )
+
+
+def _historico(client, bid):
+    return _get(client, f"/api/admin/mensalidades/{bid}/historico")
+
+
+def test_historico_lista_os_pagamentos_do_mais_novo_ao_mais_velho(client):
+    from datetime import datetime, timezone as fuso
+
+    _logar_admin(client)
+    b = _nova("hist", paga_ate=hoje())
+    velho = _paga(b.id, como="MANUAL", paga_em=datetime(2026, 8, 10, 15, 0, tzinfo=fuso.utc))
+    meio = _paga(b.id, como="REGISTRO", paga_em=datetime(2026, 9, 10, 15, 0, tzinfo=fuso.utc),
+                 observacao="dinheiro")
+    novo = _paga(b.id, como="INFINITEPAY", paga_em=datetime(2026, 10, 10, 15, 30, tzinfo=fuso.utc),
+                 valor=4990)
+    _aberta(b.id)
+    _paga(b.id, como="MANUAL", paga_em=datetime(2026, 7, 1, tzinfo=fuso.utc), status="CANCELADA")
+
+    r = _historico(client, b.id)
+    assert r.status_code == 200
+    corpo = r.json()
+    assert corpo["barbearia"] == {"id": str(b.id), "nome": "Hist", "tipo": b.tipo}
+    assert [p["id"] for p in corpo["pagamentos"]] == [str(novo.id), str(meio.id), str(velho.id)]
+    p = corpo["pagamentos"][0]
+    assert p["como"] == "INFINITEPAY" and p["valorCentavos"] == 4990
+    assert p["pagaEm"].startswith("2026-10-10T15:30")
+    assert p["registradaEm"] and p["pagaAteDepois"] == "2026-11-10"
+    assert corpo["pagamentos"][1]["observacao"] == "dinheiro"
+
+
+def test_historico_diz_quem_avisou(client):
+    from datetime import datetime, timezone as fuso
+
+    from tenant.models import Barbeiro
+
+    _logar_admin(client)
+    b = _nova("histav", paga_ate=hoje())
+    zeca = Barbeiro.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=b.id, nome="Zeca", whatsapp="11988880001",
+        papel="DONO", ativo=True,
+    )
+    _paga(b.id, como="MANUAL", paga_em=datetime(2026, 10, 10, tzinfo=fuso.utc),
+          informada_em=datetime(2026, 10, 9, tzinfo=fuso.utc), informada_por_id=zeca.id)
+    assert _historico(client, b.id).json()["pagamentos"][0]["avisadoPor"] == "Zeca"
+
+
+def test_historico_de_barbearia_inexistente_da_404(client):
+    _logar_admin(client)
+    assert _historico(client, uuid.uuid4()).status_code == 404
+
+
+def test_remover_tira_do_historico_e_da_ultima_paga_sem_mexer_no_paga_ate(client):
+    from datetime import datetime, timezone as fuso
+
+    _logar_admin(client)
+    b = _nova("histrm", paga_ate=date(2026, 11, 10))
+    fica = _paga(b.id, como="MANUAL", paga_em=datetime(2026, 9, 10, tzinfo=fuso.utc))
+    sai = _paga(b.id, como="REGISTRO", paga_em=datetime(2026, 10, 10, tzinfo=fuso.utc))
+
+    r = _post(client, f"/api/admin/cobrancas/{sai.id}/remover")
+    assert r.status_code == 200
+    assert [p["id"] for p in r.json()["pagamentos"]] == [str(fica.id)]
+    assert _assinatura(b.id).paga_ate == date(2026, 11, 10)
+    linha = next(x for x in _get(client).json()["barbearias"] if x["barbeariaId"] == str(b.id))
+    assert linha["ultimaPaga"]["como"] == "MANUAL"
+
+
+def test_remover_duas_vezes_da_400(client):
+    from datetime import datetime, timezone as fuso
+
+    _logar_admin(client)
+    b = _nova("histrm2", paga_ate=hoje())
+    c = _paga(b.id, como="MANUAL", paga_em=datetime(2026, 10, 10, tzinfo=fuso.utc))
+    assert _post(client, f"/api/admin/cobrancas/{c.id}/remover").status_code == 200
+    r = _post(client, f"/api/admin/cobrancas/{c.id}/remover")
+    assert r.status_code == 400 and r.json()["erro"] == "Este pagamento já foi removido."
+
+
+def test_remover_aberta_ou_inexistente_da_400(client):
+    _logar_admin(client)
+    b = _nova("histrm3", paga_ate=hoje())
+    aberta = _aberta(b.id)
+    assert _post(client, f"/api/admin/cobrancas/{aberta.id}/remover").status_code == 400
+    assert _status(aberta) == "ABERTA"
+    assert _post(client, f"/api/admin/cobrancas/{uuid.uuid4()}/remover").status_code == 400
