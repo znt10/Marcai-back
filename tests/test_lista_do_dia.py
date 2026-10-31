@@ -398,6 +398,20 @@ def test_envio_recusado_mantem_a_linha_anterior(cenario):
     assert ListaDoDiaEnviada.objects.using("owner").get(barbeiro_id=zeca.id).mensagem_id == "ID-ANTIGA"
 
 
+def test_pela_meta_a_lista_refeita_saiu_mesmo_sem_jid(cenario):
+    """A Meta devolve so' o wamid: a lista saiu, nao da para apagar depois,
+    e nao pode virar "nao_saiu" no log."""
+    b = cenario["brutus"]
+    zeca = _barbeiro(b, "Zeca Silva")
+    novo = _agendamento(b, zeca, 15 * 60)
+
+    resultado, apagar, envia = _refazer(b, zeca, novos=[novo], aceita=Aceita("wamid.X", None))
+    assert resultado == "refeita"
+    envia.assert_called_once()
+    apagar.assert_not_called()
+    assert not ListaDoDiaEnviada.objects.using("owner").filter(barbeiro_id=zeca.id).exists()
+
+
 def test_refazer_sem_url_nao_quebra(cenario, monkeypatch):
     """Desenvolvimento, sem Evolution: tudo devolve None/False e nada levanta."""
     monkeypatch.delenv("EVOLUTION_API_URL", raising=False)

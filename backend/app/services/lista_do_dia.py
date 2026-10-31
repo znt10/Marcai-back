@@ -251,9 +251,12 @@ def refazer(
             barbeiro.whatsapp,
             msg_lista_refeita(barbeiro_nome=barbeiro.nome, linhas=linhas, agora=agora),
         )
-        if not _guardar(barbearia_id, barbeiro_id, hoje, aceita):
+        if aceita is None:
             logger.error("[lista-do-dia] lista refeita de %s nao saiu", barbeiro_id)
             return "nao_saiu"
-        if anterior is not None:
+        # Pela Meta a lista SAIU, mas volta sem jid: nao ha como apaga-la
+        # depois (a Cloud API nao apaga mensagem), entao nada se guarda e a
+        # anterior fica no WhatsApp do barbeiro. A de baixo e' a que vale.
+        if _guardar(barbearia_id, barbeiro_id, hoje, aceita) and anterior is not None:
             apagar_para_todos(anterior.remote_jid, anterior.mensagem_id)
         return "refeita"
