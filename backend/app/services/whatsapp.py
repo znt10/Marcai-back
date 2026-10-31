@@ -107,6 +107,7 @@ def cliente_sem_whatsapp() -> bool:
 
 def enviar_ao_cliente(
     barbearia, whatsapp_digitos: str, mensagem: str, *, tipo: str, cliente_nome: str,
+    modelo: tuple[str, list[str]] | None = None,
 ) -> bool:
     """Manda ao cliente pelo numero CENTRAL. Devolve se saiu.
 
@@ -135,7 +136,7 @@ def enviar_ao_cliente(
         logger.info("[whatsapp] sem EVOLUTION_API_URL: %s %s", whatsapp_digitos, mensagem)
         return False
 
-    if _enviar_aceita(cfg["instancia"], whatsapp_digitos, mensagem) is not None:
+    if _enviar_aceita(cfg["instancia"], whatsapp_digitos, mensagem, modelo=modelo) is not None:
         return True
 
     _registrar_nao_enviada(barbearia, tipo, cliente_nome)
@@ -181,6 +182,7 @@ def _registrar_nao_enviada(barbearia, tipo: str, cliente_nome: str) -> None:
 
 def _enviar_aceita(
     instancia: str, whatsapp_digitos: str, mensagem: str, *, digitando_ms: int | None = None,
+    modelo: tuple[str, list[str]] | None = None,
 ) -> Aceita | None:
     """Fire-and-forget. Falha de WhatsApp NUNCA derruba um agendamento (§10.2).
 
@@ -206,7 +208,7 @@ def _enviar_aceita(
     guardar para isso.
     """
     if whatsapp_meta.ligado():
-        mensagem_id = whatsapp_meta.enviar(whatsapp_digitos, mensagem)
+        mensagem_id = whatsapp_meta.enviar(whatsapp_digitos, mensagem, modelo=modelo)
         return Aceita(mensagem_id, None) if mensagem_id else None
 
     cfg = _config()

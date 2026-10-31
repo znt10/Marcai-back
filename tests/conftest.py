@@ -116,7 +116,10 @@ def cliente_com_whatsapp(monkeypatch):
     # O `.env` de quem desenvolve pode ter a Meta ligada com o token de
     # verdade: a suite nunca pode mandar mensagem real. Quem testa a Meta
     # liga de novo no proprio caso, com `requests` falso.
-    for nome in ("WHATSAPP_PROVEDOR", "META_WHATSAPP_TOKEN", "META_WHATSAPP_NUMERO_ID"):
+    for nome in (
+        "WHATSAPP_PROVEDOR", "META_WHATSAPP_TOKEN", "META_WHATSAPP_NUMERO_ID",
+        "META_TEMPLATE_CONFIRMACAO", "META_TEMPLATE_LEMBRETE", "META_TEMPLATE_CANCELAMENTO",
+    ):
         monkeypatch.delenv(nome, raising=False)
 
 

@@ -23,6 +23,7 @@ from app.services.agendamentos import (
 )
 from app.services.clientes_bloqueados import esta_bloqueado, id_do_bloqueado
 from app.services.mensagens import (
+    modelo_do_cliente,
     msg_barbeiro_cancelado,
     msg_barbeiro_novo,
     msg_cancelamento,
@@ -138,6 +139,11 @@ class AgendamentosView(ExigeTenant, APIView):
             ),
             tipo=TipoMensagem.CONFIRMACAO,
             cliente_nome=d["nome"],
+            modelo=modelo_do_cliente(
+                TipoMensagem.CONFIRMACAO, cliente_nome=d["nome"],
+                barbearia_nome=request.barbearia.nome, inicio=criado["inicio"],
+                servico_nome=criado["servico_nome"],
+            ),
         )
         # E o barbeiro, so' o que e' de HOJE: depois que a lista das 06:30
         # saiu, ele recebe a lista inteira refeita, com o horario novo
@@ -199,6 +205,10 @@ def depois_de_cancelar(barbearia: Barbearia, resultado: dict, agora) -> None:
         ),
         tipo=TipoMensagem.CANCELAMENTO,
         cliente_nome=resultado["cliente_nome"],
+        modelo=modelo_do_cliente(
+            TipoMensagem.CANCELAMENTO, cliente_nome=resultado["cliente_nome"],
+            barbearia_nome=barbearia.nome, inicio=resultado["inicio"],
+        ),
     )
     # Mesma regra de marcar: hoje, depois das 06:30, a lista refeita sem o
     # horario que caiu; outro dia, nada.

@@ -14,7 +14,7 @@ from tenant.models import (
 )
 from tenant.rls import com_barbearia
 
-from .mensagens import msg_lembrete
+from .mensagens import modelo_do_cliente, msg_lembrete
 from .whatsapp import enviar_ao_cliente
 
 
@@ -96,6 +96,10 @@ def enviar_pendentes(agora: datetime) -> int:
                 enviar_ao_cliente(
                     b, a.cliente.whatsapp, texto,
                     tipo=TipoMensagem.LEMBRETE, cliente_nome=a.cliente.nome,
+                    modelo=modelo_do_cliente(
+                        TipoMensagem.LEMBRETE, cliente_nome=a.cliente.nome,
+                        barbearia_nome=b.nome, inicio=a.inicio,
+                    ),
                 )
             enviados += 1
 

@@ -49,6 +49,13 @@ def _config() -> dict[str, str]:
     }
 
 
+def _template_do_modelo(chave: str) -> str:
+    """O template proprio de uma mensagem ao cliente, quando configurado:
+    `META_TEMPLATE_CONFIRMACAO`, `META_TEMPLATE_LEMBRETE`,
+    `META_TEMPLATE_CANCELAMENTO`. Vazio = cai no generico."""
+    return os.environ.get(f"META_TEMPLATE_{chave.upper()}", "").strip()
+
+
 def configurado() -> bool:
     cfg = _config()
     return bool(cfg["token"] and cfg["numero_id"])
@@ -92,7 +99,9 @@ def _id_aceito(r: requests.Response) -> str | None:
         return None
 
 
-def enviar(whatsapp_digitos: str, mensagem: str) -> str | None:
+def enviar(
+    whatsapp_digitos: str, mensagem: str, *, modelo: tuple[str, list[str]] | None = None,
+) -> str | None:
     """O `wamid` da mensagem aceita, ou None quando nao saiu.
 
     Aceita, nao entregue — igual a Evolution. Entrega e leitura chegam
@@ -104,7 +113,23 @@ def enviar(whatsapp_digitos: str, mensagem: str) -> str | None:
         return None
 
     destino = f"55{whatsapp_digitos}"
-    if cfg["template"]:
+    proprio = _template_do_modelo(modelo[0]) if modelo else ""
+    if proprio:
+        como = proprio
+        corpo = {
+            "messaging_product": "whatsapp",
+            "to": destino,
+            "type": "template",
+            "template": {
+                "name": proprio,
+                "language": {"code": cfg["idioma"]},
+                "components": [{
+                    "type": "body",
+                    "parameters": [{"type": "text", "text": achatar(c)} for c in modelo[1]],
+                }],
+            },
+        }
+    elif cfg["template"]:
         como = "template"
         corpo = {
             "messaging_product": "whatsapp",
