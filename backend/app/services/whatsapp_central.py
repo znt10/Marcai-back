@@ -49,7 +49,9 @@ def _ver_pela_meta() -> dict:
     return {
         "configurado": True,
         "conectado": whatsapp_meta.estado() == "open",
-        "numero": dados.get("display_phone_number"),
+        # A Meta devolve "+55 83 8898-2852": sem o nono digito e com
+        # espacos. Pelo mesmo caminho do JID vira "83988982852".
+        "numero": _numero_do_jid("".join(c for c in dados.get("display_phone_number") or "" if c.isdigit())),
         "qrBase64": None,
     }
 
