@@ -206,3 +206,13 @@ def test_meta_ligada_tira_a_pausa_do_cliente(monkeypatch):
     assert whatsapp.cliente_sem_whatsapp() is False
     monkeypatch.setenv("WHATSAPP_PROVEDOR", "")
     assert whatsapp.cliente_sem_whatsapp() is True
+
+
+def test_tela_do_admin_mostra_o_numero_da_meta_na_forma_nacional():
+    """A Meta devolve "+55 83 8898-2852" (sem o nono digito); o admin
+    formatava isso como "(+5) 5 83- 8898-2852"."""
+    from app.services import whatsapp_central
+
+    dados = _resposta(True, {"display_phone_number": "+55 83 8898-2852", "code_verification_status": "VERIFIED"})
+    with patch.object(whatsapp_meta.requests, "get", return_value=dados):
+        assert whatsapp_central.ver_central()["numero"] == "83988982852"
