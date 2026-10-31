@@ -489,3 +489,28 @@ def msg_mensalidade_ja_paguei(barbearia_nome: str, valor_centavos: int, quem: st
         f"por {quem}. Confere e confirma:\n"
         f"https://admin.{settings.DOMINIO_BASE}/mensalidades"
     )
+
+
+# ---- Os modelos prontos da Meta (API oficial) ----------------------------
+#
+# Fora da janela de 24h a Meta so' entrega template aprovado. Os tres do
+# cliente sao da Biblioteca de modelos (aprovados mais rapido), com o texto
+# DELES e os campos separados — nao da' para mandar o nosso texto inteiro.
+# A ordem dos campos e' a do template na Biblioteca:
+#   confirmacao (appointment_confirmation_1): nome, lugar, servico, dia, hora
+#   lembrete (appointment_reminder_2):        nome, lugar, dia, hora
+#   cancelamento (appointment_cancellation_1): nome, lugar, dia, hora
+# O link de cancelar nao cabe neles; o botao "Ver detalhes" e' fixo.
+
+
+def modelo_do_cliente(
+    tipo: str, *, cliente_nome: str, barbearia_nome: str, inicio, servico_nome: str | None = None,
+) -> tuple[str, list[str]]:
+    """(chave, campos) para `whatsapp_meta.enviar`. `tipo` e' o TipoMensagem."""
+    nome = (cliente_nome or "").strip().split(" ")[0] or "cliente"
+    dia = formatar_dia_com_semana(inicio)
+    hora = formatar_hora(inicio)
+    chave = tipo.lower()
+    if chave == "confirmacao":
+        return chave, [nome, barbearia_nome, (servico_nome or "").lower(), dia, hora]
+    return chave, [nome, barbearia_nome, dia, hora]

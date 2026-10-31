@@ -11,7 +11,7 @@ from app.services.agendamentos import cancelar as cancelar_agendamento
 from app.services.bloqueios import apagar_bloqueio, criar_bloqueio, folga_sobreposta
 from app.services.conflitos import agendamentos_no_bloqueio
 from app.services.horarios import bloqueio_valido
-from app.services.mensagens import msg_cancelamento_pela_barbearia
+from app.services.mensagens import modelo_do_cliente, msg_cancelamento_pela_barbearia
 from app.services.whatsapp import enviar_ao_cliente
 from tenant.models import TipoMensagem
 
@@ -100,6 +100,10 @@ class BloqueiosView(ExigeSessao, APIView):
                 ),
                 tipo=TipoMensagem.CANCELAMENTO,
                 cliente_nome=dados["cliente_nome"],
+                modelo=modelo_do_cliente(
+                    TipoMensagem.CANCELAMENTO, cliente_nome=dados["cliente_nome"],
+                    barbearia_nome=request.barbearia.nome, inicio=dados["inicio"],
+                ),
             )
         # Um aviso so' com todos os que cairam: o bloqueio da tarde nao pode
         # virar cinco listas seguidas.

@@ -206,3 +206,31 @@ def test_meta_ligada_tira_a_pausa_do_cliente(monkeypatch):
     assert whatsapp.cliente_sem_whatsapp() is False
     monkeypatch.setenv("WHATSAPP_PROVEDOR", "")
     assert whatsapp.cliente_sem_whatsapp() is True
+
+
+def test_template_proprio_do_cliente_manda_os_campos_separados(monkeypatch):
+    """Confirmacao com `META_TEMPLATE_CONFIRMACAO` sai pelo modelo da
+    Biblioteca, com nome, lugar, servico, dia e hora como campos."""
+    from datetime import datetime, timezone
+
+    from app.services.mensagens import modelo_do_cliente
+
+    monkeypatch.setenv("META_TEMPLATE_CONFIRMACAO", "marcai_confirmacao")
+    modelo = modelo_do_cliente(
+        "CONFIRMACAO", cliente_nome="Ana Souza", barbearia_nome="Brutus",
+        inicio=datetime(2026, 11, 5, 18, 0, tzinfo=timezone.utc), servico_nome="Corte",
+    )
+    with patch.object(whatsapp_meta.requests, "post", return_value=ACEITA) as post:
+        assert whatsapp_meta.enviar("83988982852", "texto longo", modelo=modelo) == "wamid.ABC"
+    template = post.call_args.kwargs["json"]["template"]
+    assert template["name"] == "marcai_confirmacao"
+    campos = [p["text"] for p in template["components"][0]["parameters"]]
+    assert campos[:3] == ["Ana", "Brutus", "corte"]
+    assert campos[4] == "15:00"
+
+
+def test_sem_template_proprio_cai_no_generico(monkeypatch):
+    monkeypatch.delenv("META_TEMPLATE_LEMBRETE", raising=False)
+    with patch.object(whatsapp_meta.requests, "post", return_value=ACEITA) as post:
+        whatsapp_meta.enviar("83988982852", "Lembrete", modelo=("lembrete", ["Ana", "B", "d", "h"]))
+    assert post.call_args.kwargs["json"]["template"]["name"] == "marcai_aviso"

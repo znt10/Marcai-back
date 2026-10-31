@@ -9,7 +9,11 @@ from app.api.v1.serializers.agendamentos import CriarAgendamentoSerializer
 from app.services import lista_do_dia
 from app.services.agendamentos import ErroCliente, cancelar, eh_sobreposicao, marcar
 from app.services.autorizacao import filtro_do_barbeiro
-from app.services.mensagens import msg_cancelamento_pela_barbearia, msg_confirmacao
+from app.services.mensagens import (
+    modelo_do_cliente,
+    msg_cancelamento_pela_barbearia,
+    msg_confirmacao,
+)
 from app.services.whatsapp import enviar_ao_cliente
 from tenant.models import TipoMensagem
 from tenant.telefone import normalizar
@@ -71,6 +75,11 @@ class AgendamentosPainelView(ExigeSessao, APIView):
             ),
             tipo=TipoMensagem.CONFIRMACAO,
             cliente_nome=d["nome"],
+            modelo=modelo_do_cliente(
+                TipoMensagem.CONFIRMACAO, cliente_nome=d["nome"],
+                barbearia_nome=request.barbearia.nome, inicio=criado["inicio"],
+                servico_nome=criado["servico_nome"],
+            ),
         )
         # Painel nao manda aviso curto ao barbeiro (nunca mandou); mas a
         # lista de HOJE, se ja saiu, e' refeita — inclusive para quem marcou
@@ -104,6 +113,10 @@ class AgendamentoCancelarView(ExigeSessao, APIView):
             ),
             tipo=TipoMensagem.CANCELAMENTO,
             cliente_nome=cancelado["cliente_nome"],
+            modelo=modelo_do_cliente(
+                TipoMensagem.CANCELAMENTO, cliente_nome=cancelado["cliente_nome"],
+                barbearia_nome=request.barbearia.nome, inicio=cancelado["inicio"],
+            ),
         )
         lista_do_dia.avisar_mudanca(
             self.barbearia_id, cancelado["barbeiro_id"], datetime.now(timezone.utc),
