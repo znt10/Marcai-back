@@ -61,6 +61,7 @@ services:
       # API oficial da Meta. Vazias = tudo pela Evolution, como antes
       # (ver `.env.example`).
       WHATSAPP_PROVEDOR: ${WHATSAPP_PROVEDOR:-}
+      WHATSAPP_EQUIPE_PELA_EVOLUTION: ${WHATSAPP_EQUIPE_PELA_EVOLUTION:-}
       META_WHATSAPP_TOKEN: ${META_WHATSAPP_TOKEN:-}
       META_WHATSAPP_NUMERO_ID: ${META_WHATSAPP_NUMERO_ID:-}
       META_WHATSAPP_TEMPLATE: ${META_WHATSAPP_TEMPLATE:-}
@@ -223,6 +224,7 @@ services:
       # API oficial da Meta. Vazias = tudo pela Evolution, como antes
       # (ver `.env.example`).
       WHATSAPP_PROVEDOR: ${WHATSAPP_PROVEDOR:-}
+      WHATSAPP_EQUIPE_PELA_EVOLUTION: ${WHATSAPP_EQUIPE_PELA_EVOLUTION:-}
       META_WHATSAPP_TOKEN: ${META_WHATSAPP_TOKEN:-}
       META_WHATSAPP_NUMERO_ID: ${META_WHATSAPP_NUMERO_ID:-}
       META_WHATSAPP_TEMPLATE: ${META_WHATSAPP_TEMPLATE:-}

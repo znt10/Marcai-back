@@ -45,6 +45,23 @@ def _config() -> dict[str, str]:
     }
 
 
+def equipe_pela_evolution() -> bool:
+    """`WHATSAPP_EQUIPE_PELA_EVOLUTION` (spec 2026-11-03): o que vai para a
+    EQUIPE sai pela Evolution mesmo com a Meta ligada — o chip da equipe, de
+    graca, e o unico que apaga a lista refeita. O cliente segue pela Meta.
+
+    Lida a cada chamada pelo mesmo motivo do `_config`. `true` vale como `1`:
+    e' o que alguem escreve no Coolify sem ler a documentacao.
+    """
+    return os.environ.get("WHATSAPP_EQUIPE_PELA_EVOLUTION", "").strip().lower() in {"1", "true"}
+
+
+def _meta_para_equipe() -> bool | None:
+    """O `pela_meta` dos envios de equipe: False com a chave ligada (forca a
+    Evolution), None sem ela (a regra de sempre)."""
+    return False if equipe_pela_evolution() else None
+
+
 @dataclass(frozen=True)
 class Aceita:
     """A mensagem que a Evolution ACEITOU. `id` e `jid` sao o que permite
@@ -70,7 +87,7 @@ def enviar_a_equipe(whatsapp_digitos: str, mensagem: str) -> None:
     Vale nos DOIS planos. A barbearia sem zap nao deixa de avisar a equipe —
     ela so nao fala com o cliente.
     """
-    _enviar(_config()["instancia"], whatsapp_digitos, mensagem)
+    _enviar_aceita(_config()["instancia"], whatsapp_digitos, mensagem, pela_meta=_meta_para_equipe())
 
 
 def enviar_a_equipe_da(barbearia_id, whatsapp_digitos: str, mensagem: str) -> None:
@@ -87,7 +104,9 @@ def enviar_a_equipe_da(barbearia_id, whatsapp_digitos: str, mensagem: str) -> No
 def enviar_a_equipe_aceita(whatsapp_digitos: str, mensagem: str) -> Aceita | None:
     """`enviar_a_equipe` para quem precisa do que a Evolution devolveu — a
     lista do dia guarda o id e o jid para poder apaga-la depois."""
-    return _enviar_aceita(_config()["instancia"], whatsapp_digitos, mensagem)
+    return _enviar_aceita(
+        _config()["instancia"], whatsapp_digitos, mensagem, pela_meta=_meta_para_equipe(),
+    )
 
 
 # Temporario, enquanto a API oficial da Meta nao libera (spec 2026-10-26): o
@@ -181,6 +200,7 @@ def _registrar_nao_enviada(barbearia, tipo: str, cliente_nome: str) -> None:
 
 def _enviar_aceita(
     instancia: str, whatsapp_digitos: str, mensagem: str, *, digitando_ms: int | None = None,
+    pela_meta: bool | None = None,
 ) -> Aceita | None:
     """Fire-and-forget. Falha de WhatsApp NUNCA derruba um agendamento (§10.2).
 
@@ -203,9 +223,10 @@ def _enviar_aceita(
 
     Com `WHATSAPP_PROVEDOR=meta` sai pela API oficial (`whatsapp_meta.py`):
     sem "digitando" e sem jid — a Meta nao apaga mensagem, entao nao ha o que
-    guardar para isso.
+    guardar para isso. `pela_meta=False` forca a Evolution mesmo assim (a
+    equipe com `WHATSAPP_EQUIPE_PELA_EVOLUTION`); None e' a regra de sempre.
     """
-    if whatsapp_meta.ligado():
+    if (whatsapp_meta.ligado() if pela_meta is None else pela_meta):
         mensagem_id = whatsapp_meta.enviar(whatsapp_digitos, mensagem)
         return Aceita(mensagem_id, None) if mensagem_id else None
 
@@ -273,10 +294,12 @@ def apagar_para_todos(jid: str | None, mensagem_id: str | None) -> bool:
     Premissa medida na Task 12 do plano: ha relato de a 2.3.7 nao apagar
     (evolution-api#592).
 
-    Pela Meta devolve False sempre: a Cloud API nao apaga mensagem enviada.
-    A lista refeita chega como mensagem nova, sem a velha sumir.
+    Pela Meta devolve False: a Cloud API nao apaga mensagem enviada, e a
+    lista refeita chega como mensagem nova, sem a velha sumir. Com
+    `WHATSAPP_EQUIPE_PELA_EVOLUTION` a lista saiu pela Evolution, entao e'
+    por ela que se apaga.
     """
-    if whatsapp_meta.ligado():
+    if whatsapp_meta.ligado() and not equipe_pela_evolution():
         return False
     cfg = _config()
     if not cfg["url"] or not jid or not mensagem_id:
