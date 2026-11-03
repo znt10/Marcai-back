@@ -222,6 +222,8 @@ def detalhe_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict | N
             "fim": a.fim,
             "status": a.status,
             "pode_cancelar": pode_cancelar(a, agora),
+            # So' o SIM/NAO: `lembrete_para` e' o WhatsApp do cliente (§9.1).
+            "lembrete_pedido": a.lembrete_pedido_em is not None,
         }
 
 

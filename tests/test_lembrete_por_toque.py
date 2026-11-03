@@ -432,3 +432,34 @@ def test_toque_dentro_da_janela_nao_gera_segundo_lembrete(cenario, meta):
     assert lembrete_por_toque.registrar_pedido(a.codigo, QUEM_TOCOU, AGORA) == "pedido"
     assert lembrete.enviar_pendentes(AGORA + timedelta(minutes=10)) == 0
     assert len(meta.enviados()) == 1  # so' a resposta ao toque
+
+
+# ------------------------------------------------------------------- o que o front le
+
+
+@pytest.mark.parametrize(("numero", "esperado"), [(CENTRAL, CENTRAL), ("", None)])
+def test_barbearia_expoe_o_central_so_com_a_chave(client, cenario, meta, monkeypatch, numero, esperado):
+    monkeypatch.setenv("WHATSAPP_CENTRAL_NUMERO", numero)
+    r = client.get("/api/barbearia", headers={"host": "brutus.localhost", **CABECALHO_WEB})
+    assert r.status_code == 200
+    assert r.json()["whatsappCentral"] == esperado
+
+
+def test_detalhe_diz_se_o_lembrete_foi_pedido(client, cenario, meta):
+    b = _com_zap(cenario["brutus"])
+    a = _agendamento(b, datetime.now(timezone.utc) + timedelta(days=1))
+
+    def detalhe():
+        r = client.get(
+            f"/api/agendamentos/{a.codigo}", headers={"host": "brutus.localhost", **CABECALHO_WEB},
+        )
+        assert r.status_code == 200
+        return r.json()
+
+    assert detalhe()["lembretePedido"] is False
+    lembrete_por_toque.registrar_pedido(a.codigo, QUEM_TOCOU, datetime.now(timezone.utc))
+    corpo = detalhe()
+    assert corpo["lembretePedido"] is True
+    # O WhatsApp do cliente nunca sai na API publica (§9.1).
+    assert "83977776666" not in json.dumps(corpo)
+    assert not any("para" in chave.lower() for chave in corpo)

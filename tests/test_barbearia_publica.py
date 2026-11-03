@@ -20,6 +20,7 @@ def test_devolve_a_barbearia_do_host(client, cenario):
         "tipo": "BARBEARIA",
         "paleta": "PRETO_AMARELO",
         "whatsappAoCliente": True,
+        "whatsappCentral": None,
     }
 
 

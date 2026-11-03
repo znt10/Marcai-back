@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from app.api.v1.mixins import ExigeTenant
+from app.services import lembrete_por_toque
 from app.services.barbearia import ler
 from app.services.whatsapp import cliente_sem_whatsapp
 
@@ -42,5 +43,10 @@ class BarbeariaView(ExigeTenant, APIView):
                 "paleta": dados["paleta"],
                 # O site diz "a confirmacao chega no WhatsApp" so' quando chega.
                 "whatsappAoCliente": not cliente_sem_whatsapp(),
+                # Lembrete por toque: o numero do botao "Quero o lembrete no
+                # WhatsApp". Nulo com a chave desligada — o site fica como era.
+                "whatsappCentral": (
+                    lembrete_por_toque.numero_central() if lembrete_por_toque.ligado() else None
+                ),
             }
         )
