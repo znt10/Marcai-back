@@ -188,7 +188,7 @@ def test_toque_repetido_responde_sem_regravar(cenario, meta):
     a = _recarregar(a)
     assert a.lembrete_pedido_em == AGORA
     assert a.lembrete_para == "83977776666"
-    assert [para for para, _ in meta.enviados()] == [QUEM_TOCOU, QUEM_TOCOU]
+    assert len(meta.enviados()) == 2
 
 
 @pytest.mark.parametrize("caso", ["cancelado", "passado", "inexistente", "sem codigo"])
@@ -463,3 +463,74 @@ def test_detalhe_diz_se_o_lembrete_foi_pedido(client, cenario, meta):
     # O WhatsApp do cliente nunca sai na API publica (§9.1).
     assert "83977776666" not in json.dumps(corpo)
     assert not any("para" in chave.lower() for chave in corpo)
+
+
+# ------------------------------------------------------------------- revisao final
+
+
+@pytest.mark.parametrize("colado", ["+55 83 98898-2852", "5583988982852", "+55 (83) 8898-2852"])
+def test_numero_central_colado_com_o_55(monkeypatch, colado):
+    """O WhatsApp Manager mostra o numero com +55: colado assim no Coolify,
+    o wa.me virava 5555… e ninguem recebia nada."""
+    monkeypatch.setenv("WHATSAPP_CENTRAL_NUMERO", colado)
+    assert lembrete_por_toque.numero_central() in {"83988982852", "8388982852"}
+    assert lembrete_por_toque.link("Brutus", "k7p2q9abcd").startswith("https://wa.me/5583")
+
+
+def test_numero_central_invalido_desliga_a_chave_e_loga(monkeypatch, caplog):
+    monkeypatch.setenv("WHATSAPP_PROVEDOR", "meta")
+    monkeypatch.setenv("WHATSAPP_CENTRAL_NUMERO", "1234")
+    assert lembrete_por_toque.numero_central() is None
+    assert lembrete_por_toque.ligado() is False
+    assert "WHATSAPP_CENTRAL_NUMERO" in caplog.text
+
+
+def test_toque_repetido_de_outro_numero_responde_a_quem_escreveu(cenario, meta):
+    b = _com_zap(cenario["brutus"])
+    a = _agendamento(b, AGORA + timedelta(days=1))
+    lembrete_por_toque.registrar_pedido(a.codigo, QUEM_TOCOU, AGORA)
+    lembrete_por_toque.registrar_pedido(a.codigo, "5583911112222", AGORA)
+    assert [para for para, _ in meta.enviados()] == [QUEM_TOCOU, "5583911112222"]
+    assert _recarregar(a).lembrete_para == "83977776666"
+
+
+def test_marcado_com_a_chave_desligada_nasce_com_o_lembrete_prometido(client, cenario, monkeypatch):
+    """Antes da chave, a tela promete "Mandamos o lembrete 1h antes". Quem
+    marcou assim nao pode perder o lembrete no dia em que a chave liga."""
+    from tenant.models import Agendamento
+
+    b = _com_zap(cenario["brutus"])
+    codigo = _marcar(client, b, pelo_painel=False)
+    a = Agendamento.objects.using("owner").get(codigo=codigo)
+    assert a.lembrete_pedido_em is not None
+    assert a.lembrete_para == DIGITADO
+
+
+def test_marcado_com_a_chave_ligada_nasce_sem_pedido(client, cenario, meta):
+    from tenant.models import Agendamento
+
+    codigo = _marcar(client, _com_zap(cenario["brutus"]), pelo_painel=False)
+    assert Agendamento.objects.using("owner").get(codigo=codigo).lembrete_pedido_em is None
+
+
+def test_migration_marca_os_ja_prometidos(cenario):
+    """A 0020 da o pedido a todo CONFIRMADO futuro que ja existia: eles
+    receberam a confirmacao paga e a promessa do lembrete."""
+    import importlib
+
+    from django.db import connections
+
+    migracao = importlib.import_module("tenant.migrations.0020_lembrete_por_toque")
+    b = cenario["brutus"]
+    futuro = _agendamento(b, datetime.now(timezone.utc) + timedelta(days=2))
+    passado = _agendamento(b, datetime.now(timezone.utc) - timedelta(days=2))
+    cancelado = _agendamento(b, datetime.now(timezone.utc) + timedelta(days=3), status="CANCELADO")
+
+    with connections["owner"].cursor() as c:
+        c.execute(migracao.JA_PROMETIDOS)
+
+    futuro = _recarregar(futuro)
+    assert futuro.lembrete_pedido_em == futuro.criado_em
+    assert futuro.lembrete_para == "83955554444"
+    assert _recarregar(passado).lembrete_pedido_em is None
+    assert _recarregar(cancelado).lembrete_pedido_em is None

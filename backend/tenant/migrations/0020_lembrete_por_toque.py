@@ -2,6 +2,20 @@
 
 from django.db import migrations, models
 
+# Quem ja marcou recebeu a confirmacao e a promessa do lembrete 1h antes: o
+# CONFIRMADO futuro nasce pedido, no numero digitado. Sem isto, ligar a chave
+# calaria o lembrete de todo mundo que marcou antes. Roda como brutus_owner
+# (`owner_irrestrito` atravessa o RLS).
+JA_PROMETIDOS = """
+    UPDATE tenant_agendamento a
+       SET lembrete_pedido_em = a.criado_em, lembrete_para = c.whatsapp
+      FROM tenant_cliente c
+     WHERE c.id = a.cliente_id
+       AND a.status = 'CONFIRMADO'
+       AND a.inicio > now()
+       AND a.lembrete_pedido_em IS NULL;
+"""
+
 
 class Migration(migrations.Migration):
 
@@ -20,4 +34,5 @@ class Migration(migrations.Migration):
             name='lembrete_pedido_em',
             field=models.DateTimeField(null=True),
         ),
+        migrations.RunSQL(JA_PROMETIDOS, migrations.RunSQL.noop),
     ]

@@ -16,6 +16,7 @@ Desligada, todo envio e' o de antes — o deploy do back e do front vem
 primeiro, a variavel no Coolify depois.
 """
 
+import logging
 import os
 import re
 from datetime import datetime
@@ -25,6 +26,8 @@ from tenant import telefone
 
 from . import whatsapp_meta
 
+logger = logging.getLogger(__name__)
+
 # O alfabeto de `agendamentos._ALFABETO_CODIGO` (sem 0, 1, i, l, o), 10
 # caracteres, sem letra ou digito colado dos dois lados. O cliente pode
 # apagar o resto da mensagem, mandar em maiuscula ou colar no "Código:".
@@ -32,9 +35,21 @@ _CODIGO = re.compile(r"(?<![0-9a-z])[2-9a-hjkmnp-z]{10}(?![0-9a-z])")
 
 
 def numero_central() -> str | None:
-    """Os digitos nacionais do numero central (`83988982852`), ou None."""
-    digitos = re.sub(r"\D", "", os.environ.get("WHATSAPP_CENTRAL_NUMERO", ""))
-    return digitos or None
+    """Os digitos nacionais do numero central (`83988982852`), ou None.
+
+    Aceita o numero colado do WhatsApp Manager ("+55 83 8898-2852"): sem
+    tirar o 55, o `wa.me` virava 5555… e o botao abria uma conversa que nao
+    existe — com a chave ligada, ninguem recebia nada. Invalido desliga a
+    chave e grita no log."""
+    bruto = os.environ.get("WHATSAPP_CENTRAL_NUMERO", "").strip()
+    if not bruto:
+        return None
+    nacional = telefone.normalizar(bruto)
+    if nacional is None:
+        logger.error(
+            "[lembrete-por-toque] WHATSAPP_CENTRAL_NUMERO invalido (%r): chave desligada", bruto,
+        )
+    return nacional
 
 
 def ligado() -> bool:
@@ -99,12 +114,13 @@ def registrar_pedido(texto: str, de_internacional: str, agora: datetime) -> str:
                     id=a.id, lembrete_pedido_em__isnull=True,
                 ).update(lembrete_pedido_em=agora, lembrete_para=numero)
                 repetido = gravou == 0
-            if repetido:
-                a.refresh_from_db(fields=["lembrete_para"])
-            para = a.lembrete_para or numero
 
+        # Responde a QUEM ESCREVEU (a janela de 24h aberta e' a dele), mesmo no
+        # repetido de outro numero — sem trocar `lembrete_para`, que continua
+        # sendo o primeiro. Responder ao primeiro deixava o segundo no vacuo
+        # e deixava quem tem o link fazer o Marcai escrever ao cliente.
         enviar_ao_cliente(
-            b, para,
+            b, numero,
             msg_confirmacao(
                 cliente_nome=a.cliente.nome, barbeiro_nome=a.barbeiro.nome,
                 servico_nome=a.servico_nome, inicio=a.inicio, endereco=b.endereco,
