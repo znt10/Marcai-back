@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 
 from app.api.v1.mixins import NAO_ENCONTRADO, ExigeSessao
 from app.api.v1.serializers.agendamentos import CriarAgendamentoSerializer
-from app.services import lista_do_dia
+from app.services import lembrete_por_toque, lista_do_dia
 from app.services.agendamentos import ErroCliente, cancelar, eh_sobreposicao, marcar
 from app.services.autorizacao import filtro_do_barbeiro
 from app.services.mensagens import msg_cancelamento_pela_barbearia, msg_confirmacao
@@ -68,6 +68,12 @@ class AgendamentosPainelView(ExigeSessao, APIView):
                 endereco=request.barbearia.endereco, link=link,
                 barbearia_nome=request.barbearia.nome,
                 contato=request.barbearia.whatsapp_contato,
+                # Lembrete por toque: a confirmacao do balcao sai (paga), e o
+                # lembrete so' com o toque no link da ultima linha.
+                link_do_lembrete=(
+                    lembrete_por_toque.link(request.barbearia.nome, criado["codigo"])
+                    if lembrete_por_toque.ligado() else None
+                ),
             ),
             tipo=TipoMensagem.CONFIRMACAO,
             cliente_nome=d["nome"],

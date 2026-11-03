@@ -280,3 +280,155 @@ def test_webhook_nao_cai_se_o_registro_falhar(client, cenario, meta, caplog):
     assert r.status_code == 200
     assert r.json()["resultado"] == "falhas=0 recebidas=1 pedidos=0"
     assert "banco" in caplog.text
+
+
+# ------------------------------------------------------------------- os envios
+
+from test_agendamentos_painel import (  # noqa: E402
+    _barbeiro as _barbeiro_novo,
+    _logar,
+    _proximo_slot_livre,
+    _servico_vinculado,
+)
+
+CLIENTE = "5583955554444"  # o numero digitado de `_agendamento`
+DIGITADO = "11977778888"
+CABECALHO_WEB = {"x-brutus-cliente": "web"}
+
+
+def _para(meta, numero):
+    return [texto for para, texto in meta.enviados() if para == numero]
+
+
+def _marcar(client, b, *, pelo_painel):
+    barbeiro = _barbeiro_novo(b.id)
+    servico = _servico_vinculado(b.id, barbeiro)
+    # Uma semana depois cai no mesmo dia da semana da jornada aberta, e
+    # fora da janela do lembrete.
+    inicio = _proximo_slot_livre(barbeiro, servico) + timedelta(days=7)
+    host = f"{b.slug}.localhost"
+    if pelo_painel:
+        _logar(client, barbeiro, b.id, host=host)
+    r = client.post(
+        "/api/painel/agendamentos" if pelo_painel else "/api/agendamentos",
+        {
+            "barbeiroId": barbeiro.id, "servicoId": servico.id,
+            "inicio": inicio.isoformat(), "nome": "Ana Souza", "whatsapp": DIGITADO,
+        },
+        content_type="application/json", headers={"host": host, **CABECALHO_WEB},
+    )
+    assert r.status_code == 201, r.content
+    return r.json()["codigo"]
+
+
+def test_marcar_pelo_site_nao_manda_confirmacao(client, cenario, meta):
+    _marcar(client, _com_zap(cenario["brutus"]), pelo_painel=False)
+    assert _para(meta, "55" + DIGITADO) == []
+
+
+def test_marcar_pelo_painel_manda_confirmacao_com_o_link(client, cenario, meta):
+    codigo = _marcar(client, _com_zap(cenario["brutus"]), pelo_painel=True)
+    [texto] = _para(meta, "55" + DIGITADO)
+    assert texto.startswith("*Brutus*\nFechou, Ana!")
+    assert texto.endswith(
+        "\n\nQuer o lembrete 1h antes? Toque e envie a mensagem: "
+        + lembrete_por_toque.link("Brutus", codigo)
+    )
+
+
+def test_cron_sem_toque_nao_manda_lembrete(cenario, meta):
+    from app.services import lembrete
+
+    b = _com_zap(cenario["brutus"])
+    a = _agendamento(b, AGORA + timedelta(minutes=50))
+    assert lembrete.enviar_pendentes(AGORA) == 0
+    assert meta.enviados() == []
+    assert _recarregar(a).lembrete_enviado_em is None
+
+
+def test_cron_com_toque_manda_para_quem_tocou(cenario, meta):
+    from app.services import lembrete
+
+    b = _com_zap(cenario["brutus"])
+    a = _agendamento(
+        b, AGORA + timedelta(minutes=50),
+        lembrete_pedido_em=AGORA - timedelta(days=1), lembrete_para="83977776666",
+    )
+    assert lembrete.enviar_pendentes(AGORA) == 1
+    [(para, texto)] = meta.enviados()
+    assert para == QUEM_TOCOU
+    assert "lembrete: corte" in texto
+    assert _recarregar(a).lembrete_enviado_em is not None
+
+
+def _cancelar_pelo_link(client, b, a):
+    r = client.post(
+        f"/api/agendamentos/{a.codigo}/cancelar",
+        content_type="application/json",
+        headers={"host": f"{b.slug}.localhost", **CABECALHO_WEB},
+    )
+    assert r.status_code == 200, r.content
+
+
+def test_cliente_cancela_sem_toque_nao_avisa(client, cenario, meta):
+    b = _com_zap(cenario["brutus"])
+    a = _agendamento(b, datetime.now(timezone.utc) + timedelta(days=2))
+    _cancelar_pelo_link(client, b, a)
+    assert _para(meta, CLIENTE) == []
+
+
+def test_cliente_cancela_com_toque_avisa_quem_tocou(client, cenario, meta):
+    b = _com_zap(cenario["brutus"])
+    a = _agendamento(
+        b, datetime.now(timezone.utc) + timedelta(days=2),
+        lembrete_pedido_em=datetime.now(timezone.utc), lembrete_para="83977776666",
+    )
+    _cancelar_pelo_link(client, b, a)
+    assert _para(meta, CLIENTE) == []
+    assert len(_para(meta, QUEM_TOCOU)) == 1
+
+
+def test_barbearia_cancela_sem_toque_avisa_o_numero_digitado(client, cenario, meta):
+    b = _com_zap(cenario["brutus"])
+    a = _agendamento(b, datetime.now(timezone.utc) + timedelta(days=2))
+    host = _logar(client, _barbeiro_novo(b.id, papel="DONO"), b.id)
+    r = client.post(
+        f"/api/painel/agendamentos/{a.id}/cancelar", headers={"host": host, **CABECALHO_WEB},
+    )
+    assert r.status_code == 200, r.content
+    assert len(_para(meta, CLIENTE)) == 1
+
+
+def test_meio_ligado_tudo_como_hoje(client, cenario, meta, monkeypatch):
+    """Meta ligada sem WHATSAPP_CENTRAL_NUMERO: confirmacao no site e
+    lembrete para todos, como antes do toque."""
+    from app.services import lembrete
+
+    monkeypatch.setenv("WHATSAPP_CENTRAL_NUMERO", "")
+    b = _com_zap(cenario["brutus"])
+    _marcar(client, b, pelo_painel=False)
+    assert len(_para(meta, "55" + DIGITADO)) == 1
+
+    _agendamento(b, AGORA + timedelta(minutes=50))
+    assert lembrete.enviar_pendentes(AGORA) == 1
+    assert len(_para(meta, CLIENTE)) == 1
+
+
+def test_meio_ligado_painel_sem_link(client, cenario, meta, monkeypatch):
+    monkeypatch.setenv("WHATSAPP_CENTRAL_NUMERO", "")
+    _marcar(client, _com_zap(cenario["brutus"]), pelo_painel=True)
+    [texto] = _para(meta, "55" + DIGITADO)
+    assert "Quer o lembrete" not in texto
+
+
+def test_toque_dentro_da_janela_nao_gera_segundo_lembrete(cenario, meta):
+    from app.services import lembrete
+
+    b = _com_zap(cenario["brutus"])
+    a = _agendamento(
+        b, AGORA + timedelta(minutes=40),
+        lembrete_enviado_em=lembrete.lembrete_ao_criar(AGORA + timedelta(minutes=40), AGORA),
+    )
+    assert lembrete_por_toque.registrar_pedido(a.codigo, QUEM_TOCOU, AGORA) == "pedido"
+    assert lembrete.enviar_pendentes(AGORA + timedelta(minutes=10)) == 0
+    assert len(meta.enviados()) == 1  # so' a resposta ao toque

@@ -273,4 +273,7 @@ def cancelar_publico(
             "barbeiro_whatsapp": a.barbeiro.whatsapp,
             "servico_nome": a.servico_nome,
             "inicio": a.inicio,
+            # Lembrete por toque: o aviso do cancelamento so' vai a quem pediu.
+            "lembrete_pedido_em": a.lembrete_pedido_em,
+            "lembrete_para": a.lembrete_para,
         }
