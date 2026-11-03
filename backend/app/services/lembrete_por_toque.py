@@ -57,8 +57,9 @@ def ligado() -> bool:
 
 
 def texto_pronto(barbearia_nome: str, codigo: str) -> str:
-    """O mesmo texto do front (`src/lib/lembrete.ts`)."""
-    return f"Quero o lembrete do meu horário na {barbearia_nome}. Código: {codigo}"
+    """O mesmo texto do front (`src/lib/lembretePorToque.ts`). "em", e nao
+    "na": o nome pode ser "Dom Tony" ou "Espaço Bela"."""
+    return f"Quero o lembrete do meu horário em {barbearia_nome}. Código: {codigo}"
 
 
 def link(barbearia_nome: str, codigo: str) -> str | None:

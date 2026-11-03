@@ -45,9 +45,9 @@ def meta(monkeypatch):
         "WHATSAPP_PROVEDOR": "meta", "WHATSAPP_CENTRAL_NUMERO": CENTRAL,
         "META_WHATSAPP_TOKEN": "token", "META_WHATSAPP_NUMERO_ID": "1411744118692075",
         "META_WHATSAPP_TEMPLATE": "marcai_aviso", "META_APP_SECRET": "segredo-do-app",
-        "META_TEMPLATE_CONFIRMACAO": "marcai_confirmado",
-        "META_TEMPLATE_LEMBRETE": "marcai_lembrete_1h",
-        "META_TEMPLATE_CANCELADO": "marcai_cancelado",
+        "META_TEMPLATE_CONFIRMACAO": "marcai_horario_confirmado",
+        "META_TEMPLATE_LEMBRETE": "marcai_lembrete_horario",
+        "META_TEMPLATE_CANCELADO": "marcai_horario_cancelado",
     }.items():
         monkeypatch.setenv(nome, valor)
     with patch.object(whatsapp_meta.requests, "post", return_value=_resposta()) as post:
@@ -79,7 +79,7 @@ def test_lembrete_sai_pelo_modelo_proprio(cenario, meta):
 
     [corpo] = meta.corpos()
     assert corpo["to"] == QUEM_TOCOU
-    assert corpo["template"]["name"] == "marcai_lembrete_1h"
+    assert corpo["template"]["name"] == "marcai_lembrete_horario"
     # Endereco vazio vira traco: a Meta recusa parametro vazio.
     assert _parametros(corpo) == [
         "Brutus", "Corte", "12:50", "Barbeiro da Brutus", "—", "(11) 9 9999-8888",
@@ -116,7 +116,7 @@ def test_modelo_recusado_cai_no_aviso(cenario, meta, caplog):
     assert lembrete.enviar_pendentes(AGORA) == 1
 
     nomes = [c["template"]["name"] for c in meta.corpos()]
-    assert nomes == ["marcai_lembrete_1h", "marcai_aviso"]
+    assert nomes == ["marcai_lembrete_horario", "marcai_aviso"]
     assert "132001" in caplog.text
 
 
@@ -149,7 +149,7 @@ def test_lembrete_prometido_sem_toque_nao_sai_como_texto(cenario, meta):
     lembrete.enviar_pendentes(AGORA)
 
     [corpo] = meta.corpos()
-    assert corpo["template"]["name"] == "marcai_lembrete_1h"
+    assert corpo["template"]["name"] == "marcai_lembrete_horario"
 
 
 def test_toque_reabre_a_janela(cenario, meta):
@@ -172,7 +172,7 @@ def test_confirmacao_do_painel_tem_o_botao_com_o_codigo(client, cenario, meta):
     codigo = _marcar(client, _com_zap(cenario["brutus"]), pelo_painel=True)
 
     [corpo] = meta.corpos(DIGITADO)
-    assert corpo["template"]["name"] == "marcai_confirmado"
+    assert corpo["template"]["name"] == "marcai_horario_confirmado"
     parametros = _parametros(corpo)
     assert parametros[0] == "Brutus"
     assert parametros[1].startswith("Fechou, Ana! ")
@@ -234,7 +234,7 @@ def test_cancelamento_pela_barbearia_sai_pelo_modelo(client, cenario, meta):
     assert r.status_code == 200, r.content
 
     [corpo] = meta.corpos(CLIENTE)
-    assert corpo["template"]["name"] == "marcai_cancelado"
+    assert corpo["template"]["name"] == "marcai_horario_cancelado"
     parametros = _parametros(corpo)
     assert parametros[:3] == ["Ana", "Brutus", "corte"]
     assert parametros[4] == "12:00"

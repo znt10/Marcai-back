@@ -1,15 +1,17 @@
 """Os parametros dos templates proprios da Meta (03/11), na ordem das
-variaveis de cada um. O texto fixo mora no template, aprovado na WABA:
+variaveis de cada um. O texto fixo mora no template, aprovado na WABA. Neutro
+de genero de proposito: as mensagens vao para barbearia, salao, estudio — "em
+{{1}}", nunca "na {{1}}"; "seu horário de {{3}}", nunca "seu {{3}}".
 
-- `marcai_confirmado` (`META_TEMPLATE_CONFIRMACAO`):
-  "Seu horário na {{1}} está confirmado:\\n{{2}}\\n\\nDúvida? Chama: {{3}}\\n\\n
-  Se precisar cancelar: {{4}}\\n\\nAté lá!" + botao "Quero lembrete 1h antes".
-- `marcai_lembrete_1h` (`META_TEMPLATE_LEMBRETE`):
-  "Lembrete do seu horário na {{1}}:\\n{{2}} hoje às {{3}}, com {{4}}.\\n
-  Endereço: {{5}}\\n\\nCaso não possa ir, chama: {{6}}\\n\\nEste número só envia avisos."
-- `marcai_cancelado` (`META_TEMPLATE_CANCELADO`):
-  "Oi, {{1}}. A {{2}} cancelou seu {{3}} de {{4}} às {{5}}. Desculpa!\\n\\n
-  Pra remarcar, chama: {{6}}\\n\\nAté a próxima!"
+- `marcai_horario_confirmado` (`META_TEMPLATE_CONFIRMACAO`):
+  "Seu horário em {{1}} está confirmado:\n{{2}}\n\nDúvida? Chama: {{3}}\n\n
+  Se precisar cancelar: {{4}}\n\nAté lá!" + botao "Quero lembrete 1h antes".
+- `marcai_lembrete_horario` (`META_TEMPLATE_LEMBRETE`):
+  "Lembrete do seu horário em {{1}}:\n{{2}} hoje às {{3}}, com {{4}}.\n
+  Endereço: {{5}}\n\nCaso não possa ir, chama: {{6}}\n\nEste número só envia avisos."
+- `marcai_horario_cancelado` (`META_TEMPLATE_CANCELADO`):
+  "Oi, {{1}}. {{2}} cancelou seu horário de {{3}}, {{4}} às {{5}}. Desculpa!\n\n
+  Pra remarcar, chama: {{6}}\n\nAté a próxima!"
 
 Mudar o texto de um template na Meta sem mudar aqui (ou o contrario)
 desalinha as variaveis: e' a mesma mensagem nos dois lugares.

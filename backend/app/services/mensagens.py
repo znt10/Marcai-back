@@ -90,7 +90,9 @@ def msg_cancelamento_pela_barbearia(
     # mensagem seca aqui e' a diferenca entre um cliente que remarca e um que
     # nao volta. O convite a remarcar tambem fica, pela mesma razao.
     base = (
-        f"Oi, {primeiro_nome}. Cancelamos seu {servico_nome.lower()} de "
+        # "seu horário de", e nao "seu corte": o servico pode ser manicure ou
+        # sobrancelha (03/11, os tipos alem de barbearia).
+        f"Oi, {primeiro_nome}. Cancelamos seu horário de {servico_nome.lower()}, "
         f"{formatar_dia_com_semana(inicio)} às {formatar_hora_falada(inicio)}. Desculpa!"
     )
     if barbearia_nome is None:
