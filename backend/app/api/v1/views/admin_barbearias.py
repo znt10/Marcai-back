@@ -12,7 +12,7 @@ from app.services.admin_barbearias import (
 )
 from app.services.convite import link_do_convite
 from app.services.mensagens import msg_convite
-from app.services.whatsapp import enviar_a_equipe_da
+from app.services.whatsapp import enviar_convite
 
 NAO_ENCONTRADA = {"erro": "Barbearia não encontrada."}
 
@@ -49,8 +49,7 @@ class AdminBarbeariasView(ExigeAdmin, APIView):
         # Fire-and-forget, DEPOIS do commit (a transacao ja fechou dentro de
         # `criar()`). O link tambem volta no corpo porque o banco so guarda o
         # hash — perdido ali, nao ha como recuperar, so' reemitir.
-        enviar_a_equipe_da(
-            resultado["id"],
+        enviar_convite(
             resultado["contato"],
             msg_convite(
                 nome=resultado["dono_nome"], barbearia_nome=resultado["nome"], link=link,
@@ -101,8 +100,7 @@ class AdminBarbeariaConviteView(ExigeAdmin, APIView):
         # Reemitir ja apagou a senha do dono neste ponto — se o link so
         # existisse na tela do admin e ela fechasse, o dono ficava de fora
         # sem caminho de volta. Duas vias, como o convite de barbeiro.
-        enviar_a_equipe_da(
-            id,
+        enviar_convite(
             resultado["dono_whatsapp"],
             msg_convite(
                 nome=resultado["dono_nome"], barbearia_nome=resultado["nome"], link=link,

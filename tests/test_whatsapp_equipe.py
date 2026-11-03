@@ -167,3 +167,49 @@ def test_sem_chave_apagar_continua_recusando():
     with patch.object(whatsapp.requests, "delete") as delete:
         assert whatsapp.apagar_para_todos("jid", "ID") is False
     assert delete.call_count == 0
+
+
+# ------------------------------------------------------------------ convite
+
+
+def test_com_chave_convite_vai_pela_meta(chave):
+    """A primeira mensagem para quem nao conhece o chip e' o padrao que mais
+    derruba numero na Evolution: o convite fica na Meta."""
+    with _os_dois() as (meta, evo):
+        whatsapp.enviar_convite("83988887777", "Bem-vindo! Crie sua senha: https://...")
+    assert meta.call_count == 1
+    assert evo.call_count == 0
+
+
+def test_sem_meta_convite_vai_pela_evolution(monkeypatch):
+    monkeypatch.delenv("WHATSAPP_PROVEDOR")
+    with _os_dois() as (meta, evo):
+        whatsapp.enviar_convite("83988887777", "Bem-vindo!")
+    assert meta.call_count == 0
+    assert evo.call_args_list[0].args[0] == "http://evolution:8080/message/sendText/central"
+
+
+def test_convite_de_barbeiro_com_chave_sai_pela_meta(chave, client, cenario):
+    import uuid
+
+    from app.services.sessao import COOKIE_SESSAO, emitir
+    from tenant.models import Barbeiro
+
+    b = cenario["brutus"]
+    dono = Barbeiro.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=b.id, nome="Dono", whatsapp="11988880000",
+        papel="DONO", ativo=True,
+    )
+    client.cookies[COOKIE_SESSAO] = emitir(sub=dono.id, bid=b.id, papel="DONO", tv=dono.token_version)
+
+    with _os_dois() as (meta, evo):
+        r = client.post(
+            "/api/painel/equipe",
+            {"nome": "Novo Barbeiro", "whatsapp": "11977776666", "papel": "BARBEIRO"},
+            content_type="application/json",
+            headers={"host": "brutus.localhost", "x-brutus-cliente": "web"},
+        )
+    assert r.status_code == 201
+    assert evo.call_count == 0
+    assert meta.call_count == 1
+    assert meta.call_args_list[0].kwargs["json"]["to"] == "5511977776666"

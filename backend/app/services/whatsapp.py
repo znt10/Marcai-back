@@ -101,6 +101,17 @@ def enviar_a_equipe_da(barbearia_id, whatsapp_digitos: str, mensagem: str) -> No
     enviar_a_equipe(whatsapp_digitos, mensagem)
 
 
+def enviar_convite(whatsapp_digitos: str, mensagem: str) -> None:
+    """O convite (dono ou barbeiro novo, e o reenvio). Sai pela regra de
+    sempre — a Meta quando ligada — e IGNORA `WHATSAPP_EQUIPE_PELA_EVOLUTION`:
+    e' a primeira mensagem para quem ainda nao conhece o chip da equipe, e
+    estranho escrevendo para quem nunca falou com ele e' o padrao que mais
+    derruba numero na Evolution (spec 2026-11-03). Sao poucos por mes; o
+    custo na Meta e' irrelevante. Nunca levanta.
+    """
+    _enviar_aceita(_config()["instancia"], whatsapp_digitos, mensagem)
+
+
 def enviar_a_equipe_aceita(whatsapp_digitos: str, mensagem: str) -> Aceita | None:
     """`enviar_a_equipe` para quem precisa do que a Evolution devolveu — a
     lista do dia guarda o id e o jid para poder apaga-la depois."""
