@@ -18,7 +18,10 @@ primeiro, a variavel no Coolify depois.
 
 import os
 import re
+from datetime import datetime
 from urllib.parse import quote
+
+from tenant import telefone
 
 from . import whatsapp_meta
 
@@ -52,3 +55,64 @@ def link(barbearia_nome: str, codigo: str) -> str | None:
 
 def codigos_no_texto(texto: str) -> list[str]:
     return list(dict.fromkeys(_CODIGO.findall((texto or "").lower())))
+
+
+def registrar_pedido(texto: str, de_internacional: str, agora: datetime) -> str:
+    """A mensagem que chegou ao central pelo webhook da Meta. Se ela traz o
+    codigo de um agendamento CONFIRMADO e futuro, grava o pedido e responde
+    com a confirmacao — de graca, porque o cliente acabou de escrever.
+
+    Devolve "pedido" (gravou e respondeu), "repetido" (ja tinha pedido:
+    responde de novo e nao regrava, nem troca o numero — a Meta reenvia
+    webhook e o cliente aperta enviar duas vezes) ou "ignorado".
+
+    O codigo e' unico no banco inteiro, mas `Agendamento` esta no RLS: o
+    laco e' barbearia a barbearia, como no cron do lembrete.
+    """
+    # Import tardio: mensagens/whatsapp/convite puxam modelos e settings.
+    from tenant.models import Agendamento, Barbearia, StatusAgendamento, TipoMensagem
+    from tenant.rls import com_barbearia
+
+    from .convite import link_do_agendamento
+    from .mensagens import msg_confirmacao
+    from .whatsapp import enviar_ao_cliente
+
+    codigos = codigos_no_texto(texto)
+    numero = telefone.canonico(de_internacional)
+    if not codigos or numero is None:
+        return "ignorado"
+
+    for b in Barbearia.objects.filter(ativo=True):
+        with com_barbearia(b.id):
+            a = (
+                Agendamento.objects.select_related("barbeiro", "cliente")
+                .filter(codigo__in=codigos, status=StatusAgendamento.CONFIRMADO, inicio__gt=agora)
+                .first()
+            )
+            if a is None:
+                continue
+            repetido = a.lembrete_pedido_em is not None
+            if not repetido:
+                # Condicional no UPDATE: dois webhooks iguais ao mesmo tempo
+                # nao gravam duas vezes nem trocam o numero.
+                gravou = Agendamento.objects.filter(
+                    id=a.id, lembrete_pedido_em__isnull=True,
+                ).update(lembrete_pedido_em=agora, lembrete_para=numero)
+                repetido = gravou == 0
+            if repetido:
+                a.refresh_from_db(fields=["lembrete_para"])
+            para = a.lembrete_para or numero
+
+        enviar_ao_cliente(
+            b, para,
+            msg_confirmacao(
+                cliente_nome=a.cliente.nome, barbeiro_nome=a.barbeiro.nome,
+                servico_nome=a.servico_nome, inicio=a.inicio, endereco=b.endereco,
+                link=link_do_agendamento(b.slug, a.codigo),
+                barbearia_nome=b.nome, contato=b.whatsapp_contato,
+            ),
+            tipo=TipoMensagem.CONFIRMACAO, cliente_nome=a.cliente.nome,
+        )
+        return "repetido" if repetido else "pedido"
+
+    return "ignorado"
