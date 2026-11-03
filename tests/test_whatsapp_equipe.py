@@ -213,3 +213,26 @@ def test_convite_de_barbeiro_com_chave_sai_pela_meta(chave, client, cenario):
     assert evo.call_count == 0
     assert meta.call_count == 1
     assert meta.call_args_list[0].kwargs["json"]["to"] == "5511977776666"
+
+
+# ------------------------------------------------------- o chip, vigiado
+
+
+def test_chip_da_equipe_sem_chave_nao_e_vigiado():
+    """Sem a chave o chip nao existe como coisa separada: nada a conferir."""
+    assert whatsapp.estado_do_chip_da_equipe() is None
+
+
+def test_chip_da_equipe_sem_meta_nao_e_vigiado(chave, monkeypatch):
+    """Sem a Meta, `estado_da_instancia` ja confere a Evolution: conferir de
+    novo daria dois avisos do mesmo chip."""
+    monkeypatch.delenv("WHATSAPP_PROVEDOR")
+    assert whatsapp.estado_do_chip_da_equipe() is None
+
+
+def test_chip_da_equipe_com_chave_e_meta_consulta_a_evolution(chave):
+    resposta = Mock(ok=True, status_code=200, text='{"instance":{"state":"close"}}')
+    with patch.object(whatsapp.requests, "get", return_value=resposta) as get:
+        estado = whatsapp.estado_do_chip_da_equipe()
+    assert get.call_args.args[0] == "http://evolution:8080/instance/connectionState/central"
+    assert estado == '{"instance":{"state":"close"}}'

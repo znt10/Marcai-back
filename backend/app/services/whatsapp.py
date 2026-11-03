@@ -425,6 +425,25 @@ def estado_da_instancia() -> str:
     """
     if whatsapp_meta.ligado():
         return whatsapp_meta.estado()
+    return _estado_evolution()
+
+
+def estado_do_chip_da_equipe() -> str | None:
+    """O chip da equipe, quando ele e' um numero A PARTE: chave ligada e Meta
+    ligada (o `estado_da_instancia` so' olha a Meta nesse caso). None quando
+    nao ha o que conferir — sem a chave nao existe chip separado, e sem a Meta
+    o `estado_da_instancia` ja confere a propria Evolution.
+
+    Sem isto o chip caido ficaria em silencio: a Evolution responde 201
+    PENDING mesmo com o vinculo morto, e a lista "sai" sem chegar.
+    """
+    if not (equipe_pela_evolution() and whatsapp_meta.ligado()):
+        return None
+    return _estado_evolution()
+
+
+def _estado_evolution() -> str:
+    """A metade Evolution de `estado_da_instancia`, mesmo contrato."""
     cfg = _config()
     if not cfg["url"]:
         return "sem-configuracao"

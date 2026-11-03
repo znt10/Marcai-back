@@ -26,6 +26,26 @@ def test_whatsapp_healthcheck_loga_quando_nao_esta_aberto(caplog):
     assert "FORA DO AR" in caplog.text
 
 
+def test_healthcheck_avisa_quando_o_chip_da_equipe_cai(caplog):
+    """Com a equipe na Evolution e a Meta ligada, o estado principal e' o da
+    Meta: sem esta segunda conferencia, o chip caido ficaria em silencio."""
+    with patch("app.tasks.estado_da_instancia", return_value="open"), \
+            patch("app.tasks.estado_do_chip_da_equipe", return_value="close"):
+        with caplog.at_level("WARNING"):
+            resultado = whatsapp_healthcheck()
+    assert resultado == "open"
+    assert "CHIP DA EQUIPE FORA DO AR" in caplog.text
+
+
+@pytest.mark.parametrize("chip", [None, "open"])
+def test_healthcheck_calado_com_o_chip_de_pe_ou_sem_chip(caplog, chip):
+    with patch("app.tasks.estado_da_instancia", return_value="open"), \
+            patch("app.tasks.estado_do_chip_da_equipe", return_value=chip):
+        with caplog.at_level("WARNING"):
+            whatsapp_healthcheck()
+    assert "FORA DO AR" not in caplog.text
+
+
 def test_zelador_chama_alarmar_e_podar():
     esperado = {"recusados": 0, "podados_message_update": 0, "podados_message": 0}
     with patch("app.tasks.alarmar_e_podar", return_value=esperado) as mock_zelar:
