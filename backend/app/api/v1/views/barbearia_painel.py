@@ -22,6 +22,8 @@ class BarbeariaPainelView(ExigeSessao, APIView):
                 "whatsappContato": dados["whatsapp_contato"],
                 "tipo": dados["tipo"],
                 "paleta": dados["paleta"],
+                # Data URL ou nulo (= o desenho do tipo). Spec 2026-11-05.
+                "logoUrl": dados["logo_url"],
             }
         )
 

@@ -113,7 +113,11 @@ class BarbeariaAdmin(admin.ModelAdmin):
     # A hora da lista e' do DONO, na tela de WhatsApp do painel, que so'
     # oferece as horas em que o beat dispara. Aqui ela seria um numero de
     # minutos solto, e um 425 nunca casaria com disparo nenhum.
-    exclude = ("hora_da_lista_min",)
+    #
+    # A logo tambem e' do dono, pela tela Equipe. Aqui ela seria um textarea
+    # com ~80 KB de base64, e, sem `blank=True` no model, o form a exigiria e
+    # nenhuma barbearia sem logo poderia ser salva.
+    exclude = ("hora_da_lista_min", "logo_url")
 
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         campo = super().formfield_for_dbfield(db_field, request, **kwargs)
