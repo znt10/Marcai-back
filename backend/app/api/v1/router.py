@@ -58,6 +58,7 @@ from .views.equipe import (
     EquipeView,
 )
 from .views.foto import FotoView
+from .views.logo import LogoView
 from .views.expediente import ExpedienteView
 from .views.horarios import DiasComVagaView, HorariosView
 from .views.interno import InfinitePayRetornoView, WhatsappEventoView, WhatsappMetaView
@@ -179,6 +180,7 @@ urlpatterns = [
     # Fatia 4, bloco 2 — expediente e bloqueios.
     path("painel/expediente", ExpedienteView.as_view(), name="painel-expediente"),
     path("painel/foto", FotoView.as_view(), name="painel-foto"),
+    path("painel/logo", LogoView.as_view(), name="painel-logo"),
     path("painel/bloqueios", BloqueiosView.as_view(), name="painel-bloqueios"),
     path(
         "painel/bloqueios/<id:id>",

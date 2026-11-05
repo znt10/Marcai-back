@@ -19,8 +19,28 @@ def test_devolve_a_barbearia_do_host(client, cenario):
         "whatsappContato": b.whatsapp_contato,
         "tipo": "BARBEARIA",
         "paleta": "PRETO_AMARELO",
+        "logoUrl": None,
         "whatsappAoCliente": True,
     }
+
+
+def test_vitrine_sem_logo_devolve_logo_url_nulo(client, cenario):
+    """Nulo e' o sinal para o front desenhar o desenho do tipo."""
+    corpo = client.get("/api/barbearia", headers={"host": "brutus.localhost"}).json()
+
+    assert corpo["logoUrl"] is None
+
+
+def test_vitrine_devolve_a_logo(client, cenario):
+    from tenant.models import Barbearia
+
+    b = cenario["brutus"]
+    logo = "data:image/webp;base64,UklGRg=="
+    Barbearia.objects.using("owner").filter(id=b.id).update(logo_url=logo)
+
+    corpo = client.get("/api/barbearia", headers={"host": "brutus.localhost"}).json()
+
+    assert corpo["logoUrl"] == logo
 
 
 def test_devolve_o_tipo_e_a_paleta_de_um_estudio(client, cenario):
