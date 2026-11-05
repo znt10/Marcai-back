@@ -30,6 +30,20 @@ def pode_desativar(
     return None
 
 
+def pode_apagar(*, eh_eu_mesmo: bool, tem_senha: bool, agendamentos: int) -> str | None:
+    """Apagar e' para o cadastro que nasceu errado (celular trocado, nome
+    errado) e nunca chegou a ser usado. Quem ja entrou no painel ou ja teve
+    horario marcado fica no historico: para esses o caminho e' desativar.
+    Porte de `podeApagar` (front/src/lib/equipe.ts)."""
+    if eh_eu_mesmo:
+        return "Você não pode se apagar."
+    if tem_senha:
+        return "Essa pessoa já entrou no painel. Desativa em vez de apagar."
+    if agendamentos > 0:
+        return "Essa pessoa já teve horário marcado. Desativa em vez de apagar."
+    return None
+
+
 def pode_rebaixar(*, donos_ativos: int) -> str | None:
     if donos_ativos <= 1:
         return "Esse é o único dono ativo. Promove outra pessoa antes de rebaixar."
@@ -82,6 +96,11 @@ def listar(barbearia_id: str, agora) -> list[dict]:
                 "senha_hash", "convite_expira_em", "servicos", "expediente",
             )
         )
+        # Qualquer status, passado ou futuro: um cancelado tambem e' historico
+        # do cliente, e o FK de Agendamento e' RESTRICT.
+        com_historico = set(
+            Agendamento.objects.values_list("barbeiro_id", flat=True).distinct()
+        )
         futuros = dict(
             Agendamento.objects.filter(status="CONFIRMADO", inicio__gt=agora)
             .values("barbeiro_id")
@@ -112,6 +131,7 @@ def listar(barbearia_id: str, agora) -> list[dict]:
                 # e' o aviso de que o barbeiro sumiu da tela do cliente.
                 "servicos": b["servicos"], "expediente": b["expediente"],
                 "agendamentos_futuros": futuros.get(b["id"], 0),
+                "pode_apagar": b["senha_hash"] is None and b["id"] not in com_historico,
             }
         )
     return saida
@@ -241,3 +261,28 @@ def reconvidar(barbearia_id: str, barbeiro_id: str) -> dict:
             token_version=F("token_version") + 1,
         )
         return {"tipo": "ok", "nome": atual["nome"], "whatsapp": atual["whatsapp"], "convite": convite}
+
+
+def apagar(barbearia_id: str, sessao: dict, barbeiro_id: str) -> dict:
+    with com_barbearia(barbearia_id):
+        # `select_for_update`: trava a linha para o convite nao ser aceito
+        # (senha criada) entre a conferencia e o DELETE.
+        atual = (
+            Barbeiro.objects.select_for_update()
+            .filter(id=barbeiro_id).values("id", "senha_hash").first()
+        )
+        if atual is None:
+            return {"tipo": "nao_encontrado"}
+
+        recusa = pode_apagar(
+            eh_eu_mesmo=(atual["id"] == sessao["sub"]),
+            tem_senha=atual["senha_hash"] is not None,
+            agendamentos=Agendamento.objects.filter(barbeiro_id=barbeiro_id).count(),
+        )
+        if recusa:
+            return {"tipo": "recusado", "erro": recusa}
+
+        # Vinculos de servico, expediente, bloqueios e listas do dia vao junto
+        # (CASCADE); o "barbeiro preferido" do cliente volta a nulo (SET_NULL).
+        Barbeiro.objects.filter(id=barbeiro_id).delete()
+        return {"tipo": "ok"}
