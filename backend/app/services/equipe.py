@@ -18,14 +18,14 @@ def pode_desativar(
     proximidade de quem le: quem tenta se desativar precisa ouvir isso
     primeiro, nao a contagem de agendamento de outra pessoa."""
     if eh_eu_mesmo:
-        return "Você não pode se desativar — pede para outro dono fazer isso."
+        return "Você não pode se arquivar — pede para outro dono fazer isso."
     if papel == "DONO" and donos_ativos <= 1:
         return "Esse é o único dono ativo. Promove outra pessoa antes."
     if agendamentos_futuros > 0:
         quando = f" até {formatar_dia_curto(proximo_em)}" if proximo_em else ""
         return (
             f"Tem {agendamentos_futuros} horário(s) marcado(s){quando}. "
-            "Cancela ou remarca antes de desativar."
+            "Cancela ou remarca antes de arquivar."
         )
     return None
 
@@ -38,9 +38,9 @@ def pode_apagar(*, eh_eu_mesmo: bool, tem_senha: bool, agendamentos: int) -> str
     if eh_eu_mesmo:
         return "Você não pode se apagar."
     if tem_senha:
-        return "Essa pessoa já entrou no painel. Desativa em vez de apagar."
+        return "Essa pessoa já entrou no painel. Arquiva em vez de apagar."
     if agendamentos > 0:
-        return "Essa pessoa já teve horário marcado. Desativa em vez de apagar."
+        return "Essa pessoa já teve horário marcado. Arquiva em vez de apagar."
     return None
 
 

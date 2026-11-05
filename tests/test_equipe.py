@@ -239,7 +239,7 @@ def test_desativar_a_si_mesmo_e_recusado(client, cenario):
         headers={"host": host, **CABECALHO},
     )
     assert r.status_code == 409
-    assert "se desativar" in r.json()["erro"]
+    assert "se arquivar" in r.json()["erro"]
 
 
 def test_desativar_um_dono_quando_so_resta_um_ativo_e_recusado(client, cenario):
@@ -372,12 +372,12 @@ def test_reconvidar_barbeiro_desativado_e_recusado(client, cenario):
         headers={"host": host, **CABECALHO},
     )
     assert r.status_code == 409
-    assert r.json()["erro"].startswith("Esse barbeiro está desativado.")
+    assert r.json()["erro"].startswith("Esse barbeiro está arquivado.")
 
 
 def test_reconvidar_profissional_desativada_de_um_estudio(client, cenario):
     """O genero de quem atende muda com o ramo: "Essa profissional esta
-    desativada"."""
+    arquivada"."""
     from tenant.models import Barbearia
 
     b = cenario["brutus"]
@@ -388,7 +388,7 @@ def test_reconvidar_profissional_desativada_de_um_estudio(client, cenario):
 
     r = client.post(f"/api/painel/equipe/{alvo.id}/convite", headers={"host": host, **CABECALHO})
     assert r.status_code == 409
-    assert r.json()["erro"].startswith("Essa profissional está desativada.")
+    assert r.json()["erro"].startswith("Essa profissional está arquivada.")
 
 
 # ---------------------------------------------------------------- isolamento
@@ -475,7 +475,7 @@ def test_apagar_quem_ja_entrou_e_recusado(client, cenario):
 
     r = client.delete(f"/api/painel/equipe/{alvo.id}", headers={"host": host, **CABECALHO})
     assert r.status_code == 409
-    assert "Desativa" in r.json()["erro"]
+    assert "Arquiva em vez de apagar" in r.json()["erro"]
 
 
 def test_apagar_quem_ja_teve_horario_e_recusado_mesmo_cancelado(client, cenario):

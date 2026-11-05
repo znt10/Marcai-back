@@ -150,7 +150,7 @@ class EquipeConviteView(ExigeDono, APIView):
         if resultado["tipo"] == "desativado":
             p = palavras(request.barbearia.tipo)
             return Response(
-                {"erro": f"{p['esse_prof']} está {p['desativado']}. Reativa antes de mandar convite."},
+                {"erro": f"{p['esse_prof']} está {p['arquivado']}. Reativa antes de mandar convite."},
                 status=409,
             )
 

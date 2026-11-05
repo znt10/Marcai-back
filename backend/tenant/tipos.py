@@ -4,7 +4,7 @@ algum texto do back usa. O front tem a sua tabela, mais completa, em
 
 Tabela e nao `.replace("barbearia", ...)`: o portugues muda o artigo junto
 ("da barbearia", "do estudio") e o genero de quem atende ("Esse barbeiro esta
-desativado", "Essa profissional esta desativada").
+arquivado", "Essa profissional esta arquivada").
 """
 
 from .models import Paleta, TipoNegocio
@@ -17,37 +17,37 @@ PALAVRAS = {
         # ("do Ana Sobrancelhas" estaria errado), entao vai a palavra junto.
         "do_nome": "da {nome}",
         "esse_prof": "Esse barbeiro",
-        "desativado": "desativado",
+        "arquivado": "arquivado",
     },
     TipoNegocio.SOBRANCELHA: {
         "o_lugar": "o estúdio",
         "do_nome": "do estúdio {nome}",
         "esse_prof": "Essa profissional",
-        "desativado": "desativada",
+        "arquivado": "arquivada",
     },
     TipoNegocio.MANICURE: {
         "o_lugar": "o estúdio",
         "do_nome": "do estúdio {nome}",
         "esse_prof": "Essa profissional",
-        "desativado": "desativada",
+        "arquivado": "arquivada",
     },
     TipoNegocio.MAQUIAGEM: {
         "o_lugar": "o estúdio",
         "do_nome": "do estúdio {nome}",
         "esse_prof": "Essa profissional",
-        "desativado": "desativada",
+        "arquivado": "arquivada",
     },
     TipoNegocio.CABELEIREIRA: {
         "o_lugar": "o salão",
         "do_nome": "do salão {nome}",
         "esse_prof": "Essa profissional",
-        "desativado": "desativada",
+        "arquivado": "arquivada",
     },
     TipoNegocio.OUTRO: {
         "o_lugar": "o espaço",
         "do_nome": "do espaço {nome}",
         "esse_prof": "Esse profissional",
-        "desativado": "desativado",
+        "arquivado": "arquivado",
     },
 }
 
