@@ -103,16 +103,18 @@ empilhar.
 
 Igual à foto do profissional (ver `app/services/foto.py` e `src/lib/foto.ts`):
 
-- **Peso na página:** a logo entra no HTML **uma vez só**. Ela é desenhada num
-  Server Component e passada pronta à vitrine (por exemplo, como `children` ou
-  prop `ReactNode` do `Vitrine`), nunca como string em prop de Client
-  Component, para não repetir os ~80 KB de base64 no payload do RSC. O
-  `Confirmado` segue a mesma regra. As outras páginas que chamam
-  `barbeariaAtual()` recebem `logoUrl` de servidor para servidor, mas não o
-  mandam ao navegador. (Decisão minha, depois da revisão.)
+- **Peso na página:** a logo **não** vai embutida no HTML. Uma rota do front,
+  `GET /logo`, lê a data URL do Django (servidor com servidor, como o
+  `/miniatura` faz) e devolve os bytes da imagem, com cache longo. As telas
+  usam `<img src="/logo?v=<versão>">`, e a versão é um resumo do conteúdo:
+  trocar a logo muda o endereço, e o cache antigo não aparece. Motivo: no App
+  Router, todo `<img>` com data URL vai duas vezes para o navegador (no HTML e
+  no payload do RSC), seja Server ou Client Component. Com a rota, ele vai
+  uma vez só, e o celular guarda a logo entre visitas. A imagem continua
+  guardada no banco. (Decisão minha, depois da revisão.)
 - **No banco**, como data URL num campo de texto novo em `Barbearia` (por
   exemplo `logo_url`, `TextField(null=True)`). Sem volume e sem rota de
-  arquivo. O backup do banco leva a logo junto, e o deploy no Coolify não muda.
+  arquivo no disco. O backup do banco leva a logo junto, e o deploy no Coolify não muda.
 - **Formatos aceitos:** JPG, PNG e WebP. **SVG recusado** (carrega script).
   URL `https://` recusada, pelo mesmo motivo da foto.
 - **O navegador reduz antes de enviar e não corta:** mantém a proporção, com
@@ -176,4 +178,4 @@ isso pesar, troca-se para storage externo sem mexer nas telas.
 - Tamanhos aproximados: 120px na vitrine e 96px no agendado.
 - O topo pequeno continua com o desenho do tipo, não com a logo da casa.
 - O cancelado também ganha topo e logo.
-- A logo é desenhada no servidor, para ir uma vez só no HTML.
+- A logo chega ao cliente pela rota `/logo?v=<versão>`, e não embutida no HTML.
