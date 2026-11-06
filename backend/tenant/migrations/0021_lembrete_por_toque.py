@@ -20,7 +20,7 @@ JA_PROMETIDOS = """
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('tenant', '0019_cabeleireira_e_rose'),
+        ('tenant', '0020_logo_da_casa'),
     ]
 
     operations = [

@@ -35,6 +35,22 @@ def test_get_qualquer_sessao_le_a_frase(client, cenario):
     assert corpo["horarioResumo"] is None
 
 
+def test_painel_devolve_a_logo(client, cenario):
+    """A tela Equipe mostra a logo atual sobre o fundo da paleta do cliente:
+    precisa da logo, do tipo e da paleta."""
+    from tenant.models import Barbearia
+
+    b = cenario["brutus"]
+    logo = "data:image/png;base64,iVBORw0KGgo="
+    Barbearia.objects.using("owner").filter(id=b.id).update(logo_url=logo)
+    host = _logar(client, _barbeiro(b.id, papel="DONO"), b.id)
+
+    corpo = client.get("/api/painel/barbearia", headers={"host": host}).json()
+
+    assert corpo["logoUrl"] == logo
+    assert (corpo["tipo"], corpo["paleta"]) == ("BARBEARIA", "PRETO_AMARELO")
+
+
 def test_patch_exige_ser_dono(client, cenario):
     b = cenario["brutus"]
     barbeiro = _barbeiro(b.id, papel="BARBEIRO")

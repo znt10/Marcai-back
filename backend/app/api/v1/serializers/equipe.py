@@ -18,6 +18,7 @@ class EquipeItemSerializer(serializers.Serializer):
     servicos = serializers.IntegerField()
     expediente = serializers.IntegerField()
     agendamentosFuturos = serializers.IntegerField(source="agendamentos_futuros")
+    podeApagar = serializers.BooleanField(source="pode_apagar")
 
 
 class CriarBarbeiroSerializer(serializers.Serializer):

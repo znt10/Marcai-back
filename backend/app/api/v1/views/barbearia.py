@@ -41,6 +41,8 @@ class BarbeariaView(ExigeTenant, APIView):
                 "whatsappContato": dados["whatsapp_contato"],
                 "tipo": dados["tipo"],
                 "paleta": dados["paleta"],
+                # Data URL ou nulo (= o desenho do tipo). Spec 2026-11-05.
+                "logoUrl": dados["logo_url"],
                 # O site diz "a confirmacao chega no WhatsApp" so' quando chega.
                 "whatsappAoCliente": not cliente_sem_whatsapp(),
                 # Lembrete por toque: o numero do botao "Quero o lembrete no

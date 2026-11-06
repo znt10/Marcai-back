@@ -249,6 +249,19 @@ FOTO_TAMANHO_MAXIMO_BYTES = 20 * 1024
 # SVG fica de fora: e' imagem que carrega script.
 FOTO_MIMES = ("image/webp", "image/jpeg", "image/png")
 
+# ---- Logo da casa (spec 2026-11-05) ----
+#
+# Mesma regra da foto, com outros numeros: a logo NAO e' cortada (comprida
+# fica comprida), entao o navegador limita o LADO MAIOR, e nao um quadrado.
+# 512 cobre a logo de ~120px de altura da vitrine com folga em tela retina,
+# inclusive a deitada que ocupa a largura toda do cartaz. 60 KB e' o teto que
+# o José aprovou: a logo nao vai embutida no HTML (o front a serve por
+# `/logo` com cache longo), entao o peso e' de uma visita so'.
+# `lib/logo.ts` do front espelha os dois.
+LOGO_LADO_MAXIMO_PX = 512
+LOGO_TAMANHO_MAXIMO_BYTES = 60 * 1024
+LOGO_MIMES = FOTO_MIMES
+
 # ---- Resumo de cortes por barbeiro (painel do dono) ----
 #
 # Teto da janela que `/api/painel/resumo` aceita. Nao existe para proteger o

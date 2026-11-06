@@ -164,6 +164,11 @@ class Barbearia(models.Model):
     # Nulo ate o DONO preencher: o admin da plataforma nao sabe o horario da
     # barbearia. Nulo e string vazia seriam dois jeitos de dizer a mesma coisa.
     horario_resumo = models.TextField(null=True)
+    # A logo do negocio, como data URL (`data:image/webp;base64,...`), igual a
+    # `Barbeiro.foto_url`: sem storage de arquivo, e o dump do banco leva junto.
+    # Nula = a casa mostra o desenho do tipo. So' o DONO escreve, pelo painel
+    # (GRANT por coluna da 0020); regra em `app/services/logo.py`.
+    logo_url = models.TextField(null=True)
     whatsapp_contato = models.TextField()
     # QUEM VENDE decide isto, nao o dono da barbearia: a coluna vive numa
     # tabela em que `brutus_app` nao tem UPDATE nenhum (o REVOKE da 0002), e

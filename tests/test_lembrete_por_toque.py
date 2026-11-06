@@ -521,13 +521,13 @@ def test_marcado_com_a_chave_ligada_nasce_sem_pedido(client, cenario, meta):
 
 
 def test_migration_marca_os_ja_prometidos(cenario):
-    """A 0020 da o pedido a todo CONFIRMADO futuro que ja existia: eles
+    """A 0021 da o pedido a todo CONFIRMADO futuro que ja existia: eles
     receberam a confirmacao paga e a promessa do lembrete."""
     import importlib
 
     from django.db import connections
 
-    migracao = importlib.import_module("tenant.migrations.0020_lembrete_por_toque")
+    migracao = importlib.import_module("tenant.migrations.0021_lembrete_por_toque")
     b = cenario["brutus"]
     futuro = _agendamento(b, datetime.now(timezone.utc) + timedelta(days=2))
     passado = _agendamento(b, datetime.now(timezone.utc) - timedelta(days=2))
