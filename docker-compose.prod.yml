@@ -51,6 +51,7 @@ x-django: &django
     # API oficial da Meta. Vazias = tudo pela Evolution, como antes
     # (ver `.env.example`).
     WHATSAPP_PROVEDOR: ${WHATSAPP_PROVEDOR:-}
+    WHATSAPP_CENTRAL_NUMERO: ${WHATSAPP_CENTRAL_NUMERO:-}
     META_WHATSAPP_TOKEN: ${META_WHATSAPP_TOKEN:-}
     META_WHATSAPP_NUMERO_ID: ${META_WHATSAPP_NUMERO_ID:-}
     META_WHATSAPP_TEMPLATE: ${META_WHATSAPP_TEMPLATE:-}

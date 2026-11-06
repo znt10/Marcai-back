@@ -490,6 +490,13 @@ class Agendamento(models.Model):
     # `agora` aqui na criacao (a confirmacao JA e' o lembrete), e o cron
     # nunca ve esse agendamento.
     lembrete_enviado_em = models.DateTimeField(null=True)
+    # Lembrete por toque (spec 2026-11-03): quando o cliente mandou a mensagem
+    # pronta ao numero central, e de qual numero (digitos nacionais). Com a
+    # chave ligada, so' agendamento com pedido recebe lembrete, e ele vai
+    # para `lembrete_para` — o numero que provou que funciona, que pode nao
+    # ser o digitado. Nunca sai na API (§9.1).
+    lembrete_pedido_em = models.DateTimeField(null=True)
+    lembrete_para = models.TextField(null=True)
     # A marca do navegador que marcou pelo site (cookie `aparelho`). Nulo
     # para o painel, o bot e tudo que veio antes de 13/10/2026.
     aparelho = models.TextField(null=True, blank=True)

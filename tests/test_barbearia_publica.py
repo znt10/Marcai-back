@@ -21,6 +21,7 @@ def test_devolve_a_barbearia_do_host(client, cenario):
         "paleta": "PRETO_AMARELO",
         "logoUrl": None,
         "whatsappAoCliente": True,
+        "whatsappCentral": None,
     }
 
 

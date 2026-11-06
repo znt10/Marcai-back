@@ -204,14 +204,22 @@ def token_de_verificacao_confere(recebido: str) -> bool:
 
 
 def registrar_evento(corpo) -> str:
-    """O que o webhook faz com o corpo. Por enquanto so' LOGA: falha de
-    entrega (a unica noticia de que um lembrete nao chegou) e mensagem de
-    cliente. Responder cliente pelo numero central ainda nao existe — o bot e'
-    por barbearia, e uma mensagem no central nao diz de qual barbearia ela e'.
+    """O que o webhook faz com o corpo: LOGA falha de entrega (a unica
+    noticia de que um lembrete nao chegou) e, com o lembrete por toque
+    ligado, procura o codigo de agendamento no texto de cada mensagem de
+    cliente (`lembrete_por_toque.registrar_pedido`). Fora isso o central nao
+    responde ninguem — uma mensagem sem codigo nao diz de qual barbearia e'.
     """
     if not isinstance(corpo, dict) or corpo.get("object") != "whatsapp_business_account":
         return "ignorado"
-    falhas = recebidas = 0
+    # Import tardio: lembrete_por_toque importa este modulo.
+    from datetime import datetime, timezone
+
+    from . import lembrete_por_toque
+
+    pelo_toque = lembrete_por_toque.ligado()
+    agora = datetime.now(timezone.utc)
+    falhas = recebidas = pedidos = 0
     for entrada in corpo.get("entry") or []:
         for mudanca in (entrada or {}).get("changes") or []:
             valor = (mudanca or {}).get("value") or {}
@@ -222,8 +230,21 @@ def registrar_evento(corpo) -> str:
                         "[whatsapp-meta] entrega falhou para %s: %s",
                         status.get("recipient_id"), (status.get("errors") or [{}])[0],
                     )
-            for _ in valor.get("messages") or []:
+            for msg in valor.get("messages") or []:
                 recebidas += 1
+                if pelo_toque and (msg or {}).get("type") == "text":
+                    # Uma falha aqui nao pode virar 500: a Meta reenviaria o
+                    # webhook inteiro, com os status junto.
+                    try:
+                        if lembrete_por_toque.registrar_pedido(
+                            (msg.get("text") or {}).get("body") or "", msg.get("from") or "", agora,
+                        ) != "ignorado":
+                            pedidos += 1
+                    except Exception:
+                        logger.exception("[whatsapp-meta] lembrete por toque nao registrou")
     if recebidas:
-        logger.info("[whatsapp-meta] %s mensagem(ns) de cliente no central (sem bot por aqui)", recebidas)
-    return f"falhas={falhas} recebidas={recebidas}"
+        logger.info(
+            "[whatsapp-meta] %s mensagem(ns) de cliente no central, %s pedido(s) de lembrete",
+            recebidas, pedidos,
+        )
+    return f"falhas={falhas} recebidas={recebidas} pedidos={pedidos}"
