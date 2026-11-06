@@ -303,6 +303,40 @@ def test_refazer_tira_o_cancelado_sem_riscar(cenario):
     assert "\nFica ·" in texto
 
 
+def test_com_chave_e_meta_a_lista_refeita_apaga_a_anterior_pela_evolution(cenario, monkeypatch):
+    """Sem patch no `apagar_para_todos`: com a Meta ligada ele recusava, e a
+    lista velha ficava empilhada no celular do barbeiro (spec 2026-11-03)."""
+    from app.services import whatsapp
+
+    monkeypatch.setenv("WHATSAPP_PROVEDOR", "meta")
+    monkeypatch.setenv("META_WHATSAPP_TOKEN", "token")
+    monkeypatch.setenv("META_WHATSAPP_NUMERO_ID", "1411744118692075")
+    monkeypatch.setenv("EVOLUTION_API_URL", "http://evolution:8080")
+    monkeypatch.setenv("EVOLUTION_API_KEY", "chave")
+    monkeypatch.setenv("EVOLUTION_INSTANCE", "central")
+    monkeypatch.setenv("WHATSAPP_EQUIPE_PELA_EVOLUTION", "1")
+    b = cenario["brutus"]
+    zeca = _barbeiro(b, "Zeca Silva")
+    novo = _agendamento(b, zeca, 15 * 60, cliente_nome="Acabou de marcar")
+    _guardada(b, zeca)
+    enviada = Mock(ok=True, status_code=201)
+    enviada.json.return_value = {"key": {"id": "ID-NOVA", "remoteJid": "jid-nova"}, "status": "PENDING"}
+
+    # `whatsapp.requests` e `whatsapp_meta.requests` sao o mesmo modulo: a
+    # URL e' o que diz se a Meta foi chamada.
+    with patch.object(whatsapp.requests, "delete", return_value=Mock(ok=True)) as delete, \
+            patch.object(whatsapp.requests, "post", return_value=enviada) as post:
+        resultado = lista_do_dia.refazer(str(b.id), str(zeca.id), [str(novo.id)], [], TARDE)
+    meta = [c for c in post.call_args_list if c.args[0].startswith("https://graph.facebook.com/")]
+
+    assert resultado == "refeita"
+    assert delete.call_args.args[0] == "http://evolution:8080/chat/deleteMessageForEveryone/central"
+    assert delete.call_args.kwargs["json"] == {"id": "ID-ANTIGA", "remoteJid": "jid-antiga", "fromMe": True}
+    assert meta == []
+    linha = ListaDoDiaEnviada.objects.using("owner").get(barbeiro_id=zeca.id)
+    assert (linha.mensagem_id, linha.remote_jid) == ("ID-NOVA", "jid-nova")
+
+
 def test_cancelado_de_antes_nao_aparece_na_lista_refeita(cenario):
     """Nem o cancelado desta mudanca nem o de antes aparecem."""
     b = cenario["brutus"]

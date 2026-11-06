@@ -122,7 +122,7 @@ def cliente_com_whatsapp(monkeypatch):
     # Evolution liga no proprio caso, sempre com `requests` falso.
     for nome in (
         "WHATSAPP_PROVEDOR", "META_WHATSAPP_TOKEN", "META_WHATSAPP_NUMERO_ID",
-        "EVOLUTION_API_URL",
+        "EVOLUTION_API_URL", "WHATSAPP_EQUIPE_PELA_EVOLUTION",
     ):
         monkeypatch.delenv(nome, raising=False)
 

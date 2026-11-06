@@ -45,6 +45,23 @@ def _config() -> dict[str, str]:
     }
 
 
+def equipe_pela_evolution() -> bool:
+    """`WHATSAPP_EQUIPE_PELA_EVOLUTION` (spec 2026-11-03): o que vai para a
+    EQUIPE sai pela Evolution mesmo com a Meta ligada — o chip da equipe, de
+    graca, e o unico que apaga a lista refeita. O cliente segue pela Meta.
+
+    Lida a cada chamada pelo mesmo motivo do `_config`. `true` vale como `1`:
+    e' o que alguem escreve no Coolify sem ler a documentacao.
+    """
+    return os.environ.get("WHATSAPP_EQUIPE_PELA_EVOLUTION", "").strip().lower() in {"1", "true"}
+
+
+def _meta_para_equipe() -> bool | None:
+    """O `pela_meta` dos envios de equipe: False com a chave ligada (forca a
+    Evolution), None sem ela (a regra de sempre)."""
+    return False if equipe_pela_evolution() else None
+
+
 @dataclass(frozen=True)
 class Aceita:
     """A mensagem que a Evolution ACEITOU. `id` e `jid` sao o que permite
@@ -70,7 +87,7 @@ def enviar_a_equipe(whatsapp_digitos: str, mensagem: str) -> None:
     Vale nos DOIS planos. A barbearia sem zap nao deixa de avisar a equipe —
     ela so nao fala com o cliente.
     """
-    _enviar(_config()["instancia"], whatsapp_digitos, mensagem)
+    _enviar_aceita(_config()["instancia"], whatsapp_digitos, mensagem, pela_meta=_meta_para_equipe())
 
 
 def enviar_a_equipe_da(barbearia_id, whatsapp_digitos: str, mensagem: str) -> None:
@@ -84,10 +101,23 @@ def enviar_a_equipe_da(barbearia_id, whatsapp_digitos: str, mensagem: str) -> No
     enviar_a_equipe(whatsapp_digitos, mensagem)
 
 
+def enviar_convite(whatsapp_digitos: str, mensagem: str) -> None:
+    """O convite (dono ou barbeiro novo, e o reenvio). Sai pela regra de
+    sempre — a Meta quando ligada — e IGNORA `WHATSAPP_EQUIPE_PELA_EVOLUTION`:
+    e' a primeira mensagem para quem ainda nao conhece o chip da equipe, e
+    estranho escrevendo para quem nunca falou com ele e' o padrao que mais
+    derruba numero na Evolution (spec 2026-11-03). Sao poucos por mes; o
+    custo na Meta e' irrelevante. Nunca levanta.
+    """
+    _enviar_aceita(_config()["instancia"], whatsapp_digitos, mensagem)
+
+
 def enviar_a_equipe_aceita(whatsapp_digitos: str, mensagem: str) -> Aceita | None:
     """`enviar_a_equipe` para quem precisa do que a Evolution devolveu — a
     lista do dia guarda o id e o jid para poder apaga-la depois."""
-    return _enviar_aceita(_config()["instancia"], whatsapp_digitos, mensagem)
+    return _enviar_aceita(
+        _config()["instancia"], whatsapp_digitos, mensagem, pela_meta=_meta_para_equipe(),
+    )
 
 
 # Temporario, enquanto a API oficial da Meta nao libera (spec 2026-10-26): o
@@ -188,6 +218,7 @@ def _registrar_nao_enviada(barbearia, tipo: str, cliente_nome: str) -> None:
 
 def _enviar_aceita(
     instancia: str, whatsapp_digitos: str, mensagem: str, *, digitando_ms: int | None = None,
+    pela_meta: bool | None = None,
     modelo: "whatsapp_meta.Modelo | None" = None, na_janela: bool = False,
 ) -> Aceita | None:
     """Fire-and-forget. Falha de WhatsApp NUNCA derruba um agendamento (§10.2).
@@ -211,9 +242,10 @@ def _enviar_aceita(
 
     Com `WHATSAPP_PROVEDOR=meta` sai pela API oficial (`whatsapp_meta.py`):
     sem "digitando" e sem jid — a Meta nao apaga mensagem, entao nao ha o que
-    guardar para isso.
+    guardar para isso. `pela_meta=False` forca a Evolution mesmo assim (a
+    equipe com `WHATSAPP_EQUIPE_PELA_EVOLUTION`); None e' a regra de sempre.
     """
-    if whatsapp_meta.ligado():
+    if (whatsapp_meta.ligado() if pela_meta is None else pela_meta):
         mensagem_id = whatsapp_meta.enviar(
             whatsapp_digitos, mensagem, modelo=modelo, na_janela=na_janela,
         )
@@ -283,10 +315,12 @@ def apagar_para_todos(jid: str | None, mensagem_id: str | None) -> bool:
     Premissa medida na Task 12 do plano: ha relato de a 2.3.7 nao apagar
     (evolution-api#592).
 
-    Pela Meta devolve False sempre: a Cloud API nao apaga mensagem enviada.
-    A lista refeita chega como mensagem nova, sem a velha sumir.
+    Pela Meta devolve False: a Cloud API nao apaga mensagem enviada, e a
+    lista refeita chega como mensagem nova, sem a velha sumir. Com
+    `WHATSAPP_EQUIPE_PELA_EVOLUTION` a lista saiu pela Evolution, entao e'
+    por ela que se apaga.
     """
-    if whatsapp_meta.ligado():
+    if whatsapp_meta.ligado() and not equipe_pela_evolution():
         return False
     cfg = _config()
     if not cfg["url"] or not jid or not mensagem_id:
@@ -401,6 +435,25 @@ def estado_da_instancia() -> str:
     """
     if whatsapp_meta.ligado():
         return whatsapp_meta.estado()
+    return _estado_evolution()
+
+
+def estado_do_chip_da_equipe() -> str | None:
+    """O chip da equipe, quando ele e' um numero A PARTE: chave ligada e Meta
+    ligada (o `estado_da_instancia` so' olha a Meta nesse caso). None quando
+    nao ha o que conferir — sem a chave nao existe chip separado, e sem a Meta
+    o `estado_da_instancia` ja confere a propria Evolution.
+
+    Sem isto o chip caido ficaria em silencio: a Evolution responde 201
+    PENDING mesmo com o vinculo morto, e a lista "sai" sem chegar.
+    """
+    if not (equipe_pela_evolution() and whatsapp_meta.ligado()):
+        return None
+    return _estado_evolution()
+
+
+def _estado_evolution() -> str:
+    """A metade Evolution de `estado_da_instancia`, mesmo contrato."""
     cfg = _config()
     if not cfg["url"]:
         return "sem-configuracao"

@@ -8,7 +8,7 @@ from app.services.lembrete import enviar_pendentes
 from app.services.mensalidade.avisos import enviar_do_dia as enviar_avisos_da_mensalidade
 from app.services.lista_do_dia import enviar as enviar_lista_do_dia
 from app.services.lista_do_dia import refazer as refazer_lista_do_dia
-from app.services.whatsapp import estado_da_instancia
+from app.services.whatsapp import estado_da_instancia, estado_do_chip_da_equipe
 from app.services.whatsapp_eventos import aplicar_estado
 from app.services.whatsapp_instancias import consultar_estado, garantir_instancia
 from app.services.zelador import alarmar_e_podar
@@ -44,6 +44,14 @@ def whatsapp_healthcheck() -> str:
         logger.warning(
             "[agendador] !!! WHATSAPP FORA DO AR: %s — rode: npm run whatsapp:qr",
             estado,
+        )
+    # Com a equipe num chip a parte (WHATSAPP_EQUIPE_PELA_EVOLUTION), o estado
+    # acima e' o da Meta; o chip precisa da propria conferencia.
+    chip = estado_do_chip_da_equipe()
+    if chip is not None and chip != "open":
+        logger.warning(
+            "[agendador] !!! CHIP DA EQUIPE FORA DO AR: %s — reconecte o QR no Evolution Manager",
+            chip,
         )
     return estado
 
