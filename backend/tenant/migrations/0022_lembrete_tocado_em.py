@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('tenant', '0020_lembrete_por_toque'),
+        ('tenant', '0021_lembrete_por_toque'),
     ]
 
     operations = [
