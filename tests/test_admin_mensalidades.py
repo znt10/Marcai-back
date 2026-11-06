@@ -507,6 +507,24 @@ def test_desativar_a_barbearia_cancela_a_cobranca_aberta(client):
     assert _status(c) == "CANCELADA"
 
 
+
+def test_arquivada_sai_da_lista_e_dos_contadores(client):
+    """Arquivar no admin (o `ativo=False`) tira o lugar da tela de
+    mensalidades: a lista e os contadores da entrada nao contam mais ele.
+    O historico por id continua abrindo (link antigo)."""
+    from app.services.admin_barbearias import atualizar_ativo
+
+    _logar_admin(client)
+    b = _nova("arquivada", paga_ate=hoje() - timedelta(days=30))
+    assert _get(client).json()["contadores"]["bloqueadas"] == 1
+    assert atualizar_ativo(str(b.id), False)
+
+    corpo = _get(client).json()
+    assert str(b.id) not in {x["barbeariaId"] for x in corpo["barbearias"]}
+    assert corpo["contadores"]["bloqueadas"] == 0
+    assert _historico(client, b.id).status_code == 200
+
+
 # ------------------------------------------------------------------ historico
 
 

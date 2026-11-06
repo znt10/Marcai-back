@@ -239,7 +239,7 @@ def test_desativar_a_si_mesmo_e_recusado(client, cenario):
         headers={"host": host, **CABECALHO},
     )
     assert r.status_code == 409
-    assert "se desativar" in r.json()["erro"]
+    assert "se arquivar" in r.json()["erro"]
 
 
 def test_desativar_um_dono_quando_so_resta_um_ativo_e_recusado(client, cenario):
@@ -372,12 +372,12 @@ def test_reconvidar_barbeiro_desativado_e_recusado(client, cenario):
         headers={"host": host, **CABECALHO},
     )
     assert r.status_code == 409
-    assert r.json()["erro"].startswith("Esse barbeiro está desativado.")
+    assert r.json()["erro"].startswith("Esse barbeiro está arquivado.")
 
 
 def test_reconvidar_profissional_desativada_de_um_estudio(client, cenario):
     """O genero de quem atende muda com o ramo: "Essa profissional esta
-    desativada"."""
+    arquivada"."""
     from tenant.models import Barbearia
 
     b = cenario["brutus"]
@@ -388,7 +388,7 @@ def test_reconvidar_profissional_desativada_de_um_estudio(client, cenario):
 
     r = client.post(f"/api/painel/equipe/{alvo.id}/convite", headers={"host": host, **CABECALHO})
     assert r.status_code == 409
-    assert r.json()["erro"].startswith("Essa profissional está desativada.")
+    assert r.json()["erro"].startswith("Essa profissional está arquivada.")
 
 
 # ---------------------------------------------------------------- isolamento
@@ -410,3 +410,115 @@ def test_o_rls_isola_a_equipe(client, cenario):
 
     nomes = [x["nome"] for x in client.get("/api/painel/equipe", headers={"host": host}).json()["equipe"]]
     assert "Da Dontony" not in nomes
+
+
+# ---------------------------------------------------------------- DELETE (apagar)
+
+
+def _agendamento_passado_cancelado(barbearia_id, barbeiro_id):
+    from tenant.models import Agendamento, Cliente, Servico
+
+    servico = Servico.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=barbearia_id, nome="Corte",
+        duracao_minima_min=20, duracao_sugerida_min=30,
+    )
+    cliente = Cliente.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=barbearia_id, nome="Cliente", whatsapp="11988887777",
+    )
+    passado = datetime.now(timezone.utc) - timedelta(days=3)
+    Agendamento.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=barbearia_id, codigo=str(uuid.uuid4())[:10],
+        barbeiro_id=barbeiro_id, cliente_id=cliente.id, servico_id=servico.id,
+        servico_nome="Corte", inicio=passado, fim=passado + timedelta(minutes=30),
+        duracao_min=30, status="CANCELADO",
+    )
+
+
+def test_apagar_convite_nunca_aceito_some_da_equipe(client, cenario):
+    """O caso que motivou: cadastrou com o celular errado. Apaga e o mesmo
+    nome pode ser cadastrado de novo, com outro numero."""
+    from tenant.models import Barbeiro, HorarioTrabalho
+
+    b = cenario["brutus"]
+    dono = _barbeiro(b.id, "Dono", papel="DONO")
+    host = _logar(client, dono, b.id)
+    vencido = datetime.now(timezone.utc) - timedelta(hours=1)
+    errado = _barbeiro(b.id, "Numero errado", ativo=False, convite_expira_em=vencido)
+    HorarioTrabalho.objects.using("owner").create(
+        id=str(uuid.uuid4()), barbearia_id=b.id, barbeiro_id=errado.id,
+        dia_semana=1, minutos_inicio=540, minutos_fim=1080,
+    )
+
+    item = {
+        x["nome"]: x for x in client.get("/api/painel/equipe", headers={"host": host}).json()["equipe"]
+    }
+    assert item["Numero errado"]["podeApagar"] is True
+
+    r = client.delete(f"/api/painel/equipe/{errado.id}", headers={"host": host, **CABECALHO})
+    assert r.status_code == 200
+    assert not Barbeiro.objects.using("owner").filter(id=errado.id).exists()
+    assert not HorarioTrabalho.objects.using("owner").filter(barbeiro_id=errado.id).exists()
+
+
+def test_apagar_quem_ja_entrou_e_recusado(client, cenario):
+    from app.services.senha import gerar
+
+    b = cenario["brutus"]
+    dono = _barbeiro(b.id, "Dono", papel="DONO")
+    host = _logar(client, dono, b.id)
+    alvo = _barbeiro(b.id, "Ja entrou", senha_hash=gerar("x"))
+
+    item = {
+        x["nome"]: x for x in client.get("/api/painel/equipe", headers={"host": host}).json()["equipe"]
+    }
+    assert item["Ja entrou"]["podeApagar"] is False
+
+    r = client.delete(f"/api/painel/equipe/{alvo.id}", headers={"host": host, **CABECALHO})
+    assert r.status_code == 409
+    assert "Arquiva em vez de apagar" in r.json()["erro"]
+
+
+def test_apagar_quem_ja_teve_horario_e_recusado_mesmo_cancelado(client, cenario):
+    b = cenario["brutus"]
+    dono = _barbeiro(b.id, "Dono", papel="DONO")
+    host = _logar(client, dono, b.id)
+    alvo = _barbeiro(b.id, "Com historico")
+    _agendamento_passado_cancelado(b.id, alvo.id)
+
+    item = {
+        x["nome"]: x for x in client.get("/api/painel/equipe", headers={"host": host}).json()["equipe"]
+    }
+    assert item["Com historico"]["podeApagar"] is False
+
+    r = client.delete(f"/api/painel/equipe/{alvo.id}", headers={"host": host, **CABECALHO})
+    assert r.status_code == 409
+    assert "horário marcado" in r.json()["erro"]
+
+
+def test_apagar_a_si_mesmo_e_recusado(client, cenario):
+    b = cenario["brutus"]
+    dono = _barbeiro(b.id, "Dono", papel="DONO")
+    host = _logar(client, dono, b.id)
+
+    r = client.delete(f"/api/painel/equipe/{dono.id}", headers={"host": host, **CABECALHO})
+    assert r.status_code == 409
+
+
+def test_apagar_e_so_do_dono(client, cenario):
+    b = cenario["brutus"]
+    barbeiro = _barbeiro(b.id, papel="BARBEIRO")
+    host = _logar(client, barbeiro, b.id)
+    alvo = _barbeiro(b.id, "Alvo")
+
+    r = client.delete(f"/api/painel/equipe/{alvo.id}", headers={"host": host, **CABECALHO})
+    assert r.status_code == 403
+
+
+def test_apagar_de_outra_barbearia_e_404(client, cenario):
+    b = cenario["brutus"]
+    dono = _barbeiro(b.id, "Dono", papel="DONO")
+    host = _logar(client, dono, b.id)
+    de_fora = _barbeiro(cenario["dontony"].id, "De fora")
+
+    r = client.delete(f"/api/painel/equipe/{de_fora.id}", headers={"host": host, **CABECALHO})
+    assert r.status_code == 404
