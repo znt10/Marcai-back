@@ -114,7 +114,10 @@ def _linhas(agora, barbearia_id=None):
 
 def listar(*, agora=None):
     agora = agora or timezone.now()
-    linhas = _linhas(agora)
+    # Arquivada (o "desativar" do admin) nao entra: esta fora do ar e nao se
+    # cobra, e contar ela deixava "1 bloqueada" na entrada para sempre. So a
+    # LISTA filtra: `linha()` e o historico por id continuam abrindo.
+    linhas = [x for x in _linhas(agora) if x["ativo"]]
     return {
         "barbearias": linhas,
         "contadores": {

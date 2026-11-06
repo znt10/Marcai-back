@@ -164,6 +164,11 @@ class Barbearia(models.Model):
     # Nulo ate o DONO preencher: o admin da plataforma nao sabe o horario da
     # barbearia. Nulo e string vazia seriam dois jeitos de dizer a mesma coisa.
     horario_resumo = models.TextField(null=True)
+    # A logo do negocio, como data URL (`data:image/webp;base64,...`), igual a
+    # `Barbeiro.foto_url`: sem storage de arquivo, e o dump do banco leva junto.
+    # Nula = a casa mostra o desenho do tipo. So' o DONO escreve, pelo painel
+    # (GRANT por coluna da 0020); regra em `app/services/logo.py`.
+    logo_url = models.TextField(null=True)
     whatsapp_contato = models.TextField()
     # QUEM VENDE decide isto, nao o dono da barbearia: a coluna vive numa
     # tabela em que `brutus_app` nao tem UPDATE nenhum (o REVOKE da 0002), e
@@ -485,6 +490,17 @@ class Agendamento(models.Model):
     # `agora` aqui na criacao (a confirmacao JA e' o lembrete), e o cron
     # nunca ve esse agendamento.
     lembrete_enviado_em = models.DateTimeField(null=True)
+    # Lembrete por toque (spec 2026-11-03): quando o cliente mandou a mensagem
+    # pronta ao numero central, e de qual numero (digitos nacionais). Com a
+    # chave ligada, so' agendamento com pedido recebe lembrete, e ele vai
+    # para `lembrete_para` — o numero que provou que funciona, que pode nao
+    # ser o digitado. Nunca sai na API (§9.1).
+    lembrete_pedido_em = models.DateTimeField(null=True)
+    lembrete_para = models.TextField(null=True)
+    # O ultimo toque de verdade (o cliente ESCREVEU): abre a janela de 24h da
+    # Meta, em que sai texto normal. Separado de `lembrete_pedido_em` porque
+    # o agendamento marcado antes da chave nasce pedido sem ninguem escrever.
+    lembrete_tocado_em = models.DateTimeField(null=True)
     # A marca do navegador que marcou pelo site (cookie `aparelho`). Nulo
     # para o painel, o bot e tudo que veio antes de 13/10/2026.
     aparelho = models.TextField(null=True, blank=True)

@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 
 from app.api.v1.mixins import NAO_ENCONTRADO, ExigeSessao
 from app.api.v1.serializers.agendamentos import CriarAgendamentoSerializer
-from app.services import lista_do_dia
+from app.services import lembrete_por_toque, lista_do_dia, modelos_meta
 from app.services.agendamentos import ErroCliente, cancelar, eh_sobreposicao, marcar
 from app.services.autorizacao import filtro_do_barbeiro
 from app.services.mensagens import msg_cancelamento_pela_barbearia, msg_confirmacao
@@ -68,9 +68,24 @@ class AgendamentosPainelView(ExigeSessao, APIView):
                 endereco=request.barbearia.endereco, link=link,
                 barbearia_nome=request.barbearia.nome,
                 contato=request.barbearia.whatsapp_contato,
+                # Lembrete por toque: a confirmacao do balcao sai (paga), e o
+                # lembrete so' com o toque no link da ultima linha.
+                link_do_lembrete=(
+                    lembrete_por_toque.link(request.barbearia.nome, criado["codigo"])
+                    if lembrete_por_toque.ligado() else None
+                ),
             ),
             tipo=TipoMensagem.CONFIRMACAO,
             cliente_nome=d["nome"],
+            # Pela Meta, o template com o botao "Quero lembrete 1h antes" no
+            # lugar do link (so' com o lembrete por toque ligado: sem ele o
+            # botao prometeria o que ja vem sozinho).
+            modelo=modelos_meta.confirmacao(
+                cliente_nome=d["nome"], barbeiro_nome=criado["barbeiro_nome"],
+                servico_nome=criado["servico_nome"], inicio=criado["inicio"], link=link,
+                barbearia_nome=request.barbearia.nome,
+                contato=request.barbearia.whatsapp_contato, codigo=criado["codigo"],
+            ) if lembrete_por_toque.ligado() else None,
         )
         # Painel nao manda aviso curto ao barbeiro (nunca mandou); mas a
         # lista de HOJE, se ja saiu, e' refeita — inclusive para quem marcou
@@ -104,6 +119,11 @@ class AgendamentoCancelarView(ExigeSessao, APIView):
             ),
             tipo=TipoMensagem.CANCELAMENTO,
             cliente_nome=cancelado["cliente_nome"],
+            modelo=modelos_meta.cancelado(
+                cliente_nome=cancelado["cliente_nome"], servico_nome=cancelado["servico_nome"],
+                inicio=cancelado["inicio"], barbearia_nome=request.barbearia.nome,
+                contato=request.barbearia.whatsapp_contato,
+            ),
         )
         lista_do_dia.avisar_mudanca(
             self.barbearia_id, cancelado["barbeiro_id"], datetime.now(timezone.utc),

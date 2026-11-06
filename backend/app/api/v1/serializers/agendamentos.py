@@ -34,5 +34,6 @@ class AgendamentoDetalheSerializer(serializers.Serializer):
     fim = InstanteISO()
     status = serializers.CharField()
     podeCancelar = serializers.BooleanField(source="pode_cancelar")
+    lembretePedido = serializers.BooleanField(source="lembrete_pedido")
     endereco = serializers.CharField()
     whatsappBarbearia = serializers.CharField(source="whatsapp_barbearia")

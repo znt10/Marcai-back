@@ -208,7 +208,7 @@ def test_cancelamento_pela_barbearia_pelo_central():
     )
     assert texto == (
         "*Dom Tony*\n"
-        "Oi, Maria. Cancelamos seu corte de quinta 13/08 às 8:00. Desculpa! "
+        "Oi, Maria. Cancelamos seu horário de corte, quinta 13/08 às 8:00. Desculpa! "
         "Pra remarcar, chama: (83) 9 9999-0000"
     )
 

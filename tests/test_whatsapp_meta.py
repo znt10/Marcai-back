@@ -188,7 +188,7 @@ def test_webhook_assinado_e_aceito_sem_x_brutus_cliente(client, caplog):
             headers={"host": HOST, "x-hub-signature-256": _assinar(corpo)},
         )
     assert r.status_code == 200
-    assert r.json()["resultado"] == "falhas=1 recebidas=0"
+    assert r.json()["resultado"] == "falhas=1 recebidas=0 pedidos=0"
     assert "131026" in caplog.text
 
 

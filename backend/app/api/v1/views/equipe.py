@@ -10,7 +10,7 @@ from app.api.v1.serializers.equipe import (
     EquipeItemSerializer,
 )
 from app.services.convite import link_do_convite
-from app.services.equipe import atualizar, criar, desativar, listar, reativar, reconvidar
+from app.services.equipe import apagar, atualizar, criar, desativar, listar, reativar, reconvidar
 from app.services.mensagens import msg_convite
 from tenant.tipos import palavras
 from app.services.whatsapp import enviar_convite
@@ -70,7 +70,7 @@ class EquipeView(ExigeDono, APIView):
 
 
 class EquipeDetalheView(ExigeDono, APIView):
-    """PATCH /api/painel/equipe/<id>"""
+    """PATCH,DELETE /api/painel/equipe/<id>"""
 
     mensagem_papel_insuficiente = MENSAGEM_SO_DONO
 
@@ -94,6 +94,15 @@ class EquipeDetalheView(ExigeDono, APIView):
             campos["whatsapp"] = normalizado
 
         resultado = atualizar(self.barbearia_id, self.sessao, id, campos)
+        if resultado["tipo"] == "nao_encontrado":
+            return Response(NAO_ENCONTRADO, status=404)
+        if resultado["tipo"] == "recusado":
+            return Response({"erro": resultado["erro"]}, status=409)
+        return Response({"ok": True})
+
+    def delete(self, request, id):
+        """So o cadastro que nunca foi usado: ver `pode_apagar`."""
+        resultado = apagar(self.barbearia_id, self.sessao, id)
         if resultado["tipo"] == "nao_encontrado":
             return Response(NAO_ENCONTRADO, status=404)
         if resultado["tipo"] == "recusado":
@@ -140,7 +149,7 @@ class EquipeConviteView(ExigeDono, APIView):
         if resultado["tipo"] == "desativado":
             p = palavras(request.barbearia.tipo)
             return Response(
-                {"erro": f"{p['esse_prof']} está {p['desativado']}. Reativa antes de mandar convite."},
+                {"erro": f"{p['esse_prof']} está {p['arquivado']}. Reativa antes de mandar convite."},
                 status=409,
             )
 

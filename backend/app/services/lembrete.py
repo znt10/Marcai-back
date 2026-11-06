@@ -14,6 +14,7 @@ from tenant.models import (
 )
 from tenant.rls import com_barbearia
 
+from . import lembrete_por_toque, modelos_meta
 from .mensagens import msg_lembrete
 from .whatsapp import enviar_ao_cliente
 
@@ -43,13 +44,16 @@ def enviar_pendentes(agora: datetime) -> int:
     """
     limite = agora + timedelta(minutes=LEMBRETE_ANTECEDENCIA_MIN)
     enviados = 0
+    # Lembrete por toque: so' quem pediu, e no numero que escreveu.
+    pelo_toque = lembrete_por_toque.ligado()
+    so_quem_tocou = {"lembrete_pedido_em__isnull": False} if pelo_toque else {}
 
     for b in Barbearia.objects.filter(ativo=True):
         with com_barbearia(b.id):
             pendentes = list(
                 Agendamento.objects.filter(
                     status="CONFIRMADO", lembrete_enviado_em__isnull=True,
-                    inicio__gt=agora, inicio__lte=limite,
+                    inicio__gt=agora, inicio__lte=limite, **so_quem_tocou,
                 ).select_related("barbeiro", "cliente")
             )
             instancia = WhatsappInstancia.objects.filter(barbearia_id=b.id).first()
@@ -66,6 +70,7 @@ def enviar_pendentes(agora: datetime) -> int:
         )
 
         for a in pendentes:
+            para = a.lembrete_para if pelo_toque else a.cliente.whatsapp
             # MARCA antes de mandar, numa transacao PROPRIA por agendamento —
             # igual ao route.ts (uma `comBarbearia` so' pro update, separada
             # da leitura). Se o processo morrer no meio do laco, so' os que
@@ -90,12 +95,19 @@ def enviar_pendentes(agora: datetime) -> int:
                 from .bot import enviar_lembrete_pelo_bot
 
                 enviar_lembrete_pelo_bot(
-                    str(b.id), instancia.nome, a.cliente.whatsapp, a.codigo, texto, agora,
+                    str(b.id), instancia.nome, para, a.codigo, texto, agora,
                 )
             else:
                 enviar_ao_cliente(
-                    b, a.cliente.whatsapp, texto,
+                    b, para, texto,
                     tipo=TipoMensagem.LEMBRETE, cliente_nome=a.cliente.nome,
+                    modelo=modelos_meta.lembrete(
+                        servico_nome=a.servico_nome, barbeiro_nome=a.barbeiro.nome,
+                        inicio=a.inicio, endereco=b.endereco,
+                        barbearia_nome=b.nome, contato=b.whatsapp_contato,
+                    ),
+                    # Tocou ha pouco: a conversa esta aberta, vai texto.
+                    na_janela=pelo_toque and lembrete_por_toque.na_janela(a.lembrete_tocado_em, agora),
                 )
             enviados += 1
 

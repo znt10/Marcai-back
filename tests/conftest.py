@@ -116,7 +116,14 @@ def cliente_com_whatsapp(monkeypatch):
     # O `.env` de quem desenvolve pode ter a Meta ligada com o token de
     # verdade: a suite nunca pode mandar mensagem real. Quem testa a Meta
     # liga de novo no proprio caso, com `requests` falso.
-    for nome in ("WHATSAPP_PROVEDOR", "META_WHATSAPP_TOKEN", "META_WHATSAPP_NUMERO_ID"):
+    # A Evolution tambem: no compose ela aponta para o chip de verdade, e os
+    # avisos da equipe (o "ja paguei" vai a MENSALIDADE_WHATSAPP_AVISO)
+    # chegavam no celular do Jose a cada rodada (03/11). Quem testa a
+    # Evolution liga no proprio caso, sempre com `requests` falso.
+    for nome in (
+        "WHATSAPP_PROVEDOR", "META_WHATSAPP_TOKEN", "META_WHATSAPP_NUMERO_ID",
+        "EVOLUTION_API_URL", "WHATSAPP_EQUIPE_PELA_EVOLUTION",
+    ):
         monkeypatch.delenv(nome, raising=False)
 
 

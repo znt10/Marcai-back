@@ -55,7 +55,10 @@ def msg_confirmacao(
     *, cliente_nome: str, barbeiro_nome: str, servico_nome: str,
     inicio, endereco: str, link: str,
     barbearia_nome: str | None = None, contato: str | None = None,
+    link_do_lembrete: str | None = None,
 ) -> str:
+    """`link_do_lembrete` (lembrete por toque, marcado pelo painel): o mesmo
+    `wa.me` do botao da tela de agendado, na ultima linha."""
     primeiro_nome = cliente_nome.split(" ")[0]
     # O endereco SAIU daqui (pedido do dono, 02/09): quem marca ja esta na
     # vitrine da barbearia, que o mostra, e repeti-lo era o que empurrava a
@@ -67,12 +70,14 @@ def msg_confirmacao(
         f"{formatar_dia_com_semana(inicio)} às {formatar_hora_falada(inicio)}, "
         f"com {barbeiro_nome}.\n\nCancelar: {link}"
     )
-    if barbearia_nome is None:
-        return texto
-    # Pelo numero CENTRAL (etapa 1): o cliente nao conhece este numero. O
-    # nome da barbearia abre, e a ultima linha diz para onde responder — sem
-    # ela, a duvida iria para um numero que ninguem le.
-    return f"*{barbearia_nome}*\n{texto}\nDúvida? Chama: {formatar(contato)}"
+    if barbearia_nome is not None:
+        # Pelo numero CENTRAL (etapa 1): o cliente nao conhece este numero. O
+        # nome da barbearia abre, e a ultima linha diz para onde responder —
+        # sem ela, a duvida iria para um numero que ninguem le.
+        texto = f"*{barbearia_nome}*\n{texto}\nDúvida? Chama: {formatar(contato)}"
+    if link_do_lembrete:
+        texto += f"\n\nQuer o lembrete 1h antes? Toque e envie a mensagem: {link_do_lembrete}"
+    return texto
 
 
 def msg_cancelamento_pela_barbearia(
@@ -85,7 +90,9 @@ def msg_cancelamento_pela_barbearia(
     # mensagem seca aqui e' a diferenca entre um cliente que remarca e um que
     # nao volta. O convite a remarcar tambem fica, pela mesma razao.
     base = (
-        f"Oi, {primeiro_nome}. Cancelamos seu {servico_nome.lower()} de "
+        # "seu horário de", e nao "seu corte": o servico pode ser manicure ou
+        # sobrancelha (03/11, os tipos alem de barbearia).
+        f"Oi, {primeiro_nome}. Cancelamos seu horário de {servico_nome.lower()}, "
         f"{formatar_dia_com_semana(inicio)} às {formatar_hora_falada(inicio)}. Desculpa!"
     )
     if barbearia_nome is None:

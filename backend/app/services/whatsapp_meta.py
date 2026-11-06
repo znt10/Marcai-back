@@ -24,6 +24,7 @@ import hmac
 import logging
 import os
 import re
+from dataclasses import dataclass
 
 import requests
 
@@ -92,47 +93,61 @@ def _id_aceito(r: requests.Response) -> str | None:
         return None
 
 
-def enviar(whatsapp_digitos: str, mensagem: str) -> str | None:
-    """O `wamid` da mensagem aceita, ou None quando nao saiu.
+@dataclass(frozen=True)
+class Modelo:
+    """Um template proprio da Meta para UMA mensagem (03/11): as quebras de
+    linha ficam no texto fixo, e cada pedaco vai numa variavel.
 
-    Aceita, nao entregue — igual a Evolution. Entrega e leitura chegam
-    depois, pelo webhook (`statuses`), e so' viram log.
-    """
-    cfg = _config()
-    if not cfg["token"] or not cfg["numero_id"]:
-        logger.info("[whatsapp-meta] sem META_WHATSAPP_TOKEN/NUMERO_ID: %s %s", whatsapp_digitos, mensagem)
-        return None
+    `variavel` e' o NOME da variavel de ambiente com o nome do template
+    (ex.: `META_TEMPLATE_LEMBRETE=marcai_lembrete_1h`): vazia, a mensagem
+    segue pelo `marcai_aviso`. `payload` vai no botao de resposta rapida
+    (indice 0) e volta no webhook quando o cliente toca."""
 
-    destino = f"55{whatsapp_digitos}"
-    if cfg["template"]:
-        como = "template"
-        corpo = {
-            "messaging_product": "whatsapp",
-            "to": destino,
-            "type": "template",
-            "template": {
-                "name": cfg["template"],
-                "language": {"code": cfg["idioma"]},
-                "components": [{
-                    "type": "body",
-                    "parameters": [{"type": "text", "text": achatar(mensagem)}],
-                }],
-            },
-        }
-    else:
-        como = "texto"
-        corpo = {
-            "messaging_product": "whatsapp",
-            "to": destino,
-            "type": "text",
-            "text": {"body": mensagem, "preview_url": False},
-        }
+    variavel: str
+    parametros: list
+    payload: str | None = None
+
+    def nome(self) -> str:
+        return os.environ.get(self.variavel, "").strip()
+
+    def parametros_prontos(self) -> list[str]:
+        # Vazio e quebra de linha a Meta recusa (132000/132018).
+        return [achatar(str(p or "")) or "—" for p in self.parametros]
+
+
+def _corpo_texto(destino: str, mensagem: str) -> dict:
+    return {
+        "messaging_product": "whatsapp",
+        "to": destino,
+        "type": "text",
+        "text": {"body": mensagem, "preview_url": False},
+    }
+
+
+def _corpo_template(destino: str, nome: str, idioma: str, parametros: list[str], payload=None) -> dict:
+    componentes = [{
+        "type": "body",
+        "parameters": [{"type": "text", "text": p} for p in parametros],
+    }]
+    if payload:
+        componentes.append({
+            "type": "button", "sub_type": "quick_reply", "index": "0",
+            "parameters": [{"type": "payload", "payload": payload}],
+        })
+    return {
+        "messaging_product": "whatsapp",
+        "to": destino,
+        "type": "template",
+        "template": {"name": nome, "language": {"code": idioma}, "components": componentes},
+    }
+
+
+def _tentar(cfg: dict, corpo: dict, whatsapp_digitos: str, como: str) -> str | None:
     r = _post(cfg, corpo)
     if r is None:
         return None
     if r.ok:
         return _registrar_aceita(r, whatsapp_digitos, como)
-
     # O corpo e' onde a Meta diz o motivo: token vencido (190), numero nao
     # registrado (133010), sem cartao (131042), template nao aprovado (132001).
     logger.error(
@@ -140,6 +155,50 @@ def enviar(whatsapp_digitos: str, mensagem: str) -> str | None:
         r.status_code, whatsapp_digitos, r.text[:300],
     )
     return None
+
+
+def enviar(
+    whatsapp_digitos: str, mensagem: str, *, modelo: Modelo | None = None, na_janela: bool = False,
+) -> str | None:
+    """O `wamid` da mensagem aceita, ou None quando nao saiu.
+
+    Aceita, nao entregue — igual a Evolution. Entrega e leitura chegam
+    depois, pelo webhook (`statuses`), e so' viram log.
+
+    A ordem:
+    - `na_janela`: quem chama SABE que o cliente escreveu ha pouco (o toque
+      do lembrete). Sai texto normal, com as quebras de linha. So' com
+      certeza: fora da janela a Meta aceita o texto com 200 e ele some
+      depois, pelo webhook.
+    - `modelo` com o template preenchido: o template proprio da mensagem.
+      Recusado (ainda nao aprovado, pausado), cai no `marcai_aviso` — a
+      mensagem nao some por causa do modelo novo.
+    - o `marcai_aviso` (`META_WHATSAPP_TEMPLATE`), com a mensagem achatada.
+    - sem template nenhum: texto.
+    """
+    cfg = _config()
+    if not cfg["token"] or not cfg["numero_id"]:
+        logger.info("[whatsapp-meta] sem META_WHATSAPP_TOKEN/NUMERO_ID: %s %s", whatsapp_digitos, mensagem)
+        return None
+
+    destino = f"55{whatsapp_digitos}"
+    if na_janela or not cfg["template"]:
+        return _tentar(cfg, _corpo_texto(destino, mensagem), whatsapp_digitos, "texto")
+
+    if modelo is not None and modelo.nome():
+        aceita = _tentar(
+            cfg,
+            _corpo_template(destino, modelo.nome(), cfg["idioma"], modelo.parametros_prontos(), modelo.payload),
+            whatsapp_digitos, f"modelo {modelo.nome()}",
+        )
+        if aceita is not None:
+            return aceita
+        logger.error("[whatsapp-meta] modelo %s recusado: vai pelo %s", modelo.nome(), cfg["template"])
+
+    return _tentar(
+        cfg, _corpo_template(destino, cfg["template"], cfg["idioma"], [achatar(mensagem)]),
+        whatsapp_digitos, "template",
+    )
 
 
 def _registrar_aceita(r: requests.Response, whatsapp_digitos: str, como: str) -> str | None:
@@ -204,14 +263,22 @@ def token_de_verificacao_confere(recebido: str) -> bool:
 
 
 def registrar_evento(corpo) -> str:
-    """O que o webhook faz com o corpo. Por enquanto so' LOGA: falha de
-    entrega (a unica noticia de que um lembrete nao chegou) e mensagem de
-    cliente. Responder cliente pelo numero central ainda nao existe — o bot e'
-    por barbearia, e uma mensagem no central nao diz de qual barbearia ela e'.
+    """O que o webhook faz com o corpo: LOGA falha de entrega (a unica
+    noticia de que um lembrete nao chegou) e, com o lembrete por toque
+    ligado, procura o codigo de agendamento no texto de cada mensagem de
+    cliente (`lembrete_por_toque.registrar_pedido`). Fora isso o central nao
+    responde ninguem — uma mensagem sem codigo nao diz de qual barbearia e'.
     """
     if not isinstance(corpo, dict) or corpo.get("object") != "whatsapp_business_account":
         return "ignorado"
-    falhas = recebidas = 0
+    # Import tardio: lembrete_por_toque importa este modulo.
+    from datetime import datetime, timezone
+
+    from . import lembrete_por_toque
+
+    pelo_toque = lembrete_por_toque.ligado()
+    agora = datetime.now(timezone.utc)
+    falhas = recebidas = pedidos = 0
     for entrada in corpo.get("entry") or []:
         for mudanca in (entrada or {}).get("changes") or []:
             valor = (mudanca or {}).get("value") or {}
@@ -222,8 +289,30 @@ def registrar_evento(corpo) -> str:
                         "[whatsapp-meta] entrega falhou para %s: %s",
                         status.get("recipient_id"), (status.get("errors") or [{}])[0],
                     )
-            for _ in valor.get("messages") or []:
+            for msg in valor.get("messages") or []:
                 recebidas += 1
+                # O texto que o cliente mandou pelo `wa.me`, ou o toque no
+                # botao do `marcai_confirmado` (o payload traz o codigo).
+                tipo = (msg or {}).get("type")
+                if tipo == "text":
+                    texto = (msg.get("text") or {}).get("body")
+                elif tipo == "button":
+                    texto = (msg.get("button") or {}).get("payload")
+                else:
+                    texto = None
+                if pelo_toque and texto:
+                    # Uma falha aqui nao pode virar 500: a Meta reenviaria o
+                    # webhook inteiro, com os status junto.
+                    try:
+                        if lembrete_por_toque.registrar_pedido(
+                            texto, msg.get("from") or "", agora,
+                        ) != "ignorado":
+                            pedidos += 1
+                    except Exception:
+                        logger.exception("[whatsapp-meta] lembrete por toque nao registrou")
     if recebidas:
-        logger.info("[whatsapp-meta] %s mensagem(ns) de cliente no central (sem bot por aqui)", recebidas)
-    return f"falhas={falhas} recebidas={recebidas}"
+        logger.info(
+            "[whatsapp-meta] %s mensagem(ns) de cliente no central, %s pedido(s) de lembrete",
+            recebidas, pedidos,
+        )
+    return f"falhas={falhas} recebidas={recebidas} pedidos={pedidos}"

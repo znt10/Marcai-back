@@ -11,6 +11,7 @@ from tenant.models import Agendamento, BarbeiroServico, Cliente
 from tenant.rls import com_barbearia
 
 from .agenda import slots_do_dia
+from . import lembrete_por_toque
 from .lembrete import lembrete_ao_criar
 
 # Alfabeto sem 0/O e 1/l/I — o codigo e' lido em voz alta e digitado a mao.
@@ -135,6 +136,13 @@ def marcar(
                 # Dentro da janela do lembrete, a confirmacao que sai a seguir JA
                 # e' o lembrete: nasce avisado, o cron nunca o ve.
                 lembrete_enviado_em=lembrete_ao_criar(inicio, agora),
+                # Lembrete por toque: com a chave DESLIGADA a tela promete o
+                # lembrete, entao ele nasce pedido — senao, no dia em que a
+                # chave liga, todo mundo que ja marcou perderia o lembrete.
+                # Ligada, so' o toque pede (`lembrete_por_toque`).
+                **({} if lembrete_por_toque.ligado() else {
+                    "lembrete_pedido_em": agora, "lembrete_para": whatsapp,
+                }),
                 aparelho=aparelho,
             )
         except OperationalError as e:
@@ -222,6 +230,8 @@ def detalhe_publico(barbearia_id: str, codigo: str, agora: datetime) -> dict | N
             "fim": a.fim,
             "status": a.status,
             "pode_cancelar": pode_cancelar(a, agora),
+            # So' o SIM/NAO: `lembrete_para` e' o WhatsApp do cliente (§9.1).
+            "lembrete_pedido": a.lembrete_pedido_em is not None,
         }
 
 
@@ -273,4 +283,8 @@ def cancelar_publico(
             "barbeiro_whatsapp": a.barbeiro.whatsapp,
             "servico_nome": a.servico_nome,
             "inicio": a.inicio,
+            # Lembrete por toque: o aviso do cancelamento so' vai a quem pediu.
+            "lembrete_pedido_em": a.lembrete_pedido_em,
+            "lembrete_para": a.lembrete_para,
+            "lembrete_tocado_em": a.lembrete_tocado_em,
         }

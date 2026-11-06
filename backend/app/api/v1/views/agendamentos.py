@@ -13,7 +13,7 @@ from app.api.v1.serializers.agendamentos import (
     AgendamentoDetalheSerializer,
     CriarAgendamentoSerializer,
 )
-from app.services import lista_do_dia
+from app.services import lembrete_por_toque, lista_do_dia
 from app.services.agendamentos import (
     ErroCliente,
     cancelar_publico,
@@ -125,20 +125,23 @@ class AgendamentosView(ExigeTenant, APIView):
             raise
 
         # Fire-and-forget, DEPOIS do commit: falha de WhatsApp nao desfaz nada.
-        link = f"{request.headers.get('origin', '')}/agendamento/{criado['codigo']}"
-        enviar_ao_cliente(
-            request.barbearia,
-            whatsapp,
-            msg_confirmacao(
-                cliente_nome=d["nome"], barbeiro_nome=criado["barbeiro_nome"],
-                servico_nome=criado["servico_nome"], inicio=criado["inicio"],
-                endereco=request.barbearia.endereco, link=link,
-                barbearia_nome=request.barbearia.nome,
-                contato=request.barbearia.whatsapp_contato,
-            ),
-            tipo=TipoMensagem.CONFIRMACAO,
-            cliente_nome=d["nome"],
-        )
+        # Com o lembrete por toque ligado, a confirmacao so' sai quando o
+        # cliente toca no botao da tela de agendado e escreve — de graca.
+        if not lembrete_por_toque.ligado():
+            link = f"{request.headers.get('origin', '')}/agendamento/{criado['codigo']}"
+            enviar_ao_cliente(
+                request.barbearia,
+                whatsapp,
+                msg_confirmacao(
+                    cliente_nome=d["nome"], barbeiro_nome=criado["barbeiro_nome"],
+                    servico_nome=criado["servico_nome"], inicio=criado["inicio"],
+                    endereco=request.barbearia.endereco, link=link,
+                    barbearia_nome=request.barbearia.nome,
+                    contato=request.barbearia.whatsapp_contato,
+                ),
+                tipo=TipoMensagem.CONFIRMACAO,
+                cliente_nome=d["nome"],
+            )
         # E o barbeiro, so' o que e' de HOJE: depois que a lista das 06:30
         # saiu, ele recebe a lista inteira refeita, com o horario novo
         # marcado. Outro dia nao manda nada — ele ve no painel e na lista das
@@ -190,16 +193,26 @@ def depois_de_cancelar(barbearia: Barbearia, resultado: dict, agora) -> None:
     no botao mandariam a mensagem e refariam a lista duas vezes."""
     if resultado["tipo"] != "ok":
         return
-    enviar_ao_cliente(
-        barbearia,
-        resultado["cliente_whatsapp"],
-        msg_cancelamento(
-            barbeiro_nome=resultado["barbeiro_nome"], inicio=resultado["inicio"],
-            barbearia_nome=barbearia.nome,
-        ),
-        tipo=TipoMensagem.CANCELAMENTO,
-        cliente_nome=resultado["cliente_nome"],
-    )
+    # Lembrete por toque: o proprio cliente cancelou e viu na tela; so' quem
+    # pediu o lembrete recebe, no numero que escreveu. Sem isso ele ainda
+    # esperaria o lembrete de um horario que nao existe mais.
+    if not lembrete_por_toque.ligado():
+        para = resultado["cliente_whatsapp"]
+    else:
+        para = resultado["lembrete_para"] if resultado["lembrete_pedido_em"] else None
+    if para:
+        enviar_ao_cliente(
+            barbearia,
+            para,
+            msg_cancelamento(
+                barbeiro_nome=resultado["barbeiro_nome"], inicio=resultado["inicio"],
+                barbearia_nome=barbearia.nome,
+            ),
+            tipo=TipoMensagem.CANCELAMENTO,
+            cliente_nome=resultado["cliente_nome"],
+            na_janela=lembrete_por_toque.ligado()
+            and lembrete_por_toque.na_janela(resultado["lembrete_tocado_em"], agora),
+        )
     # Mesma regra de marcar: hoje, depois das 06:30, a lista refeita sem o
     # horario que caiu; outro dia, nada.
     mudanca = lista_do_dia.avisar_mudanca(
