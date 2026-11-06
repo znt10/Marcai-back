@@ -36,6 +36,13 @@ def test_ligado_exige_meta_e_numero(monkeypatch, provedor, numero, esperado):
     assert lembrete_por_toque.ligado() is esperado
 
 
+def test_texto_pronto_nao_supoe_o_genero_do_nome():
+    """Vale para "Dom Tony", "Espaço Bela" e "Brutus": "em", nao "na"."""
+    assert lembrete_por_toque.texto_pronto("Dom Tony", "k7p2q9abcd") == (
+        "Quero o lembrete do meu horário em Dom Tony. Código: k7p2q9abcd"
+    )
+
+
 def test_numero_central_aceita_mascara(monkeypatch):
     monkeypatch.setenv("WHATSAPP_CENTRAL_NUMERO", " (83) 98898-2852 ")
     assert lembrete_por_toque.numero_central() == CENTRAL
@@ -44,7 +51,7 @@ def test_numero_central_aceita_mascara(monkeypatch):
 def test_link_monta_o_wa_me_com_o_texto_pronto(ligado):
     assert lembrete_por_toque.link("Brutus", "k7p2q9abcd") == (
         "https://wa.me/5583988982852?text="
-        + quote("Quero o lembrete do meu horário na Brutus. Código: k7p2q9abcd")
+        + quote("Quero o lembrete do meu horário em Brutus. Código: k7p2q9abcd")
     )
 
 
@@ -54,7 +61,7 @@ def test_link_sem_numero_e_none(monkeypatch):
 
 
 @pytest.mark.parametrize("texto", [
-    "Quero o lembrete do meu horário na Brutus. Código: k7p2q9abcd",
+    "Quero o lembrete do meu horário em Brutus. Código: k7p2q9abcd",
     "K7P2Q9ABCD",
     "Código:k7p2q9abcd",
     "oi\nk7p2q9abcd obrigado",

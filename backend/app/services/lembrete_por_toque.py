@@ -19,7 +19,7 @@ primeiro, a variavel no Coolify depois.
 import logging
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import quote
 
 from tenant import telefone
@@ -57,8 +57,9 @@ def ligado() -> bool:
 
 
 def texto_pronto(barbearia_nome: str, codigo: str) -> str:
-    """O mesmo texto do front (`src/lib/lembrete.ts`)."""
-    return f"Quero o lembrete do meu horário na {barbearia_nome}. Código: {codigo}"
+    """O mesmo texto do front (`src/lib/lembretePorToque.ts`). "em", e nao
+    "na": o nome pode ser "Dom Tony" ou "Espaço Bela"."""
+    return f"Quero o lembrete do meu horário em {barbearia_nome}. Código: {codigo}"
 
 
 def link(barbearia_nome: str, codigo: str) -> str | None:
@@ -66,6 +67,16 @@ def link(barbearia_nome: str, codigo: str) -> str | None:
     if central is None:
         return None
     return f"https://wa.me/55{central}?text={quote(texto_pronto(barbearia_nome, codigo))}"
+
+
+# A janela da Meta e' de 24h desde a ultima mensagem do cliente; o toque e'
+# uma. Com folga: texto fora da janela e' aceito com 200 e some depois.
+JANELA_ABERTA = timedelta(hours=23)
+
+
+def na_janela(pedido_em: datetime | None, agora: datetime) -> bool:
+    """Se o toque (`lembrete_pedido_em`) ainda deixa mandar texto normal."""
+    return pedido_em is not None and agora - pedido_em < JANELA_ABERTA
 
 
 def codigos_no_texto(texto: str) -> list[str]:
@@ -107,6 +118,8 @@ def registrar_pedido(texto: str, de_internacional: str, agora: datetime) -> str:
             if a is None:
                 continue
             repetido = a.lembrete_pedido_em is not None
+            # Todo toque, repetido ou nao, reabre a janela de 24h.
+            Agendamento.objects.filter(id=a.id).update(lembrete_tocado_em=agora)
             if not repetido:
                 # Condicional no UPDATE: dois webhooks iguais ao mesmo tempo
                 # nao gravam duas vezes nem trocam o numero.
@@ -128,6 +141,8 @@ def registrar_pedido(texto: str, de_internacional: str, agora: datetime) -> str:
                 barbearia_nome=b.nome, contato=b.whatsapp_contato,
             ),
             tipo=TipoMensagem.CONFIRMACAO, cliente_nome=a.cliente.nome,
+            # Ele acabou de escrever: texto normal, com as quebras de linha.
+            na_janela=True,
         )
         return "repetido" if repetido else "pedido"
 

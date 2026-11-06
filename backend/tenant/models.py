@@ -497,6 +497,10 @@ class Agendamento(models.Model):
     # ser o digitado. Nunca sai na API (§9.1).
     lembrete_pedido_em = models.DateTimeField(null=True)
     lembrete_para = models.TextField(null=True)
+    # O ultimo toque de verdade (o cliente ESCREVEU): abre a janela de 24h da
+    # Meta, em que sai texto normal. Separado de `lembrete_pedido_em` porque
+    # o agendamento marcado antes da chave nasce pedido sem ninguem escrever.
+    lembrete_tocado_em = models.DateTimeField(null=True)
     # A marca do navegador que marcou pelo site (cookie `aparelho`). Nulo
     # para o painel, o bot e tudo que veio antes de 13/10/2026.
     aparelho = models.TextField(null=True, blank=True)

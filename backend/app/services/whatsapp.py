@@ -107,6 +107,7 @@ def cliente_sem_whatsapp() -> bool:
 
 def enviar_ao_cliente(
     barbearia, whatsapp_digitos: str, mensagem: str, *, tipo: str, cliente_nome: str,
+    modelo: "whatsapp_meta.Modelo | None" = None, na_janela: bool = False,
 ) -> bool:
     """Manda ao cliente pelo numero CENTRAL. Devolve se saiu.
 
@@ -121,6 +122,10 @@ def enviar_ao_cliente(
     Isto desfaz a regra antiga "o central nunca fala com cliente" (spec
     2026-10-06, secao 2): risco aceito pelo Jose — se o chip cair, equipe e
     clientes param juntos ate a troca.
+
+    `modelo` e `na_janela` so' valem pela Meta (`whatsapp_meta.enviar`): o
+    template proprio da mensagem, e o texto normal quando o cliente acabou
+    de escrever. A Evolution manda `mensagem` como sempre.
     """
     if barbearia.plano != PlanoBarbearia.COM_ZAP:
         return False
@@ -135,7 +140,9 @@ def enviar_ao_cliente(
         logger.info("[whatsapp] sem EVOLUTION_API_URL: %s %s", whatsapp_digitos, mensagem)
         return False
 
-    if _enviar_aceita(cfg["instancia"], whatsapp_digitos, mensagem) is not None:
+    if _enviar_aceita(
+        cfg["instancia"], whatsapp_digitos, mensagem, modelo=modelo, na_janela=na_janela,
+    ) is not None:
         return True
 
     _registrar_nao_enviada(barbearia, tipo, cliente_nome)
@@ -181,6 +188,7 @@ def _registrar_nao_enviada(barbearia, tipo: str, cliente_nome: str) -> None:
 
 def _enviar_aceita(
     instancia: str, whatsapp_digitos: str, mensagem: str, *, digitando_ms: int | None = None,
+    modelo: "whatsapp_meta.Modelo | None" = None, na_janela: bool = False,
 ) -> Aceita | None:
     """Fire-and-forget. Falha de WhatsApp NUNCA derruba um agendamento (§10.2).
 
@@ -206,7 +214,9 @@ def _enviar_aceita(
     guardar para isso.
     """
     if whatsapp_meta.ligado():
-        mensagem_id = whatsapp_meta.enviar(whatsapp_digitos, mensagem)
+        mensagem_id = whatsapp_meta.enviar(
+            whatsapp_digitos, mensagem, modelo=modelo, na_janela=na_janela,
+        )
         return Aceita(mensagem_id, None) if mensagem_id else None
 
     cfg = _config()

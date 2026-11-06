@@ -14,7 +14,7 @@ from tenant.models import (
 )
 from tenant.rls import com_barbearia
 
-from . import lembrete_por_toque
+from . import lembrete_por_toque, modelos_meta
 from .mensagens import msg_lembrete
 from .whatsapp import enviar_ao_cliente
 
@@ -101,6 +101,13 @@ def enviar_pendentes(agora: datetime) -> int:
                 enviar_ao_cliente(
                     b, para, texto,
                     tipo=TipoMensagem.LEMBRETE, cliente_nome=a.cliente.nome,
+                    modelo=modelos_meta.lembrete(
+                        servico_nome=a.servico_nome, barbeiro_nome=a.barbeiro.nome,
+                        inicio=a.inicio, endereco=b.endereco,
+                        barbearia_nome=b.nome, contato=b.whatsapp_contato,
+                    ),
+                    # Tocou ha pouco: a conversa esta aberta, vai texto.
+                    na_janela=pelo_toque and lembrete_por_toque.na_janela(a.lembrete_tocado_em, agora),
                 )
             enviados += 1
 

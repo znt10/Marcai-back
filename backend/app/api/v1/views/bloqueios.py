@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 
 from app.api.v1.mixins import NAO_ENCONTRADO, ExigeSessao
 from app.api.v1.serializers.expediente import CriarBloqueioSerializer
-from app.services import lista_do_dia
+from app.services import lista_do_dia, modelos_meta
 from app.services.autorizacao import alvo_do_barbeiro, filtro_do_barbeiro
 from app.services.agendamentos import cancelar as cancelar_agendamento
 from app.services.bloqueios import apagar_bloqueio, criar_bloqueio, folga_sobreposta
@@ -100,6 +100,11 @@ class BloqueiosView(ExigeSessao, APIView):
                 ),
                 tipo=TipoMensagem.CANCELAMENTO,
                 cliente_nome=dados["cliente_nome"],
+                modelo=modelos_meta.cancelado(
+                    cliente_nome=dados["cliente_nome"], servico_nome=dados["servico_nome"],
+                    inicio=dados["inicio"], barbearia_nome=request.barbearia.nome,
+                    contato=request.barbearia.whatsapp_contato,
+                ),
             )
         # Um aviso so' com todos os que cairam: o bloqueio da tarde nao pode
         # virar cinco listas seguidas.
