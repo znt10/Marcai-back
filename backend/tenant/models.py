@@ -79,6 +79,17 @@ class Paleta(models.TextChoices):
     BRANCO_DOURADO = "BRANCO_DOURADO", "Branco e dourado"
 
 
+# O claro e o escuro de cada cor (07/11/2026): o dono troca a tela do
+# cliente para a outra do par — gente mais velha le melhor no claro. A COR
+# (rose ou dourado) continua sendo escolha do admin ao criar.
+PAR_DA_PALETA = {
+    Paleta.PRETO_ROSE: Paleta.BRANCO_ROSE,
+    Paleta.BRANCO_ROSE: Paleta.PRETO_ROSE,
+    Paleta.PRETO_AMARELO: Paleta.BRANCO_DOURADO,
+    Paleta.BRANCO_DOURADO: Paleta.PRETO_AMARELO,
+}
+
+
 class EstadoInstancia(models.TextChoices):
     """O ciclo de vida do vinculo com o WhatsApp da barbearia.
 

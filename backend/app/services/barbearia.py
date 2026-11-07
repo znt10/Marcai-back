@@ -1,4 +1,4 @@
-from tenant.models import Barbearia
+from tenant.models import PAR_DA_PALETA, Barbearia
 from tenant.rls import com_barbearia
 
 
@@ -21,3 +21,22 @@ def atualizar_horario_resumo(barbearia_id: str, horario_resumo: str) -> None:
     resto e' so o admin da plataforma."""
     with com_barbearia(barbearia_id):
         Barbearia.objects.filter(id=barbearia_id).update(horario_resumo=horario_resumo)
+
+
+def trocar_paleta(barbearia_id: str, paleta: str) -> bool:
+    """O dono troca a tela do cliente entre o claro e o escuro da MESMA cor
+    (`PAR_DA_PALETA`). Outra cor e' do admin: devolve False sem gravar.
+    `brutus_app` tem GRANT UPDATE so' nesta coluna para isso (0025)."""
+    with com_barbearia(barbearia_id):
+        atual = Barbearia.objects.filter(id=barbearia_id).values_list("paleta", flat=True).first()
+        if atual is None:
+            return False
+        if paleta != atual and PAR_DA_PALETA.get(atual) != paleta:
+            return False
+        Barbearia.objects.filter(id=barbearia_id).update(paleta=paleta)
+    # A tela publica le a barbearia por um cache de slug com TTL curto;
+    # limpar o deste processo faz o dono ver a troca na hora.
+    from tenant.middleware import _limpar_cache_tenant
+
+    _limpar_cache_tenant()
+    return True
