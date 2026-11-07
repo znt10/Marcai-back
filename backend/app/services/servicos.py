@@ -7,7 +7,11 @@ from tenant.models import BarbeiroServico, Servico
 from tenant.rls import com_barbearia
 from tenant.identidade import como_uuid
 
+from . import grupos
+
 QUALQUER = "qualquer"
+
+MENSAGEM_FALTA_GRUPO = "Escolhe o grupo do serviço."
 
 
 def listar_para_agendamento(barbearia_id: str, barbeiro_id: str = QUALQUER) -> list[dict]:
@@ -53,7 +57,7 @@ def listar_para_agendamento(barbearia_id: str, barbeiro_id: str = QUALQUER) -> l
             vinculos = vinculos.filter(barbeiro_id=alvo)
 
         return list(
-            vinculos.values("servico_id", "servico__nome", "servico__ordem")
+            vinculos.values("servico_id", "servico__nome", "servico__ordem", "servico__grupo_id")
             # Alias `duracao` e nao `duracao_min`: o Django recusa uma anotacao
             # com o mesmo nome de um campo do model ("conflicts with a field").
             #
@@ -146,17 +150,29 @@ def listar_para_painel(barbearia_id: str) -> list[dict]:
             )
             .order_by("-ativo", "ordem")
             .values(
-                "id", "nome", "ativo", "ordem",
+                "id", "nome", "ativo", "ordem", "grupo_id",
                 "duracao_minima_min", "duracao_sugerida_min", "barbeiros",
             )
         )
 
 
-def criar(barbearia_id: str, nome: str, duracao_minima_min: int, duracao_sugerida_min: int) -> dict:
+def criar(
+    barbearia_id: str, nome: str, duracao_minima_min: int, duracao_sugerida_min: int,
+    grupo_id: str | None = None,
+) -> dict:
     """Cria o servico, ou devolve `repetido` se o nome ja existe (ativo ou
     nao) — o indice unico e' `[barbeariaId, nome]` e nao distingue
-    desativado, entao esta checagem e' o que evita um 500 do Postgres."""
+    desativado, entao esta checagem e' o que evita um 500 do Postgres.
+
+    Casa com grupos exige `grupo_id` (regra "tudo ou nada", ver
+    `app.services.grupos`); casa sem grupos ignora o que vier."""
     with com_barbearia(barbearia_id):
+        if grupos.tem_grupos():
+            if not grupos.existe(grupo_id):
+                return {"tipo": "falta_grupo"}
+        else:
+            grupo_id = None
+
         existente = Servico.objects.filter(nome=nome).values("ativo").first()
         if existente:
             return {"tipo": "repetido", "ativo": existente["ativo"]}
@@ -168,6 +184,7 @@ def criar(barbearia_id: str, nome: str, duracao_minima_min: int, duracao_sugerid
             duracao_minima_min=duracao_minima_min,
             duracao_sugerida_min=duracao_sugerida_min,
             ordem=(ultimo["ordem"] if ultimo else -1) + 1,
+            grupo_id=grupo_id,
         )
         return {"tipo": "ok", "id": novo_id}
 
@@ -189,6 +206,16 @@ def atualizar(barbearia_id: str, servico_id: str, campos: dict) -> dict:
         recusa = limites_do_servico(duracao_minima_min, duracao_sugerida_min)
         if recusa:
             return {"tipo": "recusado", "erro": recusa, "status": 422}
+
+        # Trocar de grupo so' para um grupo que existe nesta casa; tirar do
+        # grupo (None) nunca, enquanto a casa tiver grupos.
+        if "grupo_id" in campos:
+            if grupos.tem_grupos():
+                if not grupos.existe(campos["grupo_id"]):
+                    return {"tipo": "recusado", "erro": MENSAGEM_FALTA_GRUPO, "status": 422}
+                campos["grupo_id"] = como_uuid(str(campos["grupo_id"]))
+            else:
+                campos.pop("grupo_id")
 
         novo_nome = campos.get("nome")
         if novo_nome is not None and novo_nome != atual["nome"]:

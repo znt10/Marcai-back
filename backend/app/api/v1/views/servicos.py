@@ -2,7 +2,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from app.api.v1.mixins import ExigeTenant
-from app.api.v1.serializers.servicos import ServicoParaAgendamentoSerializer
+from app.api.v1.serializers.servicos import GrupoSerializer, ServicoParaAgendamentoSerializer
+from app.services import grupos
 from app.services.servicos import QUALQUER, listar_para_agendamento
 
 
@@ -22,6 +23,11 @@ class ServicosView(ExigeTenant, APIView):
     def get(self, request):
         barbeiro_id = request.query_params.get("barbeiroId") or QUALQUER
         servicos = listar_para_agendamento(self.barbearia_id, barbeiro_id)
-        return Response(
-            {"servicos": ServicoParaAgendamentoSerializer(servicos, many=True).data}
-        )
+        # So' os grupos que tem algo para escolher: um grupo vazio na tela do
+        # cliente seria uma gaveta que abre para nada.
+        usados = {str(s["servico__grupo_id"]) for s in servicos if s["servico__grupo_id"]}
+        lista = [g for g in grupos.listar(self.barbearia_id) if str(g["id"]) in usados]
+        return Response({
+            "servicos": ServicoParaAgendamentoSerializer(servicos, many=True).data,
+            "grupos": GrupoSerializer(lista, many=True).data,
+        })

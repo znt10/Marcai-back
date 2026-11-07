@@ -23,6 +23,8 @@ class ServicoParaAgendamentoSerializer(serializers.Serializer):
     # preco entre quem faz, mesmo raciocinio do `duracaoMin` acima (ver
     # `listar_para_agendamento`).
     precoCentavos = serializers.IntegerField(source="preco", allow_null=True)
+    # Nulo quando a casa nao usa grupos — a tela mostra a lista solta.
+    grupoId = serializers.CharField(source="servico__grupo_id", allow_null=True)
 
 
 # ---------------------------------------------------------------- painel
@@ -36,6 +38,7 @@ class ServicoPainelSerializer(serializers.Serializer):
     nome = serializers.CharField()
     ativo = serializers.BooleanField()
     ordem = serializers.IntegerField()
+    grupoId = serializers.CharField(source="grupo_id", allow_null=True)
     duracaoMinimaMin = serializers.IntegerField(source="duracao_minima_min")
     duracaoSugeridaMin = serializers.IntegerField(source="duracao_sugerida_min")
     barbeiros = serializers.IntegerField()
@@ -49,6 +52,7 @@ class CriarServicoSerializer(serializers.Serializer):
     nome = serializers.CharField(min_length=2, max_length=40)
     duracaoMinimaMin = serializers.IntegerField(default=DURACAO_MINIMA_MIN)
     duracaoSugeridaMin = serializers.IntegerField(default=DURACAO_PADRAO_MIN)
+    grupoId = serializers.CharField(required=False, allow_null=True)
 
 
 class AtualizarServicoSerializer(serializers.Serializer):
@@ -57,6 +61,7 @@ class AtualizarServicoSerializer(serializers.Serializer):
     duracaoSugeridaMin = serializers.IntegerField(required=False)
     ordem = serializers.IntegerField(required=False)
     ativo = serializers.BooleanField(required=False)
+    grupoId = serializers.CharField(required=False, allow_null=True)
 
     def validate(self, dados):
         if not dados:
@@ -79,3 +84,29 @@ class DefinirVinculoSerializer(serializers.Serializer):
     faz = serializers.BooleanField()
     duracaoMin = serializers.IntegerField(required=False, allow_null=True)
     precoCentavos = serializers.IntegerField(required=False, allow_null=True)
+
+
+# ---------------------------------------------------------------- grupos
+
+
+class GrupoSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    nome = serializers.CharField()
+    icone = serializers.CharField(allow_null=True)
+    ordem = serializers.IntegerField()
+
+
+class CriarGrupoSerializer(serializers.Serializer):
+    nome = serializers.CharField(min_length=2, max_length=30)
+    icone = serializers.CharField(required=False, allow_null=True, default=None)
+
+
+class AtualizarGrupoSerializer(serializers.Serializer):
+    nome = serializers.CharField(min_length=2, max_length=30, required=False)
+    icone = serializers.CharField(required=False, allow_null=True)
+    ordem = serializers.IntegerField(required=False)
+
+    def validate(self, dados):
+        if not dados:
+            raise serializers.ValidationError("Nada para mudar.")
+        return dados

@@ -66,7 +66,12 @@ from .views.resumo import ResumoView
 from .views.custos import CustoDetalheView, CustosView
 from .views.servicos import ServicosView
 from .views.mensalidade_painel import MensalidadeJaPagueiView, MensalidadePainelView
-from .views.servicos_painel import ServicoPainelDetalheView, ServicosPainelView
+from .views.servicos_painel import (
+    GrupoPainelDetalheView,
+    GruposPainelView,
+    ServicoPainelDetalheView,
+    ServicosPainelView,
+)
 from .views.whatsapp_painel import (
     WhatsappBotView,
     WhatsappDesconectarView,
@@ -167,6 +172,8 @@ urlpatterns = [
     # `ExigeSessao` so para ganhar `self.sessao`/`self.papel` sem consulta
     # nova, nao para repetir a checagem de autenticacao.
     path("painel/servicos", ServicosPainelView.as_view(), name="painel-servicos"),
+    path("painel/grupos", GruposPainelView.as_view(), name="painel-grupos"),
+    path("painel/grupos/<id:id>", GrupoPainelDetalheView.as_view(), name="painel-grupos-detalhe"),
     path(
         "painel/servicos/<id:id>",
         ServicoPainelDetalheView.as_view(),

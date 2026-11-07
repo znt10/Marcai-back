@@ -53,8 +53,8 @@ def test_o_envelope_e_os_campos_sao_os_mesmos_do_next(client, cenario):
     _vinculo(b.id, _barbeiro(b.id, "Zeca"), _servico(b.id))
 
     corpo = _pedir(client).json()
-    assert set(corpo) == {"servicos"}
-    assert set(corpo["servicos"][0]) == {"id", "nome", "duracaoMin", "precoCentavos"}
+    assert set(corpo) == {"servicos", "grupos"}
+    assert set(corpo["servicos"][0]) == {"id", "nome", "duracaoMin", "precoCentavos", "grupoId"}
     # `ordem` e chave de ordenacao e nao pode vazar: se vazasse, a tela
     # ganharia a tentacao de reordenar por conta propria e passariam a existir
     # duas ordenacoes, uma em cada lado.
@@ -99,7 +99,7 @@ def test_com_qualquer_a_duracao_e_a_MENOR_entre_os_barbeiros(client, cenario):
     _vinculo(b, _barbeiro(b, "Caprichoso"), servico, duracao=45)
 
     assert _pedir(client).json()["servicos"] == [
-        {"id": servico.id, "nome": "Corte", "duracaoMin": 20, "precoCentavos": None}
+        {"id": servico.id, "nome": "Corte", "duracaoMin": 20, "precoCentavos": None, "grupoId": None}
     ]
 
 
@@ -117,7 +117,7 @@ def test_com_barbeiro_escolhido_a_duracao_e_a_DELE(client, cenario):
 
     corpo = _pedir(client, barbeiroId=caprichoso.id).json()
     assert corpo["servicos"] == [
-        {"id": servico.id, "nome": "Corte", "duracaoMin": 45, "precoCentavos": None}
+        {"id": servico.id, "nome": "Corte", "duracaoMin": 45, "precoCentavos": None, "grupoId": None}
     ]
 
 

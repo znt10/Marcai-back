@@ -278,6 +278,42 @@ class Barbeiro(models.Model):
         return self.nome
 
 
+# Os icones que a tela sabe desenhar. A lista mora aqui (e nao so' no front)
+# para o banco nunca guardar um nome que a tela nao reconhece.
+ICONES_DE_GRUPO = (
+    "tesoura", "navalha", "pente", "secador", "sobrancelha", "cilios", "unha",
+    "pincel", "cera", "gota", "folha", "presente", "estrela", "coracao",
+)
+
+
+class GrupoServico(models.Model):
+    """Uma gaveta do catalogo (Cabelo, Barba, Combos...), criada pelo dono.
+
+    A regra e' "tudo ou nada": casa sem grupo nenhum mostra a lista solta;
+    casa com ao menos um grupo tem TODO servico dentro de algum. Quem garante
+    e' `app.services.grupos` — criar o primeiro grupo puxa o catalogo inteiro
+    para ele, e apagar o ultimo solta todos de novo.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    barbearia = models.ForeignKey(
+        Barbearia, on_delete=models.RESTRICT, related_name="grupos_de_servico",
+    )
+    nome = models.TextField()
+    icone = models.TextField(null=True, blank=True)
+    ordem = models.IntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["barbearia", "nome"], name="grupo_servico_nome_por_tenant",
+            ),
+        ]
+
+    def __str__(self):
+        return self.nome
+
+
 class Servico(models.Model):
     """O catalogo da barbearia.
 
@@ -294,6 +330,12 @@ class Servico(models.Model):
     duracao_sugerida_min = models.IntegerField()
     ativo = models.BooleanField(default=True)
     ordem = models.IntegerField(default=0)
+    # Nulo so' quando a casa nao tem grupo nenhum (ver `GrupoServico`).
+    # RESTRICT: apagar um grupo exige mover os servicos antes.
+    grupo = models.ForeignKey(
+        GrupoServico, on_delete=models.RESTRICT, null=True, blank=True,
+        related_name="servicos",
+    )
 
     class Meta:
         constraints = [
