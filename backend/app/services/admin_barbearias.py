@@ -18,6 +18,7 @@ from tenant.models import (
     Cobranca,
     ConversaWhatsapp,
     Custo,
+    GrupoServico,
     HorarioTrabalho,
     ListaDoDiaEnviada,
     MensagemNaoEnviada,
@@ -341,6 +342,8 @@ ORDEM_DE_APAGAR = (
     BarbeiroServico,
     Cliente,
     Servico,
+    # Depois de `Servico`: o servico aponta para o grupo (RESTRICT).
+    GrupoServico,
     Barbeiro,
 )
 
