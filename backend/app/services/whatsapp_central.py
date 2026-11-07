@@ -41,8 +41,22 @@ def ligar_escuta_do_chip() -> bool:
 
 
 def ver_central() -> dict:
-    if whatsapp_meta.ligado() and not chip_em_uso():
-        return _ver_pela_meta()
+    """Os dois caminhos lado a lado (06/11): `meta` e `evolution`, cada um
+    com o proprio estado, para o admin ver qualquer um que caia. As chaves
+    de cima continuam as do card unico de antes (o que leva os clientes),
+    para o front antigo nao quebrar entre o deploy do back e o do front."""
+    meta = _ver_pela_meta()
+    meta_ligada = whatsapp_meta.ligado()
+    evolution = {"emUso": not meta_ligada or chip_em_uso(), **_ver_evolution()}
+    principal = evolution if evolution["emUso"] else {**meta, "qrBase64": None}
+    return {
+        **{k: principal[k] for k in ("configurado", "conectado", "numero", "qrBase64")},
+        "meta": {"ligada": meta_ligada, **meta},
+        "evolution": evolution,
+    }
+
+
+def _ver_evolution() -> dict:
     cfg = whatsapp._config()
     if not cfg["url"] or not cfg["instancia"]:
         return {"configurado": False, "conectado": False, "numero": None, "qrBase64": None}
@@ -65,7 +79,7 @@ def _ver_pela_meta() -> dict:
     """Pela API oficial nao ha QR: o numero se verifica uma vez no WhatsApp
     Manager. A tela so' mostra se esta de pe e qual numero e'."""
     if not whatsapp_meta.configurado():
-        return {"configurado": False, "conectado": False, "numero": None, "qrBase64": None}
+        return {"configurado": False, "conectado": False, "numero": None}
     dados = whatsapp_meta.dados_do_numero() or {}
     return {
         "configurado": True,
@@ -73,7 +87,6 @@ def _ver_pela_meta() -> dict:
         # A Meta devolve "+55 83 8898-2852": sem o nono digito e com
         # espacos. Pelo mesmo caminho do JID vira "83988982852".
         "numero": _numero_do_jid("".join(c for c in dados.get("display_phone_number") or "" if c.isdigit())),
-        "qrBase64": None,
     }
 
 

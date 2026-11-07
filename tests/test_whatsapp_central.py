@@ -29,6 +29,12 @@ def _get(client):
     return client.get(ROTA, headers={"host": HOST, **CABECALHO})
 
 
+def _card(corpo):
+    """As chaves do card unico de antes; `meta` e `evolution` (a tela
+    dividida) estao em test_admin_meta_e_evolution.py."""
+    return {k: corpo[k] for k in ("configurado", "conectado", "numero", "qrBase64")}
+
+
 def test_sem_cookie_da_401(client):
     assert client.get(ROTA, headers={"host": HOST, **CABECALHO}).status_code == 401
 
@@ -37,7 +43,7 @@ def test_conectado_mostra_o_numero_e_nao_pede_qr(client):
     with patch(f"{SERVICO}.consultar_estado", return_value=EstadoInstancia.CONECTADO), patch(
         f"{SERVICO}.consultar_dono", return_value="5583999990000@s.whatsapp.net"
     ), patch(f"{SERVICO}.pedir_qr") as pedir:
-        corpo = _get(client).json()
+        corpo = _card(_get(client).json())
     assert corpo == {
         "configurado": True, "conectado": True, "numero": "83999990000", "qrBase64": None,
     }
@@ -48,7 +54,7 @@ def test_desconectado_traz_o_qr(client):
     with patch(f"{SERVICO}.consultar_estado", return_value=EstadoInstancia.DESCONECTADO), patch(
         f"{SERVICO}.pedir_qr", return_value="data:image/png;base64,AAA"
     ):
-        corpo = _get(client).json()
+        corpo = _card(_get(client).json())
     assert corpo == {
         "configurado": True, "conectado": False, "numero": None,
         "qrBase64": "data:image/png;base64,AAA",
@@ -67,6 +73,6 @@ def test_instancia_inexistente_e_criada_e_traz_o_qr(client):
 
 def test_sem_evolution_configurada(client, monkeypatch):
     monkeypatch.delenv("EVOLUTION_API_URL")
-    assert _get(client).json() == {
+    assert _card(_get(client).json()) == {
         "configurado": False, "conectado": False, "numero": None, "qrBase64": None,
     }
