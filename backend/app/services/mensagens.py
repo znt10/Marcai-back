@@ -66,7 +66,7 @@ def msg_confirmacao(
     # proposito — quem chama nao muda, e o lembrete (que chega quando a pessoa
     # esta de fato saindo de casa) ainda e o lugar certo para ele.
     texto = (
-        f"Fechou, {primeiro_nome}! {_capitalizar(servico_nome)} "
+        f"Seu horário foi agendado, {primeiro_nome}! {_capitalizar(servico_nome)} "
         f"{formatar_dia_com_semana(inicio)} às {formatar_hora_falada(inicio)}, "
         f"com {barbeiro_nome}.\n\nCancelar: {link}"
     )
