@@ -173,7 +173,7 @@ def test_toque_grava_e_responde_com_a_confirmacao(cenario, meta):
     [(para, texto)] = meta.enviados()
     assert para == QUEM_TOCOU
     assert f"/agendamento/{a.codigo}" in texto
-    assert texto.startswith("*Brutus*\nFechou, Ana!")
+    assert texto.startswith("*Brutus*\nSeu horário foi agendado, Ana!")
 
 
 def test_toque_de_celular_antigo_sem_o_nono_digito(cenario, meta):
@@ -336,7 +336,7 @@ def test_marcar_pelo_site_nao_manda_confirmacao(client, cenario, meta):
 def test_marcar_pelo_painel_manda_confirmacao_com_o_link(client, cenario, meta):
     codigo = _marcar(client, _com_zap(cenario["brutus"]), pelo_painel=True)
     [texto] = _para(meta, "55" + DIGITADO)
-    assert texto.startswith("*Brutus*\nFechou, Ana!")
+    assert texto.startswith("*Brutus*\nSeu horário foi agendado, Ana!")
     assert texto.endswith(
         "\n\nQuer o lembrete 1h antes? Toque e envie a mensagem: "
         + lembrete_por_toque.link("Brutus", codigo)

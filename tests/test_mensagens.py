@@ -17,7 +17,7 @@ def test_msg_confirmacao_leva_o_primeiro_nome_o_dia_a_hora_e_o_link():
         cliente_nome="Maria Silva", barbeiro_nome="Zeca", servico_nome="Corte",
         inicio=INICIO, endereco="Rua Aurora, 88", link="http://x/y",
     )
-    assert texto.startswith("Fechou, Maria!")
+    assert texto.startswith("Seu horário foi agendado, Maria!")
     # O que a mensagem existe para dizer. Encurtar nao pode custar isto.
     #
     # "quinta 13/08 as 8:00" (pedido do dono, 06/09), e nao so' "13/08": os
@@ -180,7 +180,7 @@ def test_confirmacao_pelo_central_diz_de_quem_e_e_para_onde_falar():
     )
     assert texto == (
         "*Dom Tony*\n"
-        "Fechou, Maria! Corte quinta 13/08 às 8:00, com Zeca.\n\n"
+        "Seu horário foi agendado, Maria! Corte quinta 13/08 às 8:00, com Zeca.\n\n"
         "Cancelar: http://x/y\n"
         "Dúvida? Chama: (83) 9 9999-0000"
     )
@@ -227,7 +227,7 @@ def test_sem_barbearia_o_texto_e_o_de_sempre():
         cliente_nome="Maria Silva", barbeiro_nome="Zeca", servico_nome="Corte",
         inicio=INICIO, endereco="Rua Aurora, 88", link="http://x/y",
     )
-    assert texto.startswith("Fechou, Maria!")
+    assert texto.startswith("Seu horário foi agendado, Maria!")
 
 
 def test_lista_refeita_marca_o_novo():

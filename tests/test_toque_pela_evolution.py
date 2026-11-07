@@ -111,7 +111,7 @@ def test_mensagem_no_chip_grava_e_responde_pela_evolution(client, cenario, envio
     assert a.lembrete_canal == "evolution"
     assert a.lembrete_para == "83977776666"
     [resposta] = envios.pela_evolution(QUEM_ESCREVEU)
-    assert resposta["text"].startswith("*Brutus*\nFechou, Ana!")
+    assert resposta["text"].startswith("*Brutus*\nSeu horário foi agendado, Ana!")
     assert envios.pela_meta() == []
 
 

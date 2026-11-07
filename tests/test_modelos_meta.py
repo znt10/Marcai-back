@@ -200,7 +200,7 @@ def test_resposta_ao_toque_sai_como_texto(cenario, meta):
 
     [corpo] = meta.corpos()
     assert corpo["type"] == "text"
-    assert corpo["text"]["body"].startswith("*Brutus*\nFechou, Ana!")
+    assert corpo["text"]["body"].startswith("*Brutus*\nSeu horário foi agendado, Ana!")
 
 
 def test_toque_no_botao_do_modelo_registra_o_pedido(client, cenario, meta):

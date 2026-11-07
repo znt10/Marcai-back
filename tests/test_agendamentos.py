@@ -186,7 +186,7 @@ def test_marca_sem_sessao_e_manda_confirmacao(client, cenario):
     # recebe nada (`test_marcar_sem_lista_a_refazer_nao_avisa_o_barbeiro`).
     assert mock_envia.call_count == 1
     confirmacao = mock_envia.texto_para("11977778888")
-    assert confirmacao.startswith("*Brutus*\nFechou,")
+    assert confirmacao.startswith("*Brutus*\nSeu horário foi agendado,")
 
     from tenant.models import Agendamento
 

@@ -211,7 +211,7 @@ def test_marca_do_oi_ao_horario_gravado(cenario):
     assert str(ag.barbeiro_id) == str(pedro.id)
     assert ag.cliente.whatsapp == NUMERO
     assert ag.cliente.nome == "João da Silva"
-    assert conversa.ultima.startswith("Fechou, João!")
+    assert conversa.ultima.startswith("Seu horário foi agendado, João!")
     assert "brutus." in conversa.ultima and "/agendamento/" in conversa.ultima
     assert [numero for numero, _ in conversa.equipe_leu] == [pedro.whatsapp]
     assert _linha(b).estado == "MENU"
