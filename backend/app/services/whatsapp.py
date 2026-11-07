@@ -135,9 +135,18 @@ def cliente_sem_whatsapp() -> bool:
     return CLIENTE_SEM_WHATSAPP and not whatsapp_meta.ligado()
 
 
+def _pela_evolution_ao_cliente() -> bool:
+    # Import tardio: lembrete_por_toque importa whatsapp_meta, e este modulo
+    # e' importado por quase tudo.
+    from . import lembrete_por_toque
+
+    return lembrete_por_toque.pela_evolution()
+
+
 def enviar_ao_cliente(
     barbearia, whatsapp_digitos: str, mensagem: str, *, tipo: str, cliente_nome: str,
     modelo: "whatsapp_meta.Modelo | None" = None, na_janela: bool = False,
+    canal: str | None = None,
 ) -> bool:
     """Manda ao cliente pelo numero CENTRAL. Devolve se saiu.
 
@@ -169,6 +178,14 @@ def enviar_ao_cliente(
     if not cfg["url"] and not whatsapp_meta.ligado():
         logger.info("[whatsapp] sem EVOLUTION_API_URL: %s %s", whatsapp_digitos, mensagem)
         return False
+
+    # Quem escreveu no CHIP recebe pelo chip (plano 2026-11-06). Chip fora do
+    # ar ou recusando: cai na Meta, com o modelo — ninguem fica sem aviso.
+    if canal == "evolution" and _pela_evolution_ao_cliente():
+        if _enviar_aceita(cfg["instancia"], whatsapp_digitos, mensagem, pela_meta=False) is not None:
+            return True
+        logger.error("[whatsapp] chip recusou a mensagem a %s: vai pela Meta", whatsapp_digitos)
+        na_janela = False
 
     if _enviar_aceita(
         cfg["instancia"], whatsapp_digitos, mensagem, modelo=modelo, na_janela=na_janela,

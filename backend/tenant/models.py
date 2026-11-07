@@ -501,6 +501,10 @@ class Agendamento(models.Model):
     # Meta, em que sai texto normal. Separado de `lembrete_pedido_em` porque
     # o agendamento marcado antes da chave nasce pedido sem ninguem escrever.
     lembrete_tocado_em = models.DateTimeField(null=True)
+    # Por onde o cliente escreveu ("meta" ou "evolution", plano 2026-11-06):
+    # e' por ali que a confirmacao, o lembrete e os avisos voltam. Nulo = o
+    # pedido de antes do canal (ou prometido sem toque) = pela Meta.
+    lembrete_canal = models.TextField(null=True)
     # A marca do navegador que marcou pelo site (cookie `aparelho`). Nulo
     # para o painel, o bot e tudo que veio antes de 13/10/2026.
     aparelho = models.TextField(null=True, blank=True)

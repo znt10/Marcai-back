@@ -56,6 +56,27 @@ def ligado() -> bool:
     return whatsapp_meta.ligado() and numero_central() is not None
 
 
+def numero_evolution() -> str | None:
+    """O chip da Evolution que recebe o toque (`WHATSAPP_EVOLUTION_NUMERO`)."""
+    bruto = os.environ.get("WHATSAPP_EVOLUTION_NUMERO", "").strip()
+    return telefone.normalizar(bruto) if bruto else None
+
+
+def pela_evolution() -> bool:
+    """O toque vai para o CHIP (plano 2026-11-06): desde 01/10/2026 a Meta
+    cobra ate o modelo dentro da janela, e pela Evolution, com o cliente
+    escrevendo primeiro, nao ha custo por mensagem. A Meta fica de reserva."""
+    return (
+        os.environ.get("LEMBRETE_PELA_EVOLUTION", "").strip().lower() in {"1", "true"}
+        and ligado()
+        and numero_evolution() is not None
+    )
+
+
+def numero_do_botao() -> str | None:
+    return numero_evolution() if pela_evolution() else numero_central()
+
+
 def texto_pronto(barbearia_nome: str, codigo: str) -> str:
     """O mesmo texto do front (`src/lib/lembretePorToque.ts`). "em", e nao
     "na": o nome pode ser "Dom Tony" ou "Espaço Bela"."""
@@ -63,7 +84,7 @@ def texto_pronto(barbearia_nome: str, codigo: str) -> str:
 
 
 def link(barbearia_nome: str, codigo: str) -> str | None:
-    central = numero_central()
+    central = numero_do_botao()
     if central is None:
         return None
     return f"https://wa.me/55{central}?text={quote(texto_pronto(barbearia_nome, codigo))}"
@@ -83,7 +104,32 @@ def codigos_no_texto(texto: str) -> list[str]:
     return list(dict.fromkeys(_CODIGO.findall((texto or "").lower())))
 
 
-def registrar_pedido(texto: str, de_internacional: str, agora: datetime) -> str:
+def ler_do_chip(corpo) -> tuple[str, str] | None:
+    """`(numero nacional, texto)` de uma mensagem de cliente que chegou ao
+    CHIP (instancia `EVOLUTION_INSTANCE`) pelo webhook da Evolution. None
+    para o resto: outra instancia, o proprio chip, grupo, sem texto, `@lid`
+    sem o numero de verdade."""
+    if not isinstance(corpo, dict) or corpo.get("instance") != os.environ.get("EVOLUTION_INSTANCE"):
+        return None
+    dados = corpo.get("data") if isinstance(corpo.get("data"), dict) else {}
+    chave = dados.get("key") if isinstance(dados.get("key"), dict) else {}
+    if chave.get("fromMe") is True:
+        return None
+    jid, alt = chave.get("remoteJid"), chave.get("remoteJidAlt")
+    if isinstance(jid, str) and jid.endswith("@lid") and isinstance(alt, str):
+        jid = alt
+    numero = telefone.do_jid(jid)
+    mensagem = dados.get("message") if isinstance(dados.get("message"), dict) else {}
+    texto = mensagem.get("conversation")
+    if not isinstance(texto, str) or not texto.strip():
+        citando = mensagem.get("extendedTextMessage")
+        texto = citando.get("text") if isinstance(citando, dict) else None
+    if numero is None or not isinstance(texto, str) or not texto.strip():
+        return None
+    return numero, texto
+
+
+def registrar_pedido(texto: str, de_internacional: str, agora: datetime, canal: str = "meta") -> str:
     """A mensagem que chegou ao central pelo webhook da Meta. Se ela traz o
     codigo de um agendamento CONFIRMADO e futuro, grava o pedido e responde
     com a confirmacao — de graca, porque o cliente acabou de escrever.
@@ -125,7 +171,7 @@ def registrar_pedido(texto: str, de_internacional: str, agora: datetime) -> str:
                 # nao gravam duas vezes nem trocam o numero.
                 gravou = Agendamento.objects.filter(
                     id=a.id, lembrete_pedido_em__isnull=True,
-                ).update(lembrete_pedido_em=agora, lembrete_para=numero)
+                ).update(lembrete_pedido_em=agora, lembrete_para=numero, lembrete_canal=canal)
                 repetido = gravou == 0
 
         # Responde a QUEM ESCREVEU (a janela de 24h aberta e' a dele), mesmo no
@@ -143,6 +189,8 @@ def registrar_pedido(texto: str, de_internacional: str, agora: datetime) -> str:
             tipo=TipoMensagem.CONFIRMACAO, cliente_nome=a.cliente.nome,
             # Ele acabou de escrever: texto normal, com as quebras de linha.
             na_janela=True,
+            # Responde por onde ele escreveu.
+            canal=canal,
         )
         return "repetido" if repetido else "pedido"
 

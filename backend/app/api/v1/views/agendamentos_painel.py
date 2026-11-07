@@ -107,9 +107,11 @@ class AgendamentoCancelarView(ExigeSessao, APIView):
         if cancelado is None:
             return Response(NAO_ENCONTRADO, status=404)
 
+        pelo_chip = cancelado["lembrete_canal"] == "evolution" and cancelado["lembrete_para"]
         enviar_ao_cliente(
             request.barbearia,
-            cancelado["cliente_whatsapp"],
+            # Quem escreveu no chip recebe ali, no numero que escreveu.
+            cancelado["lembrete_para"] if pelo_chip else cancelado["cliente_whatsapp"],
             msg_cancelamento_pela_barbearia(
                 cliente_nome=cancelado["cliente_nome"], barbeiro_nome=cancelado["barbeiro_nome"],
                 servico_nome=cancelado["servico_nome"], inicio=cancelado["inicio"],
@@ -124,6 +126,7 @@ class AgendamentoCancelarView(ExigeSessao, APIView):
                 inicio=cancelado["inicio"], barbearia_nome=request.barbearia.nome,
                 contato=request.barbearia.whatsapp_contato,
             ),
+            canal="evolution" if pelo_chip else None,
         )
         lista_do_dia.avisar_mudanca(
             self.barbearia_id, cancelado["barbeiro_id"], datetime.now(timezone.utc),

@@ -86,9 +86,10 @@ class BloqueiosView(ExigeSessao, APIView):
             derrubados.append((dados["id"], dados["inicio"]))
             # Fire-and-forget, igual ao resto: WhatsApp fora do ar nao desfaz
             # um cancelamento que ja' valeu.
+            pelo_chip = dados["lembrete_canal"] == "evolution" and dados["lembrete_para"]
             enviar_ao_cliente(
                 request.barbearia,
-                dados["cliente_whatsapp"],
+                dados["lembrete_para"] if pelo_chip else dados["cliente_whatsapp"],
                 msg_cancelamento_pela_barbearia(
                     cliente_nome=dados["cliente_nome"],
                     barbeiro_nome=dados["barbeiro_nome"],
@@ -105,6 +106,7 @@ class BloqueiosView(ExigeSessao, APIView):
                     inicio=dados["inicio"], barbearia_nome=request.barbearia.nome,
                     contato=request.barbearia.whatsapp_contato,
                 ),
+                canal="evolution" if pelo_chip else None,
             )
         # Um aviso so' com todos os que cairam: o bloqueio da tarde nao pode
         # virar cinco listas seguidas.
