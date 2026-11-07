@@ -59,6 +59,7 @@ from .views.equipe import (
 )
 from .views.foto import FotoView
 from .views.logo import LogoView
+from .views.paleta import PaletaView
 from .views.expediente import ExpedienteView
 from .views.horarios import DiasComVagaView, HorariosView
 from .views.interno import InfinitePayRetornoView, WhatsappEventoView, WhatsappMetaView
@@ -188,6 +189,7 @@ urlpatterns = [
     path("painel/expediente", ExpedienteView.as_view(), name="painel-expediente"),
     path("painel/foto", FotoView.as_view(), name="painel-foto"),
     path("painel/logo", LogoView.as_view(), name="painel-logo"),
+    path("painel/paleta", PaletaView.as_view(), name="painel-paleta"),
     path("painel/bloqueios", BloqueiosView.as_view(), name="painel-bloqueios"),
     path(
         "painel/bloqueios/<id:id>",
