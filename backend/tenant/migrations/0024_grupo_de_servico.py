@@ -38,7 +38,7 @@ REMOVER = [
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('tenant', '0022_lembrete_tocado_em'),
+        ('tenant', '0023_lembrete_canal'),
     ]
 
     operations = [
