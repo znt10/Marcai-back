@@ -48,7 +48,7 @@ class BarbeariaView(ExigeTenant, APIView):
                 # Lembrete por toque: o numero do botao "Quero o lembrete no
                 # WhatsApp". Nulo com a chave desligada — o site fica como era.
                 "whatsappCentral": (
-                    lembrete_por_toque.numero_central() if lembrete_por_toque.ligado() else None
+                    lembrete_por_toque.numero_do_botao() if lembrete_por_toque.ligado() else None
                 ),
             }
         )

@@ -14,13 +14,34 @@ from tenant.models import EstadoInstancia
 
 from . import whatsapp, whatsapp_meta
 from .whatsapp_eventos import _numero_do_jid
-from .whatsapp_instancias import TIMEOUT_CRIACAO_S, consultar_dono, consultar_estado, pedir_qr
+from .whatsapp_instancias import (
+    TIMEOUT_CRIACAO_S, _aplicar_webhook, consultar_dono, consultar_estado, pedir_qr,
+)
+from .whatsapp_instancias import _config as _config_instancias
 
 logger = logging.getLogger(__name__)
 
 
+def chip_em_uso() -> bool:
+    """Com a Meta ligada, o admin mostra o CHIP (e o QR dele) quando ele
+    carrega alguma coisa: a equipe (#67) ou o toque dos clientes."""
+    from . import lembrete_por_toque
+
+    return whatsapp.equipe_pela_evolution() or lembrete_por_toque.pela_evolution()
+
+
+def ligar_escuta_do_chip() -> bool:
+    """O chip so' mandava; com o toque pela Evolution ele precisa OUVIR o
+    cliente. Aplica o webhook com `MESSAGES_UPSERT` na instancia central.
+    Idempotente: o healthcheck chama a cada tique."""
+    cfg = whatsapp._config()
+    if not cfg["url"] or not cfg["instancia"]:
+        return False
+    return _aplicar_webhook(_config_instancias(), cfg["instancia"], bot=True)
+
+
 def ver_central() -> dict:
-    if whatsapp_meta.ligado():
+    if whatsapp_meta.ligado() and not chip_em_uso():
         return _ver_pela_meta()
     cfg = whatsapp._config()
     if not cfg["url"] or not cfg["instancia"]:

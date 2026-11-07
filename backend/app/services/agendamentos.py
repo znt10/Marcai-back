@@ -188,6 +188,9 @@ def cancelar(barbearia_id: str, agendamento_id: str, filtro_barbeiro_id: str | N
         return {
             "id": str(a.id), "barbeiro_id": str(a.barbeiro_id),
             "cliente_nome": a.cliente.nome, "cliente_whatsapp": a.cliente.whatsapp,
+            # Quem escreveu no chip recebe o aviso pelo chip, no numero que
+            # escreveu (plano 2026-11-06).
+            "lembrete_canal": a.lembrete_canal, "lembrete_para": a.lembrete_para,
             "barbeiro_nome": a.barbeiro.nome, "servico_nome": a.servico_nome, "inicio": a.inicio,
         }
 
@@ -287,4 +290,5 @@ def cancelar_publico(
             "lembrete_pedido_em": a.lembrete_pedido_em,
             "lembrete_para": a.lembrete_para,
             "lembrete_tocado_em": a.lembrete_tocado_em,
+            "lembrete_canal": a.lembrete_canal,
         }

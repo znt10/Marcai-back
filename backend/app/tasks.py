@@ -47,6 +47,11 @@ def whatsapp_healthcheck() -> str:
         )
     # Com a equipe num chip a parte (WHATSAPP_EQUIPE_PELA_EVOLUTION), o estado
     # acima e' o da Meta; o chip precisa da propria conferencia.
+    # O toque pela Evolution precisa do chip OUVINDO (webhook com mensagens).
+    from app.services import lembrete_por_toque, whatsapp_central
+
+    if lembrete_por_toque.pela_evolution() and not whatsapp_central.ligar_escuta_do_chip():
+        logger.warning("[agendador] !!! chip sem webhook de mensagens: o toque dos clientes nao chega")
     chip = estado_do_chip_da_equipe()
     if chip is not None and chip != "open":
         logger.warning(
