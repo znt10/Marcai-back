@@ -124,6 +124,7 @@ def cliente_com_whatsapp(monkeypatch):
     for nome in (
         "WHATSAPP_PROVEDOR", "META_WHATSAPP_TOKEN", "META_WHATSAPP_NUMERO_ID",
         "EVOLUTION_API_URL", "WHATSAPP_EQUIPE_PELA_EVOLUTION",
+        "LEMBRETE_PELA_EVOLUTION", "WHATSAPP_EVOLUTION_NUMERO", "WHATSAPP_CENTRAL_NUMERO",
     ):
         monkeypatch.delenv(nome, raising=False)
 

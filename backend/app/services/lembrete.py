@@ -108,6 +108,7 @@ def enviar_pendentes(agora: datetime) -> int:
                     ),
                     # Tocou ha pouco: a conversa esta aberta, vai texto.
                     na_janela=pelo_toque and lembrete_por_toque.na_janela(a.lembrete_tocado_em, agora),
+                    canal=a.lembrete_canal,
                 )
             enviados += 1
 

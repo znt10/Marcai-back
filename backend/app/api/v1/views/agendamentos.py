@@ -212,6 +212,7 @@ def depois_de_cancelar(barbearia: Barbearia, resultado: dict, agora) -> None:
             cliente_nome=resultado["cliente_nome"],
             na_janela=lembrete_por_toque.ligado()
             and lembrete_por_toque.na_janela(resultado["lembrete_tocado_em"], agora),
+            canal=resultado["lembrete_canal"],
         )
     # Mesma regra de marcar: hoje, depois das 06:30, a lista refeita sem o
     # horario que caiu; outro dia, nada.

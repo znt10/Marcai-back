@@ -8,7 +8,7 @@ from django.http import HttpResponse
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from app.services import infinitepay, whatsapp_meta
+from app.services import infinitepay, lembrete_por_toque, whatsapp_meta
 from app.services.infinitepay import ErroDaInfinitePay
 from app.services.mensalidade import infinitepay_retorno
 from app.services.bot_entrada import EVENTO_MENSAGEM, Recebida, ler_mensagem, receber
@@ -88,6 +88,19 @@ class WhatsappEventoView(APIView):
         # sempre. As duas coisas chegam pela mesma rota porque a Evolution so'
         # tem UM webhook por instancia.
         if str(corpo.get("event") or "").lower() == EVENTO_MENSAGEM:
+            # O toque do lembrete no CHIP (plano 2026-11-06) vem antes do bot:
+            # a instancia central nao e' de barbearia nenhuma, e o bot a
+            # descartaria.
+            lido = lembrete_por_toque.ler_do_chip(corpo) if lembrete_por_toque.pela_evolution() else None
+            if lido is not None:
+                try:
+                    pedido = lembrete_por_toque.registrar_pedido(
+                        lido[1], lido[0], datetime.now(timezone.utc), canal="evolution",
+                    )
+                except Exception:
+                    logger.exception("[webhook] lembrete por toque no chip nao registrou")
+                    pedido = "erro"
+                return Response({"ok": True, "resultado": f"toque:{pedido}"})
             try:
                 resultado = receber(corpo, datetime.now(timezone.utc))
             except Exception:
